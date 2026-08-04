@@ -1,0 +1,40 @@
+INFO:     Started server process [62016]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56560 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56619 - "OPTIONS /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56620 - "OPTIONS /user/checkin/today/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56621 - "OPTIONS /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56622 - "OPTIONS /user/checkin/today/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56620 - "GET /user/checkin/today/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56619 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56622 - "GET /user/checkin/today/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56621 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56624 - "OPTIONS /user/checkin HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56624 - "POST /user/checkin HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56628 - "POST /user/checkin HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56628 - "POST /user/checkin HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56640 - "POST /user/checkin HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56640 - "POST /user/checkin HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56640 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56641 - "GET /user/checkin/today/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56643 - "GET /user/checkin/today/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56642 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56645 - "OPTIONS /user/profile/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56646 - "OPTIONS /user/profile/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56645 - "GET /user/profile/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56646 - "GET /user/profile/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56657 - "OPTIONS /user/profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56657 - "POST /user/profile HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56657 - "OPTIONS /users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56658 - "OPTIONS /users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56657 - "GET /users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56658 - "GET /users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56704 - "GET /users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56705 - "GET /users HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56707 - "POST /users HTTP/1.1" 201 Created
+INFO:     127.0.0.1:56707 - "GET /user/profile/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56707 - "GET /user/profile/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56708 - "GET /user/profile/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56707 - "POST /user/profile HTTP/1.1" 200 OK
