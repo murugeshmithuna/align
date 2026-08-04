@@ -38,3 +38,16 @@ INFO:     127.0.0.1:56707 - "GET /user/profile/1 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56707 - "GET /user/profile/1 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56708 - "GET /user/profile/1 HTTP/1.1" 200 OK
 INFO:     127.0.0.1:56707 - "POST /user/profile HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56759 - "GET /user/checkin/today/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56761 - "GET /user/checkin/today/1 HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:56758 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56760 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56759 - "POST /user/checkin HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57027 - "OPTIONS /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "OPTIONS /user/checkin/today/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57029 - "OPTIONS /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57030 - "OPTIONS /user/checkin/today/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57027 - "GET /plans/user/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57030 - "GET /user/checkin/today/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57028 - "GET /user/checkin/today/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57029 - "GET /plans/user/1 HTTP/1.1" 200 OK
