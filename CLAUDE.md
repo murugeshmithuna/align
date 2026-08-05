@@ -79,12 +79,25 @@ one series), PRs marked via larger point radius + surface ring rather than a sec
 logs + flat-then-dip-then-recover bench logs - `is_pr` correctly flags every squat session (monotonic
 increase) and correctly flags `false` only on the bench session that dipped below the existing record.
 
-**Deployed:** frontend on Vercel (`https://fitness-agent-topaz.vercel.app`, project `fitness-agent`,
-team `mithuna2`), backend on Render (`https://fitness-agent-wuvh.onrender.com`, service `fitness-agent`,
-**Free plan**). `VITE_API_BASE_URL` set directly to the Render URL. Two real caveats living in
-production right now: (1) Render's Free plan has **no persistent disk** - SQLite data resets on
-redeploys/restarts, upgrade to Starter (~$7/mo) + attach a Disk to fix; (2) Render Free spins down on
-inactivity, so the first request after idle time has a real cold-start delay (30s+).
+**Deployed:** frontend on Vercel (`https://fitness-agent-sigma.vercel.app`, project `fitness-agent`,
+team `mithuna2` - re-imported fresh; the old `fitness-agent-topaz.vercel.app` project was deleted after
+its `vercel.json` SPA rewrite would not take effect no matter what was tried, including on a from-scratch
+reimport with identical settings - the actual fix was the rewrite's `destination` value itself, see below),
+backend on Render (`https://fitness-agent-wuvh.onrender.com`, service `fitness-agent`, **Free plan**).
+`VITE_API_BASE_URL` set directly to the Render URL. Two real caveats living in production right now:
+(1) Render's Free plan has **no persistent disk** - SQLite data resets on redeploys/restarts, upgrade to
+Starter (~$7/mo) + attach a Disk to fix; (2) Render Free spins down on inactivity, so the first request
+after idle time has a real cold-start delay (30s+).
+
+**Vercel SPA routing fix:** direct loads of client-side routes (`/login`, `/dashboard`, etc.) 404'd on
+Vercel because its static server looks for a literal file at that path unless told to fall back to
+`index.html`. `frontend/vercel.json` needs a rewrite for this - `{ "rewrites": [{ "source": "/(.*)",
+"destination": "/" }] }` is the version that actually worked; `"destination": "/index.html"` (and/or
+`cleanUrls`/`trailingSlash`) did not, verified across three different deployments and a from-scratch
+project reimport, so treat `destination: "/"` as load-bearing if this ever needs touching again. Also
+found and removed an orphaned legacy root-level `vercel.json` (old `builds`/`routes` schema, left over
+from an abandoned attempt to deploy the FastAPI backend on Vercel too, before switching to Render) -
+`frontend/vercel.json` is now the only one in the repo.
 
 **Schedule Agent** (`ask_schedule` tool): a RAG-lite tool like `suggest_supplements` - gathers today's
 day-of-week, the active plan's weekly schedule, and up to 20 recent logs into a fact bundle, then lets
