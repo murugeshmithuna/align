@@ -49,16 +49,24 @@ export default function Dashboard() {
           {planLoading ? (
             <p className="text-sm text-slate-500">Loading…</p>
           ) : plan ? (
-            <>
-              <p className="font-semibold">{plan.name}</p>
+            <Link to={`/plans/${plan.id}`} className="block hover:opacity-90 transition-opacity">
+              <p className="font-semibold text-coral-400">{plan.name} →</p>
               <p className="text-sm text-slate-400 mt-1">{plan.plan_exercises.length} exercises</p>
               {plan.notes && <p className="text-sm text-slate-500 mt-2 line-clamp-3">{plan.notes}</p>}
-            </>
+            </Link>
           ) : (
-            <p className="text-sm text-slate-500">
-              No plan yet - it's generated automatically once your profile is saved, or ask the coach
-              below to build one now.
-            </p>
+            <>
+              <p className="text-sm text-slate-500 mb-3">
+                No active plan yet - it's generated automatically once your profile is saved, or ask the
+                coach below to build one now.
+              </p>
+              <Link
+                to="/plans"
+                className="inline-block px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 text-sm font-semibold"
+              >
+                Select / activate a plan
+              </Link>
+            </>
           )}
         </div>
 

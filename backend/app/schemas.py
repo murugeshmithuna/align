@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 ExperienceLevel = Literal["beginner", "intermediate", "advanced"]
+UnitPreference = Literal["metric", "imperial"]
 
 
 # ---------- Users ----------
@@ -25,11 +26,15 @@ class UserOut(BaseModel):
     id: int
     name: str
     email: EmailStr
+    photo_url: str | None
     experience_level: str | None
     target_frequency: int | None
     available_equipment: list[str]
     primary_goals: list[str]
     physical_limitations: str | None
+    height_cm: float | None
+    weight_kg: float | None
+    preferred_units: UnitPreference
     created_at: datetime
 
 
@@ -40,6 +45,21 @@ class UserProfileUpdate(BaseModel):
     available_equipment: list[str] | None = None
     primary_goals: list[str] | None = None
     physical_limitations: str | None = None
+    height_cm: float | None = None
+    weight_kg: float | None = None
+    preferred_units: UnitPreference | None = None
+
+
+# ---------- Auth (Google Sign-In) ----------
+
+
+class GoogleAuthRequest(BaseModel):
+    id_token: str
+
+
+class GoogleAuthOut(BaseModel):
+    user: UserOut
+    is_new_user: bool
 
 
 # ---------- Exercises ----------
@@ -69,6 +89,7 @@ class PlanExerciseCreate(BaseModel):
     sets: int | None = None
     reps: int | None = None
     target_weight: float | None = None
+    rest_seconds: int | None = None
     order_index: int = 0
 
 
@@ -77,10 +98,12 @@ class PlanExerciseOut(BaseModel):
 
     id: int
     exercise_id: int
+    exercise: ExerciseOut
     day_of_week: int | None
     sets: int | None
     reps: int | None
     target_weight: float | None
+    rest_seconds: int | None
     order_index: int
 
 

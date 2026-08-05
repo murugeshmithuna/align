@@ -28,6 +28,10 @@ export const api = {
   submitCheckin: (payload) => request('/user/checkin', { method: 'POST', body: JSON.stringify(payload) }),
 
   listPlans: (userId) => request(`/plans/user/${userId}`),
+  getPlan: (planId) => request(`/plans/${planId}`),
+  activatePlan: (planId) => request(`/plans/${planId}/activate`, { method: 'PATCH' }),
+
+  createLog: (payload) => request('/logs', { method: 'POST', body: JSON.stringify(payload) }),
 
   getProgress: (userId) => request(`/logs/user/${userId}/progress`),
   getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),

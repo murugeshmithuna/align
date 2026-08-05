@@ -9,6 +9,8 @@ import LiveSession from './pages/LiveSession.jsx'
 import Progress from './pages/Progress.jsx'
 import Debate from './pages/Debate.jsx'
 import MealPhoto from './pages/MealPhoto.jsx'
+import PlanList from './pages/PlanList.jsx'
+import PlanDetail from './pages/PlanDetail.jsx'
 
 function App() {
   return (
@@ -24,6 +26,8 @@ function App() {
         <Route path="/progress" element={<Progress />} />
         <Route path="/debate" element={<Debate />} />
         <Route path="/meal-photo" element={<MealPhoto />} />
+        <Route path="/plans" element={<PlanList />} />
+        <Route path="/plans/:planId" element={<PlanDetail />} />
       </Route>
     </Routes>
   )

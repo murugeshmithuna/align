@@ -36,3 +36,21 @@ def get_plan(plan_id: int, db: Session = Depends(get_db)):
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
     return plan
+
+
+@router.patch("/{plan_id}/activate", response_model=schemas.PlanOut)
+def activate_plan(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.get(models.Plan, plan_id)
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    other_plans = db.scalars(
+        select(models.Plan).where(models.Plan.user_id == plan.user_id, models.Plan.id != plan_id)
+    ).all()
+    for other in other_plans:
+        other.is_active = False
+    plan.is_active = True
+
+    db.commit()
+    db.refresh(plan)
+    return plan
