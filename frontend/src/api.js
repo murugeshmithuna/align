@@ -32,6 +32,9 @@ export const api = {
   getProgress: (userId) => request(`/logs/user/${userId}/progress`),
   getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),
   runDebate: (payload) => request('/agent/debate', { method: 'POST', body: JSON.stringify(payload) }),
+
+  getFatigue: (userId) => request(`/fatigue/user/${userId}`),
+  checkAsymmetry: (payload) => request('/fatigue/asymmetry', { method: 'POST', body: JSON.stringify(payload) }),
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every

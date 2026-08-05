@@ -77,12 +77,12 @@ const FEATURE_CATEGORIES = [
       {
         title: 'Fatigue & Injury-Risk Modeling',
         description: 'A real Banister impulse-response model projects fitness and fatigue trends.',
-        to: null,
+        to: '/progress',
       },
       {
         title: 'Limb Asymmetry Check',
-        description: 'Left/right movement comparison reusing pose-estimation landmark data.',
-        to: null,
+        description: 'Left/right measurement comparison, ready for pose-estimation landmark data.',
+        to: '/progress',
       },
     ],
   },

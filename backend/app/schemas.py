@@ -234,3 +234,41 @@ class DebateOut(BaseModel):
     strength_position: str
     recovery_position: str
     resolution: str
+
+
+# ---------- Fatigue modeling & asymmetry ----------
+
+
+class FatiguePoint(BaseModel):
+    date: date
+    load: float
+    fitness: float
+    fatigue: float
+    form: float
+
+
+class FatigueRisk(BaseModel):
+    risk_level: Literal["low", "moderate", "high", "unknown"]
+    message: str
+    form_ratio: float | None
+
+
+class FatigueOut(BaseModel):
+    series: list[FatiguePoint]
+    risk: FatigueRisk
+
+
+class AsymmetryRequest(BaseModel):
+    left_values: list[float]
+    right_values: list[float]
+    metric_name: str = "measurement"
+
+
+class AsymmetryOut(BaseModel):
+    metric_name: str
+    left_avg: float
+    right_avg: float
+    diff_pct: float
+    stronger_side: Literal["left", "right", "even"]
+    flagged: bool
+    message: str

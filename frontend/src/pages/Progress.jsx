@@ -6,18 +6,34 @@ import {
   PointElement,
   LineElement,
   Filler,
+  Legend,
   Tooltip,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip)
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Legend, Tooltip)
 
 // Single-series charts - one hue throughout (brand coral), no legend needed.
 const CORAL = '#ff7a4d'
 const GRID_COLOR = 'rgba(148, 163, 184, 0.12)'
 const TEXT_MUTED = '#94a3b8'
+
+// Fitness/Fatigue/Form is a 3-series categorical chart, so it needs its own
+// fixed-order palette (validated: OKLCH lightness band + CVD separation both
+// pass in dark mode against the forest-950 surface) plus a legend - unlike
+// the single-series charts above, color alone now carries series identity.
+const FITNESS_COLOR = '#059669'
+const FATIGUE_COLOR = '#e2542a'
+const FORM_COLOR = '#0284c7'
+
+const RISK_STYLES = {
+  low: 'text-emerald-400',
+  moderate: 'text-amber-400',
+  high: 'text-red-400',
+  unknown: 'text-slate-500',
+}
 
 function buildVolumeChartData(volumeByDate) {
   return {
@@ -72,6 +88,42 @@ function buildExerciseChartData(history) {
   }
 }
 
+function buildFatigueChartData(series) {
+  return {
+    labels: series.map((p) => p.date),
+    datasets: [
+      {
+        label: 'Fitness',
+        data: series.map((p) => p.fitness),
+        borderColor: FITNESS_COLOR,
+        backgroundColor: FITNESS_COLOR,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.2,
+      },
+      {
+        label: 'Fatigue',
+        data: series.map((p) => p.fatigue),
+        borderColor: FATIGUE_COLOR,
+        backgroundColor: FATIGUE_COLOR,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.2,
+      },
+      {
+        label: 'Form',
+        data: series.map((p) => p.form),
+        borderColor: FORM_COLOR,
+        backgroundColor: FORM_COLOR,
+        borderWidth: 2,
+        borderDash: [4, 3],
+        pointRadius: 0,
+        tension: 0.2,
+      },
+    ],
+  }
+}
+
 const baseChartOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -101,6 +153,22 @@ const baseChartOptions = {
   },
 }
 
+// 3-series chart: legend on, tooltip markers on - color is now the only way
+// to tell Fitness/Fatigue/Form apart, so both must show it.
+const fatigueChartOptions = {
+  ...baseChartOptions,
+  plugins: {
+    ...baseChartOptions.plugins,
+    legend: {
+      display: true,
+      position: 'top',
+      align: 'end',
+      labels: { color: TEXT_MUTED, boxWidth: 12, boxHeight: 2, usePointStyle: false, padding: 16 },
+    },
+    tooltip: { ...baseChartOptions.plugins.tooltip, displayColors: true },
+  },
+}
+
 export default function Progress() {
   const { userId } = useSession()
   const [progress, setProgress] = useState(null)
@@ -111,6 +179,11 @@ export default function Progress() {
   const [recapError, setRecapError] = useState('')
   const [showVolumeTable, setShowVolumeTable] = useState(false)
   const [showExerciseTable, setShowExerciseTable] = useState(false)
+  const [fatigue, setFatigue] = useState(null)
+  const [asymmetryForm, setAsymmetryForm] = useState({ metricName: '', left: '', right: '' })
+  const [asymmetryResult, setAsymmetryResult] = useState(null)
+  const [asymmetryError, setAsymmetryError] = useState('')
+  const [asymmetryLoading, setAsymmetryLoading] = useState(false)
 
   useEffect(() => {
     api
@@ -121,6 +194,11 @@ export default function Progress() {
       })
       .catch(() => setProgress({ volume_by_date: [], exercises: [] }))
       .finally(() => setLoading(false))
+
+    api
+      .getFatigue(userId)
+      .then(setFatigue)
+      .catch(() => setFatigue({ series: [], risk: null }))
   }, [userId])
 
   const selectedExercise = useMemo(
@@ -138,6 +216,38 @@ export default function Progress() {
       setRecapError(err.message)
     } finally {
       setRecapLoading(false)
+    }
+  }
+
+  async function handleAsymmetrySubmit(event) {
+    event.preventDefault()
+    setAsymmetryLoading(true)
+    setAsymmetryError('')
+    setAsymmetryResult(null)
+    try {
+      const parseValues = (raw) =>
+        raw
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .map(Number)
+
+      const left_values = parseValues(asymmetryForm.left)
+      const right_values = parseValues(asymmetryForm.right)
+      if (left_values.some(Number.isNaN) || right_values.some(Number.isNaN)) {
+        throw new Error('Enter comma-separated numbers only, e.g. 92, 94, 91')
+      }
+
+      const data = await api.checkAsymmetry({
+        left_values,
+        right_values,
+        metric_name: asymmetryForm.metricName.trim() || 'measurement',
+      })
+      setAsymmetryResult(data)
+    } catch (err) {
+      setAsymmetryError(err.message)
+    } finally {
+      setAsymmetryLoading(false)
     }
   }
 
@@ -271,6 +381,94 @@ export default function Progress() {
           <p className="text-sm text-slate-500">
             No exercises logged yet - log a workout to start tracking progression.
           </p>
+        )}
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="font-heading font-semibold">Fatigue &amp; injury-risk model</h2>
+          {fatigue?.risk && fatigue.risk.risk_level !== 'unknown' && (
+            <span className={`text-xs font-semibold uppercase tracking-wide ${RISK_STYLES[fatigue.risk.risk_level]}`}>
+              {fatigue.risk.risk_level} risk
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Banister impulse-response model - Fitness and Fatigue accumulate from your logged training load
+          (volume × RPE), Form is the balance between them.
+        </p>
+        {fatigue && fatigue.series.length > 0 ? (
+          <>
+            <div className="h-64">
+              <Line data={buildFatigueChartData(fatigue.series)} options={fatigueChartOptions} />
+            </div>
+            {fatigue.risk && (
+              <p className="text-sm text-slate-300 mt-3">{fatigue.risk.message}</p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-slate-500">
+            No workouts logged yet - once you log a few sessions, your fitness/fatigue trend shows up here.
+          </p>
+        )}
+      </div>
+
+      <div className="card p-6">
+        <h2 className="font-heading font-semibold mb-1">Limb asymmetry check</h2>
+        <p className="text-xs text-slate-500 mb-4">
+          Compare left vs. right side measurements - per-rep knee angle, rep tempo, or peak load. Enter
+          comma-separated numbers for each side; a live webcam feed will fill these in automatically once
+          pose tracking ships.
+        </p>
+        <form onSubmit={handleAsymmetrySubmit} className="space-y-3">
+          <input
+            type="text"
+            value={asymmetryForm.metricName}
+            onChange={(e) => setAsymmetryForm((f) => ({ ...f, metricName: e.target.value }))}
+            placeholder="Metric name (e.g. knee angle, rep tempo)"
+            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <input
+              type="text"
+              value={asymmetryForm.left}
+              onChange={(e) => setAsymmetryForm((f) => ({ ...f, left: e.target.value }))}
+              placeholder="Left side values, e.g. 92, 94, 91"
+              className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+            />
+            <input
+              type="text"
+              value={asymmetryForm.right}
+              onChange={(e) => setAsymmetryForm((f) => ({ ...f, right: e.target.value }))}
+              placeholder="Right side values, e.g. 80, 82, 79"
+              className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={asymmetryLoading}
+            className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+          >
+            {asymmetryLoading ? 'Checking…' : 'Check asymmetry'}
+          </button>
+        </form>
+        {asymmetryError && <p className="text-sm text-red-400 mt-3">{asymmetryError}</p>}
+        {asymmetryResult && (
+          <div
+            className={`mt-4 p-4 rounded-xl border ${
+              asymmetryResult.flagged ? 'border-red-500/60 bg-red-500/10' : 'border-forest-700 bg-forest-900/40'
+            }`}
+          >
+            <p className="text-sm text-slate-200">
+              <span className="font-semibold">{asymmetryResult.diff_pct}%</span>{' '}
+              {asymmetryResult.stronger_side === 'even' ? 'difference' : `${asymmetryResult.stronger_side}-side dominance`} on{' '}
+              {asymmetryResult.metric_name} (left avg {asymmetryResult.left_avg}, right avg{' '}
+              {asymmetryResult.right_avg}).
+            </p>
+            <p className={`text-xs mt-1 ${asymmetryResult.flagged ? 'text-red-400' : 'text-slate-500'}`}>
+              {asymmetryResult.message}
+            </p>
+          </div>
         )}
       </div>
     </div>
