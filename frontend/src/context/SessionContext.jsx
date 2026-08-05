@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 
 const STORAGE_KEY = 'fitness_agent_user_id'
 const SessionContext = createContext(null)
@@ -17,17 +17,28 @@ export function SessionProvider({ children }) {
     }
   }, [userId])
 
-  function setUserId(id) {
+  // Stable references (empty deps) so the context value below only changes
+  // when userId itself changes - not on every re-render of this provider.
+  const setUserId = useCallback((id) => {
     setUserIdState(id)
-  }
+  }, [])
 
-  function logout() {
+  const logout = useCallback(() => {
     setUserIdState(null)
-  }
+  }, [])
 
-  return (
-    <SessionContext.Provider value={{ userId, setUserId, logout }}>{children}</SessionContext.Provider>
+  const isAuthenticated = userId != null
+
+  // Memoized so React can skip re-rendering every useSession() consumer
+  // whenever something above this provider re-renders for an unrelated
+  // reason (e.g. a toast timing out) - only a real auth-state change
+  // produces a new value object here.
+  const value = useMemo(
+    () => ({ userId, isAuthenticated, setUserId, logout }),
+    [userId, isAuthenticated, setUserId, logout],
   )
+
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>
 }
 
 export function useSession() {
