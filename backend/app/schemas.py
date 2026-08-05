@@ -272,3 +272,25 @@ class AsymmetryOut(BaseModel):
     stronger_side: Literal["left", "right", "even"]
     flagged: bool
     message: str
+
+
+# ---------- Vision (squat form analysis) ----------
+
+
+class RepAnalysis(BaseModel):
+    rep_index: int
+    min_knee_angle: float
+    knee_ankle_offset_pct: float
+    back_angle_deg: float
+    depth_ok: bool
+    knee_tracking_ok: bool
+    back_angle_ok: bool
+
+
+class FormAnalysisOut(BaseModel):
+    id: int
+    analyzed_at: datetime
+    exercise_name: str
+    rep_count: int
+    video_duration_s: float | None
+    reps: list[RepAnalysis]

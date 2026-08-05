@@ -114,15 +114,50 @@ plain numeric rule, same philosophy as `plan_status_for_score()`. Frontend adds 
 Form chart to the Progress page (validated categorical palette - emerald/coral/sky-blue - via the
 dataviz skill's `validate_palette.js`, since a 3-series chart needs one unlike the existing single-series
 volume/PR charts) plus a risk badge. The asymmetry checker takes raw left/right numeric samples (not
-video) and flags >10% side-to-side difference - the standard inter-limb asymmetry threshold - since real
-per-rep landmark measurements don't exist until MediaPipe pose tracking (next milestone) is built; the
-math is written to consume exactly that shape of data once it does, so wiring it up later is a UI-only
-change, not a model rewrite. Verified live: 3 weeks of increasingly heavy squat logs followed by a few
+video) and flags >10% side-to-side difference - the standard inter-limb asymmetry threshold. Written
+before MediaPipe pose tracking existed to consume exactly the shape of data it produces per rep (a list
+of numbers per side), so now that pose tracking is built, wiring the two together (auto-filling left/right
+values from live landmark data instead of manual entry) is a small UI-only follow-up, not a model rewrite
+- not yet done. Verified live: 3 weeks of increasingly heavy squat logs followed by a few
 rest days correctly showed Fitness/Fatigue both rising during training then Fatigue decaying faster than
 Fitness during the rest days (Form recovering, as expected physiologically); asymmetry check correctly
 flagged a 15.7% left-dominant sample set and correctly passed a 2.1% sample set.
 
-Vision, voice, and Claude Vision meal analysis are not built yet.
+**MediaPipe vision** (`/live-session`): one model (`pose_landmarker_lite.task`, the official Google-hosted
+BlazePose 33-landmark bundle, committed at `backend/app/vision/models/`), two runtimes.
+- **Batch** (`POST /vision/analyze-squat`, multipart video upload): `backend/app/vision/pose_analysis.py`
+  runs the new MediaPipe Tasks Python API (`mediapipe==1.0.0` dropped the old `mp.solutions.pose` -
+  confirmed live in this session - so this is `PoseLandmarker` in `VIDEO` running mode) frame-by-frame via
+  OpenCV, computes knee angle (hip-knee-ankle), knee-ankle horizontal offset (knee tracking, normalized by
+  hip width), and trunk lean from vertical (back angle) per frame, then segments reps with a knee-angle
+  state machine split into a pure, unit-tested `segment_reps()` function: descent starts once knee angle
+  drops below 160°, and depth-tracking continues past the 110° "reached depth" threshold until the angle
+  actually turns and rises again (a real local minimum) rather than stopping at the first threshold
+  crossing - otherwise the recorded depth is the crossing angle, not the true bottom. A rep that comes
+  back up without ever reaching depth still counts, flagged `depth_ok: false`. Per-rep facts (min knee
+  angle, knee-tracking offset %, back angle, three pass/fail flags) are stored in a new `form_analyses`
+  table and returned directly to the frontend - no LLM in this path, consistent with `fatigue.py`.
+- **`analyze_form` tool**: fetches the user's most recent stored analysis (RAG-lite, same pattern as
+  `ask_schedule`) so chat questions like "how was my squat form?" get a real conversational critique
+  grounded in those facts. Verified live: seeded a 5-rep analysis with a clear knee-valgus pattern (2/5
+  knee-tracking pass, 4/5 depth, 5/5 back angle) and the orchestrator correctly identified knee tracking
+  as the priority fix with specific coaching cues, not a generic answer.
+- **Live** (`/live-session`, "Live webcam" tab): client-side only, via `@mediapipe/tasks-vision` -
+  `PoseLandmarker` runs entirely in the browser (WASM from jsDelivr, same model file from the same GCS
+  URL as the batch path) inside a `requestAnimationFrame` loop reading the webcam `<video>` element, so
+  there's no server round-trip for live tracking. The same thresholds/state machine from
+  `pose_analysis.py` are mirrored in JS so live and batch rep-counting agree. Mid-set voice cues use the
+  browser's built-in Web Speech API (`speechSynthesis`) - no TTS library/dependency needed. UI is
+  deliberately minimal per the design direction (large rep counter, one cue line, nothing else
+  competing for attention). Verified in a headless Chromium session (Playwright, `--use-fake-device-for-
+  media-stream`): the WASM+model load from CDN, camera stream starts, the pose-detection graph runs with
+  no JS errors, and switching away from the tab correctly unmounts the `<video>` element and releases the
+  camera track (confirmed no lingering stream). A real human squat video wasn't available in this
+  sandboxed session to verify detection *accuracy* end-to-end - the rep-segmentation logic itself was
+  separately unit-tested with synthetic angle sequences (6 synthetic reps covering good depth, a shallow
+  rep, knee valgus, and excessive back lean all came back with exactly the expected flags).
+
+Voice cues beyond the live session and Claude Vision meal photo analysis are not built yet.
 
 ## System architecture
 
@@ -137,10 +172,10 @@ tool/sub-agent -> database update -> response rendered in UI.
 | Core | `suggest_supplements` tool | Recommends supplements based on goals/logs |
 | Q&A | Schedule Agent (`ask_schedule` tool) | Grounded conversational Q&A over the user's real logs and current plan |
 | Q&A | Calendar integration (optional) | Reads Google Calendar to factor busy days into scheduling answers |
-| Vision | MediaPipe Pose (batch) | Joint-angle analysis on uploaded squat videos |
-| Vision | MediaPipe Pose (live) | Real-time webcam pose tracking for rep counting |
-| Vision | `analyze_form` tool | Wraps batch pose analysis as an agent-callable tool |
-| Vision | Rep Counter + Voice Cues | Detects full range-of-motion cycles; TTS delivers mid-set coaching cues |
+| Vision | MediaPipe Pose (batch) | Joint-angle analysis on uploaded squat videos (done) |
+| Vision | MediaPipe Pose (live) | Real-time webcam pose tracking for rep counting (done, client-side) |
+| Vision | `analyze_form` tool | Wraps batch pose analysis as an agent-callable tool (done) |
+| Vision | Rep Counter + Voice Cues | Detects full range-of-motion cycles; Web Speech API delivers mid-set cues (done) |
 | Multimodal | Claude Vision (food photos) | Sends meal images directly to Claude for analysis |
 | Multimodal | `analyze_meal_photo` tool | Calorie/macro estimate, eating-order reasoning, goal-aware swaps |
 | Multi-Agent | Strength Coach Agent | Sub-agent reasoning from performance/training data |
@@ -159,14 +194,16 @@ tool/sub-agent -> database update -> response rendered in UI.
 - **Backend:** Python, FastAPI, uvicorn
 - **Database:** SQLite (SQLAlchemy ORM), Pydantic request/response models
 - **LLM:** Claude API — tool_choice / tool_use blocks for function calling; Claude Vision for meal photos
-- **Computer vision:** MediaPipe Pose (batch video + live webcam)
-- **Voice:** TTS library for mid-set cues
+- **Computer vision:** MediaPipe Pose Landmarker - Python Tasks API server-side for batch video
+  (`mediapipe`, `opencv-python-headless`), `@mediapipe/tasks-vision` client-side (WASM) for the live
+  webcam session; one shared `.task` model bundle for both
+- **Voice:** browser Web Speech API (`speechSynthesis`) for mid-set cues - no server-side TTS dependency
 - **Modeling:** Python implementation of the Banister impulse-response (fitness-fatigue) model
 - **Calendar:** Google Calendar API (optional, read-only)
 - **Charts:** Plotly or Chart.js
 - **Frontend:** React + Vite + React Router, Tailwind CSS v4 (`@tailwindcss/vite`, no separate config
-  file - theme tokens live in `src/index.css`), three.js (landing-page hero), canvas/video overlay
-  planned for live pose feedback
+  file - theme tokens live in `src/index.css`), three.js (landing-page hero), `@mediapipe/tasks-vision`
+  for the live pose-tracking overlay
 - **Deployment:** Render/Railway (backend), Vercel (frontend)
 
 ## Visual design direction
@@ -220,12 +257,16 @@ fitness-agent/
                            POST /agent/debate
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
         fatigue.py         GET /fatigue/user/{user_id}, POST /fatigue/asymmetry
+        vision.py          POST /vision/analyze-squat, GET /vision/form-analyses/user/{user_id}
       agent/
         tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements,
-                           ask_schedule)
+                           ask_schedule, analyze_form)
         orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
         debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
         fatigue.py         Banister fitness/fatigue/form model + limb-asymmetry checker (pure computation, no LLM)
+      vision/
+        pose_analysis.py   MediaPipe Tasks Python API - analyze_squat_video() + unit-tested segment_reps()
+        models/pose_landmarker_lite.task   Committed model bundle (~5.7MB, official Google-hosted BlazePose)
     requirements.txt
     .env.example        ANTHROPIC_API_KEY=
   frontend/                Vite + React SPA (npm install && npm run dev)
@@ -246,7 +287,7 @@ fitness-agent/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
         Debate.jsx (Strength/Recovery/Head Coach bubble cards),
-        LiveSession.jsx (still a roadmap placeholder)
+        LiveSession.jsx (live webcam pose tracking + rep counting, squat video upload)
 ```
 
 ## Running locally
@@ -263,7 +304,7 @@ cd frontend && npm install && npm run dev
 
 1. ~~Orchestrator agent + Claude tool-use wiring~~ — done (`backend/app/agent/`)
 2. ~~Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite~~ — done
-3. MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)
+3. ~~MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)~~ — done (`/live-session`)
 4. Claude Vision meal photo analysis (`analyze_meal_photo`)
 5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
 6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/progress`)

@@ -1,6 +1,6 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -140,6 +140,27 @@ class SorenessNote(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="soreness_notes")
+
+
+class FormAnalysis(Base):
+    """Summary of one batch squat-form video analysis (MediaPipe Pose). Kept
+    so the `analyze_form` agent tool can answer follow-up chat questions
+    ("how was my squat form?") from the most recent result without re-running
+    pose detection - same RAG-lite pattern as ask_schedule's plan snapshot."""
+
+    __tablename__ = "form_analyses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    exercise_name: Mapped[str] = mapped_column(String(120), default="Squat")
+    rep_count: Mapped[int] = mapped_column(Integer, default=0)
+    reps_with_good_depth: Mapped[int] = mapped_column(Integer, default=0)
+    reps_with_good_knee_tracking: Mapped[int] = mapped_column(Integer, default=0)
+    reps_with_good_back_angle: Mapped[int] = mapped_column(Integer, default=0)
+    raw_json: Mapped[str] = mapped_column(Text)  # full per-rep detail, JSON-encoded
+
+    user: Mapped["User"] = relationship()
 
 
 CHECKIN_LABELS = {
