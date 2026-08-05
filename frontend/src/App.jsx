@@ -7,6 +7,7 @@ import Checkin from './pages/Checkin.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import LiveSession from './pages/LiveSession.jsx'
 import Progress from './pages/Progress.jsx'
+import Debate from './pages/Debate.jsx'
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="/checkin" element={<Checkin />} />
         <Route path="/live-session" element={<LiveSession />} />
         <Route path="/progress" element={<Progress />} />
+        <Route path="/debate" element={<Debate />} />
       </Route>
     </Routes>
   )

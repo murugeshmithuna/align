@@ -222,3 +222,15 @@ class AgentChatResponse(BaseModel):
 
 class WeeklyRecapOut(BaseModel):
     recap: str
+
+
+class DebateRequest(BaseModel):
+    user_id: int
+    question: str | None = None
+
+
+class DebateOut(BaseModel):
+    question: str
+    strength_position: str
+    recovery_position: str
+    resolution: str

@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.agent.debate import run_coach_debate
 from app.agent.orchestrator import generate_weekly_recap, run_agent_turn, stream_agent_turn
 from app.database import get_db
 
@@ -36,5 +37,15 @@ def weekly_recap(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     try:
         return {"recap": generate_weekly_recap(db, user_id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.post("/debate", response_model=schemas.DebateOut)
+def coach_debate(payload: schemas.DebateRequest, db: Session = Depends(get_db)):
+    if not db.get(models.User, payload.user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        return run_coach_debate(db, payload.user_id, payload.question)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
