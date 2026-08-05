@@ -86,7 +86,24 @@ production right now: (1) Render's Free plan has **no persistent disk** - SQLite
 redeploys/restarts, upgrade to Starter (~$7/mo) + attach a Disk to fix; (2) Render Free spins down on
 inactivity, so the first request after idle time has a real cold-start delay (30s+).
 
-Vision, voice, multi-agent debate, and the Banister model are not built yet.
+**Schedule Agent** (`ask_schedule` tool): a RAG-lite tool like `suggest_supplements` - gathers today's
+day-of-week, the active plan's weekly schedule, and up to 20 recent logs into a fact bundle, then lets
+the orchestrator LLM compose a grounded answer (e.g. "when did I last train legs") instead of guessing.
+Registered in `TOOL_SCHEMAS`/`TOOL_EXECUTORS`/`ROUTING_TOOL` - the three places any new tool needs to be
+added for the fast-model router to be able to select it.
+
+**Multi-agent debate** (`/debate` page, `POST /agent/debate`): a separate code path from the main
+orchestrator, not a tool - `backend/app/agent/debate.py`'s `run_coach_debate()` makes three independent
+`claude-opus-4-8` calls with no shared history: a Strength Coach prompt scoped to recent logs/PRs, a
+Recovery Coach prompt scoped to soreness notes/check-in scores, then a Head Coach resolver call given
+both prior positions as context and told to pick a side rather than hedge. Frontend renders three
+chat-bubble cards (coral Strength, sky-blue Recovery, highlighted bordered Head Coach resolution).
+Verified live with a deliberately tense scenario (RPE 9.5 squat session yesterday + severity-4 soreness +
+readiness 2/5): Strength Coach argued to push, Recovery Coach argued to back off, and the Head Coach
+resolved decisively toward recovery, explicitly re-reasoning about the Strength Coach's own data point
+rather than just averaging the two positions.
+
+Vision, voice, and the Banister model are not built yet.
 
 ## System architecture
 
@@ -180,11 +197,14 @@ fitness-agent/
         soreness.py
         user_profile.py    POST /user/profile, GET /user/profile/{user_id}
         checkin.py         POST /user/checkin, GET /user/checkin/today/{user_id}
-        agent.py          POST /agent/chat, POST /agent/chat/stream (SSE), GET /agent/weekly-recap/{user_id}
+        agent.py          POST /agent/chat, POST /agent/chat/stream (SSE), GET /agent/weekly-recap/{user_id},
+                           POST /agent/debate
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
       agent/
-        tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements)
+        tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements,
+                           ask_schedule)
         orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
+        debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
     requirements.txt
     .env.example        ANTHROPIC_API_KEY=
   frontend/                Vite + React SPA (npm install && npm run dev)
@@ -204,6 +224,7 @@ fitness-agent/
       pages/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
+        Debate.jsx (Strength/Recovery/Head Coach bubble cards),
         LiveSession.jsx (still a roadmap placeholder)
 ```
 
@@ -220,10 +241,10 @@ cd frontend && npm install && npm run dev
 ## Next milestones (not yet built)
 
 1. ~~Orchestrator agent + Claude tool-use wiring~~ — done (`backend/app/agent/`)
-2. Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite
+2. ~~Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite~~ — done
 3. MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)
 4. Claude Vision meal photo analysis (`analyze_meal_photo`)
-5. Strength Coach / Recovery Coach / Head Coach multi-agent debate flow
+5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
 6. Banister impulse-response fatigue model + asymmetry checker
 7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/progress`)
 8. Optional: Google Calendar read-only integration

@@ -61,7 +61,7 @@ const FEATURE_CATEGORIES = [
       {
         title: 'Multi-Agent Debate',
         description: 'A Strength Coach and a Recovery Coach argue it out; a Head Coach resolves it.',
-        to: null,
+        to: '/debate',
       },
     ],
   },
