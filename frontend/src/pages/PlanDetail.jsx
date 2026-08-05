@@ -141,7 +141,9 @@ export default function PlanDetail() {
               </div>
               {isToday && (
                 <button
-                  onClick={() => navigate('/live-session', { state: { planExercises: groups.get(key) } })}
+                  onClick={() =>
+                    navigate('/live-session', { state: { planExercises: groups.get(key), planId: plan.id } })
+                  }
                   className="mt-4 px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 text-sm font-heading font-semibold"
                 >
                   Start today's session →
