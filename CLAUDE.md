@@ -170,6 +170,38 @@ BlazePose 33-landmark bundle, committed at `backend/app/vision/models/`), two ru
   separately unit-tested with synthetic angle sequences (6 synthetic reps covering good depth, a shallow
   rep, knee valgus, and excessive back lean all came back with exactly the expected flags).
 
+**Live Session rebuild** (`/live-session`): extended the client-side pose path to a full plan-driven
+workout runner. `EXERCISE_CONFIGS` in `LiveSession.jsx` generalizes the squat state machine to any
+exercise reducible to a 3-point angle that starts extended ("UP"), flexes to a "DOWN" position, then
+returns - squat (hip-knee-ankle), bicep curl (shoulder-elbow-wrist), push-up (shoulder-elbow-wrist,
+different thresholds + a hip-sag form check) all share one state machine, just different joint triplets/
+angle thresholds/form checks. Plan exercise names are keyword-matched to a config (`matchExerciseConfig`);
+unmatched ones are skipped with a note rather than blocking the session. Launching "Start today's session"
+from `/plans/:planId` passes today's exercises via router state, building a queue the session works
+through automatically (rep target reached -> rest countdown -> next set; all sets done -> `POST /logs` the
+completed exercise -> auto-advance to the next queue item -> "Workout complete!" on the last one) - an
+exercise picker still lets the user jump to any queued exercise manually. No plan exercises passed (direct
+nav) falls back to a single manually-picked exercise, practice-only (no history logging, since there's no
+real plan_id/exercise_id to log against).
+
+Skeleton overlay uses `DrawingUtils` + `PoseLandmarker.POSE_CONNECTIONS` (both confirmed in the installed
+package's own type declarations before use) on a `<canvas>` absolutely positioned over the video, mirrored
+to match; color is emerald/red per-frame based on the current exercise's live form check, not just at rep
+completion.
+
+Real correctness bug caught and fixed during this build: `requestAnimationFrame(renderLoop)` recurses on
+the closure captured when `start()` first scheduled it, so any component state read inside that recursive
+loop (rep count, current set, queue position, rest timer) would freeze at its value from that first call,
+never seeing later updates - a classic stale-closure trap. Fixed by moving all of that into a single
+`sessionRef` object the loop reads/writes directly, with `setXState()` calls alongside purely to drive the
+HUD. Verified live (headless Chromium, fake camera, real plan data seeded via the API): navigating from
+`/plans/:id`'s "Start today's session" correctly populates the exercise picker with the plan's exercises,
+starting the session shows the right initial HUD (rep target, set count, exercise label, UP phase), and
+switching exercises via the picker while stopped works. Full rep-counting accuracy against a real human
+wasn't verified (no real camera subject available in this sandboxed session, same limitation as the
+original build) - the state-machine algorithm itself was already proven via the batch path's synthetic
+unit tests, and this is a parameterization of the same logic.
+
 **Claude Vision meal-photo analysis** (`/meal-photo`, `POST /vision/analyze-meal`): separate code path from
 the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
 schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded
@@ -253,11 +285,17 @@ dashboard.
 
 ## Database schema (current)
 
-- `users` — id, name, email, experience_level, target_frequency, available_equipment (CSV),
-  primary_goals (CSV), physical_limitations, created_at
+- `users` — id, name, email, google_sub (nullable, set on Google sign-in - not built yet, deferred),
+  photo_url, experience_level, target_frequency, available_equipment (CSV), primary_goals (CSV),
+  physical_limitations, height_cm, weight_kg, preferred_units (metric/imperial), created_at
 - `exercises` — id, name, muscle_group, equipment (catalog table)
 - `plans` — id, user_id, name, is_active, notes, created_at
-- `plan_exercises` — id, plan_id, exercise_id, day_of_week, sets, reps, target_weight, order_index
+- `plan_exercises` — id, plan_id, exercise_id, day_of_week, sets, reps, target_weight, rest_seconds,
+  order_index
+- `form_analyses` — id, user_id, analyzed_at, exercise_name, rep_count, reps_with_good_depth/
+  knee_tracking/back_angle, raw_json (per-rep detail)
+- `meal_analyses` — id, user_id, analyzed_at, description, estimated_calories, protein_g, carbs_g,
+  fat_g, assessment
 - `logs` — id, user_id, exercise_id, plan_id (nullable), performed_at, sets, reps, weight, rpe, notes
 - `soreness_notes` — id, user_id, noted_at, muscle_group, severity (1-5), notes
 - `checkins` — id, user_id, checkin_date (unique per user/day), score (1-5),
@@ -277,8 +315,8 @@ fitness-agent/
       routers/
         users.py
         exercises.py
-        plans.py
-        logs.py
+        plans.py           POST /plans, GET /plans/user/{user_id}, GET /plans/{plan_id},
+                           PATCH /plans/{plan_id}/activate
         soreness.py
         user_profile.py    POST /user/profile, GET /user/profile/{user_id}
         checkin.py         POST /user/checkin, GET /user/checkin/today/{user_id}
@@ -318,7 +356,8 @@ fitness-agent/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
         Debate.jsx (Strength/Recovery/Head Coach bubble cards),
-        LiveSession.jsx (live webcam pose tracking + rep counting, squat video upload),
+        LiveSession.jsx (plan-driven multi-exercise pose tracking, skeleton overlay, auto-log/advance,
+          squat video upload), PlanDetail.jsx, PlanList.jsx,
         MealPhoto.jsx (photo upload, calorie/macro + goal-aware assessment)
 ```
 

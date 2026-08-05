@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
+import { DrawingUtils, FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 
@@ -9,23 +10,27 @@ const MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task'
 const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
 
-// Mirrors the thresholds and turning-point state machine in
-// backend/app/vision/pose_analysis.py so live and batch rep-counting agree
-// on what counts as a rep and how it's graded.
-const STANDING_ANGLE_DEG = 160
-const BOTTOM_ANGLE_DEG = 110
-const GOOD_DEPTH_MAX_ANGLE = 100
-const KNEE_TRACKING_MAX_OFFSET_PCT = 15
-const BACK_ANGLE_MAX_DEG = 45
+// BlazePose 33-point landmark indices (verified against the official
+// MediaPipe Pose Landmarker guide - same indices used server-side in
+// pose_analysis.py).
+const LM = {
+  LEFT_SHOULDER: 11,
+  RIGHT_SHOULDER: 12,
+  LEFT_ELBOW: 13,
+  RIGHT_ELBOW: 14,
+  LEFT_WRIST: 15,
+  RIGHT_WRIST: 16,
+  LEFT_HIP: 23,
+  RIGHT_HIP: 24,
+  LEFT_KNEE: 25,
+  RIGHT_KNEE: 26,
+  LEFT_ANKLE: 27,
+  RIGHT_ANKLE: 28,
+}
 
-const LEFT_HIP = 23
-const RIGHT_HIP = 24
-const LEFT_KNEE = 25
-const RIGHT_KNEE = 26
-const LEFT_ANKLE = 27
-const RIGHT_ANKLE = 28
-const LEFT_SHOULDER = 11
-const RIGHT_SHOULDER = 12
+function clamp(x, lo, hi) {
+  return Math.max(lo, Math.min(hi, x))
+}
 
 function angleDeg(a, b, c) {
   const ba = { x: a.x - b.x, y: a.y - b.y }
@@ -33,38 +38,110 @@ function angleDeg(a, b, c) {
   const dot = ba.x * bc.x + ba.y * bc.y
   const mag = Math.hypot(ba.x, ba.y) * Math.hypot(bc.x, bc.y)
   if (!mag) return 0
-  return (Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180) / Math.PI
+  return (Math.acos(clamp(dot / mag, -1, 1)) * 180) / Math.PI
 }
 
-function betterSide(landmarks, leftIdx, rightIdx) {
-  return landmarks[leftIdx].visibility >= landmarks[rightIdx].visibility ? leftIdx : rightIdx
+function avgVisibility(landmarks, indices) {
+  return indices.reduce((sum, i) => sum + landmarks[i].visibility, 0) / indices.length
 }
 
-function frameMetrics(landmarks) {
-  const hipIdx = betterSide(landmarks, LEFT_HIP, RIGHT_HIP)
-  const kneeIdx = betterSide(landmarks, LEFT_KNEE, RIGHT_KNEE)
-  const ankleIdx = betterSide(landmarks, LEFT_ANKLE, RIGHT_ANKLE)
-  const shoulderIdx = betterSide(landmarks, LEFT_SHOULDER, RIGHT_SHOULDER)
-  const hip = landmarks[hipIdx]
-  const knee = landmarks[kneeIdx]
-  const ankle = landmarks[ankleIdx]
-  const shoulder = landmarks[shoulderIdx]
+// Every supported exercise reduces to the same shape: a 3-point angle that
+// starts extended (large angle, "UP"), decreases to a flexed "DOWN" position,
+// then returns to extended - one rep. Only the joint triplet and thresholds
+// change between squats/curls/pushups, so one state machine drives all three.
+const EXERCISE_CONFIGS = {
+  squat: {
+    label: 'Squat',
+    left: [LM.LEFT_HIP, LM.LEFT_KNEE, LM.LEFT_ANKLE],
+    right: [LM.RIGHT_HIP, LM.RIGHT_KNEE, LM.RIGHT_ANKLE],
+    extendedAngle: 160,
+    flexedAngle: 110,
+    goodRepMaxAngle: 100, // depth: min angle reached must be at/below this
+    downCue: 'Keep descending',
+    upCue: 'Drive up!',
+    checkForm(landmarks, side) {
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const knee = landmarks[side === 'left' ? LM.LEFT_KNEE : LM.RIGHT_KNEE]
+      const ankle = landmarks[side === 'left' ? LM.LEFT_ANKLE : LM.RIGHT_ANKLE]
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const leftHip = landmarks[LM.LEFT_HIP]
+      const rightHip = landmarks[LM.RIGHT_HIP]
+      const hipWidth = Math.abs(leftHip.x - rightHip.x) || 1e-6
+      const kneeOffsetPct = (Math.abs(knee.x - ankle.x) / hipWidth) * 100
+      const trunk = { x: shoulder.x - hip.x, y: shoulder.y - hip.y }
+      const trunkMag = Math.hypot(trunk.x, trunk.y) || 1e-6
+      const backAngle = (Math.acos(clamp((trunk.y * -1) / trunkMag, -1, 1)) * 180) / Math.PI
+      if (kneeOffsetPct > 15) return { ok: false, cue: 'Push your knees out' }
+      if (backAngle > 45) return { ok: false, cue: 'Keep your chest up' }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return rep.minAngle <= this.goodRepMaxAngle ? null : 'Go lower next rep'
+    },
+  },
+  bicep_curl: {
+    label: 'Bicep Curl',
+    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    extendedAngle: 155,
+    flexedAngle: 55,
+    goodRepMaxAngle: 70,
+    downCue: 'Curl it up',
+    upCue: 'Lower with control',
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const elbow = landmarks[side === 'left' ? LM.LEFT_ELBOW : LM.RIGHT_ELBOW]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const torsoHeight = Math.abs(shoulder.y - hip.y) || 1e-6
+      const elbowDriftPct = (Math.abs(elbow.x - shoulder.x) / torsoHeight) * 100
+      if (elbowDriftPct > 25) return { ok: false, cue: 'Keep your elbow pinned to your side' }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return rep.minAngle <= this.goodRepMaxAngle ? null : 'Squeeze harder at the top'
+    },
+  },
+  pushup: {
+    label: 'Push-up',
+    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    extendedAngle: 160,
+    flexedAngle: 90,
+    goodRepMaxAngle: 100,
+    downCue: 'Lower your chest',
+    upCue: 'Push up!',
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const ankle = landmarks[side === 'left' ? LM.LEFT_ANKLE : LM.RIGHT_ANKLE]
+      const hipAngle = angleDeg(shoulder, hip, ankle)
+      if (hipAngle < 160) return { ok: false, cue: "Don't let your hips sag" }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return rep.minAngle <= this.goodRepMaxAngle ? null : 'Go lower next rep'
+    },
+  },
+}
 
-  if (Math.min(hip.visibility, knee.visibility, ankle.visibility, shoulder.visibility) < 0.5) return null
+// Free-text plan exercise names ("Back Squat", "Dumbbell Bicep Curl", ...)
+// are matched to a supported config by keyword rather than exact match.
+function matchExerciseConfig(name) {
+  const lower = name.toLowerCase()
+  if (lower.includes('squat')) return 'squat'
+  if (lower.includes('curl')) return 'bicep_curl'
+  if (lower.includes('push')) return 'pushup'
+  return null
+}
 
-  const kneeAngle = angleDeg(hip, knee, ankle)
-
-  const leftHip = landmarks[LEFT_HIP]
-  const rightHip = landmarks[RIGHT_HIP]
-  const hipWidth = Math.abs(leftHip.x - rightHip.x) || 1e-6
-  const kneeAnkleOffsetPct = (Math.abs(knee.x - ankle.x) / hipWidth) * 100
-
-  const trunk = { x: shoulder.x - hip.x, y: shoulder.y - hip.y }
-  const trunkMag = Math.hypot(trunk.x, trunk.y) || 1e-6
-  const dot = trunk.y * -1
-  const backAngle = (Math.acos(Math.max(-1, Math.min(1, dot / trunkMag))) * 180) / Math.PI
-
-  return { kneeAngle, kneeAnkleOffsetPct, backAngle }
+function frameAngleAndSide(landmarks, config) {
+  const side = avgVisibility(landmarks, config.left) >= avgVisibility(landmarks, config.right) ? 'left' : 'right'
+  const [aIdx, bIdx, cIdx] = side === 'left' ? config.left : config.right
+  if (Math.min(landmarks[aIdx].visibility, landmarks[bIdx].visibility, landmarks[cIdx].visibility) < 0.5) {
+    return null
+  }
+  const angle = angleDeg(landmarks[aIdx], landmarks[bIdx], landmarks[cIdx])
+  return { angle, side }
 }
 
 function speak(text) {
@@ -81,9 +158,41 @@ function tabClass(active) {
   }`
 }
 
+// Builds the exercise queue for the session: from the plan exercises passed
+// via router state if launched from a plan's "Start today's session", or a
+// single manually-picked exercise otherwise. Plan exercises whose name
+// doesn't match a supported pose-tracked exercise are skipped (noted, not
+// silently dropped) rather than blocking the whole session.
+function buildQueueFromPlan(planExercises) {
+  const queue = []
+  const skipped = []
+  for (const pe of planExercises) {
+    const configKey = matchExerciseConfig(pe.exercise.name)
+    if (!configKey) {
+      skipped.push(pe.exercise.name)
+      continue
+    }
+    queue.push({
+      planExerciseId: pe.id,
+      exerciseId: pe.exercise_id,
+      name: pe.exercise.name,
+      configKey,
+      targetSets: pe.sets || 3,
+      targetReps: pe.reps || 10,
+      targetWeight: pe.target_weight ?? null,
+      restSeconds: pe.rest_seconds || 60,
+    })
+  }
+  return { queue, skipped }
+}
+
 export default function LiveSession() {
   const { userId } = useSession()
+  const location = useLocation()
   const [tab, setTab] = useState('live')
+
+  const planExercises = location.state?.planExercises || null
+  const planId = location.state?.planId || null
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10 font-body space-y-6">
@@ -103,79 +212,224 @@ export default function LiveSession() {
         </button>
       </div>
 
-      {tab === 'live' ? <LiveWebcamSession /> : <SquatVideoUpload userId={userId} />}
+      {tab === 'live' ? (
+        <LiveWebcamSession userId={userId} planExercises={planExercises} planId={planId} />
+      ) : (
+        <SquatVideoUpload userId={userId} />
+      )}
     </div>
   )
 }
 
-function LiveWebcamSession() {
+function LiveWebcamSession({ userId, planExercises, planId }) {
   const videoRef = useRef(null)
+  const canvasRef = useRef(null)
+  const drawingUtilsRef = useRef(null)
   const landmarkerRef = useRef(null)
   const streamRef = useRef(null)
   const rafRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
-  const repStateRef = useRef({ state: 'standing', current: null, reachedBottom: false, prevAngle: null })
+  const repStateRef = useRef({ state: 'up', current: null, reachedFlexed: false, prevAngle: null })
+  const formOkRef = useRef(true)
+
+  // `renderLoop` recurses via requestAnimationFrame(renderLoop) using the
+  // closure captured when `start()` first scheduled it - it never picks up a
+  // later render's state. Everything the loop's logic needs to read or
+  // mutate lives here instead, so it's always current regardless of which
+  // render's closure is executing; the mirrored useState values below exist
+  // purely to drive the HUD.
+  const sessionRef = useRef({ queueIndex: 0, currentSet: 1, repCount: 0, restUntil: null, manualExercise: 'squat' })
+
+  const { queue, skipped } = useMemo(() => {
+    if (planExercises && planExercises.length > 0) return buildQueueFromPlan(planExercises)
+    return { queue: [], skipped: [] }
+  }, [planExercises])
+  const usingPlan = queue.length > 0
+
+  const [manualExercise, setManualExerciseState] = useState('squat')
+  const [queueIndex, setQueueIndexState] = useState(0)
+  const [currentSet, setCurrentSetState] = useState(1)
+  const [repCount, setRepCountState] = useState(0)
+  const [restRemaining, setRestRemaining] = useState(0)
+  const [resting, setResting] = useState(false)
+  const [complete, setComplete] = useState(false)
 
   const [status, setStatus] = useState('idle') // idle | loading | running | error
   const [error, setError] = useState('')
-  const [repCount, setRepCount] = useState(0)
+  const [phase, setPhase] = useState('UP')
   const [cue, setCue] = useState('Start the session, then step into frame')
+  const [formOk, setFormOk] = useState(true)
+
+  function setManualExercise(value) {
+    sessionRef.current.manualExercise = value
+    setManualExerciseState(value)
+  }
+
+  function getCurrentItem() {
+    return usingPlan ? queue[sessionRef.current.queueIndex] : null
+  }
+  function getCurrentConfig() {
+    const item = getCurrentItem()
+    return EXERCISE_CONFIGS[item ? item.configKey : sessionRef.current.manualExercise]
+  }
+  function getTargetReps() {
+    const item = getCurrentItem()
+    return item ? item.targetReps : 10
+  }
+  function getTargetSets() {
+    const item = getCurrentItem()
+    return item ? item.targetSets : 3
+  }
+
+  const config = getCurrentConfig()
+  const targetReps = getTargetReps()
+  const targetSets = getTargetSets()
+
+  function resetRepState() {
+    repStateRef.current = { state: 'up', current: null, reachedFlexed: false, prevAngle: null }
+  }
+
+  async function logCompletedExercise(item) {
+    if (!userId) return
+    try {
+      await api.createLog({
+        user_id: userId,
+        exercise_id: item.exerciseId,
+        plan_id: planId,
+        sets: item.targetSets,
+        reps: item.targetReps,
+        weight: item.targetWeight,
+      })
+    } catch {
+      // Logging failure shouldn't interrupt the live session itself.
+    }
+  }
+
+  async function handleSetComplete() {
+    const item = getCurrentItem()
+    const s = sessionRef.current
+
+    if (usingPlan && s.currentSet >= item.targetSets) {
+      await logCompletedExercise(item)
+      if (s.queueIndex + 1 < queue.length) {
+        const nextName = queue[s.queueIndex + 1].name
+        speak(`${item.name} complete. Next up: ${nextName}`)
+        setCue(`Nice work on ${item.name}! Next: ${nextName}`)
+        s.queueIndex += 1
+        s.currentSet = 1
+        s.repCount = 0
+        setQueueIndexState(s.queueIndex)
+        setCurrentSetState(1)
+        setRepCountState(0)
+        resetRepState()
+      } else {
+        speak('Workout complete! Great job.')
+        setComplete(true)
+        stop()
+      }
+      return
+    }
+
+    // Rest between sets (not after the final set of an exercise, which is
+    // handled above by advancing/finishing instead).
+    const rest = usingPlan ? item.restSeconds : 45
+    s.currentSet += 1
+    s.repCount = 0
+    setCurrentSetState(s.currentSet)
+    setRepCountState(0)
+    resetRepState()
+    s.restUntil = Date.now() + rest * 1000
+    setResting(true)
+    speak(`Set complete. Rest ${rest} seconds.`)
+  }
 
   function completeRep(rep) {
-    setRepCount((n) => n + 1)
-    const depthOk = rep.minKneeAngle <= GOOD_DEPTH_MAX_ANGLE
-    const kneeOk = rep.kneeAnkleOffsetPct <= KNEE_TRACKING_MAX_OFFSET_PCT
-    const backOk = rep.backAngle <= BACK_ANGLE_MAX_DEG
+    const s = sessionRef.current
+    s.repCount += 1
+    setRepCountState(s.repCount)
+    if (s.repCount >= getTargetReps()) {
+      handleSetComplete()
+    }
 
-    if (!depthOk) {
-      setCue('Go deeper next rep')
-      speak('Go deeper')
-    } else if (!kneeOk) {
-      setCue('Push your knees out')
-      speak('Knees out')
-    } else if (!backOk) {
-      setCue('Keep your chest up')
-      speak('Chest up')
+    const activeConfig = getCurrentConfig()
+    const formCue = activeConfig.repFormCue(rep)
+    if (formCue) {
+      setCue(formCue)
+      speak(formCue)
     } else {
       setCue('Good rep!')
       speak('Good rep')
     }
   }
 
-  function processFrame(metrics) {
-    if (!metrics) return
-    const rs = repStateRef.current
-    const angle = metrics.kneeAngle
+  function processFrame(landmarks) {
+    const activeConfig = getCurrentConfig()
+    const result = frameAngleAndSide(landmarks, activeConfig)
+    if (!result) return
+    const { angle, side } = result
 
-    if (rs.state === 'standing') {
-      if (angle < STANDING_ANGLE_DEG) {
+    const formCheck = activeConfig.checkForm(landmarks, side)
+    formOkRef.current = formCheck.ok
+    setFormOk(formCheck.ok)
+
+    const rs = repStateRef.current
+
+    if (rs.state === 'up') {
+      if (angle < activeConfig.extendedAngle) {
         rs.state = 'descending'
-        rs.current = { minKneeAngle: angle, ...metrics }
-        rs.reachedBottom = angle <= BOTTOM_ANGLE_DEG
-        setCue('Keep descending')
+        rs.current = { minAngle: angle }
+        rs.reachedFlexed = angle <= activeConfig.flexedAngle
+        setPhase('DOWN')
+        setCue(formCheck.cue || activeConfig.downCue)
       }
     } else if (rs.state === 'descending') {
-      if (angle < rs.current.minKneeAngle) rs.current = { minKneeAngle: angle, ...metrics }
-      if (angle <= BOTTOM_ANGLE_DEG) rs.reachedBottom = true
+      if (angle < rs.current.minAngle) rs.current = { minAngle: angle }
+      if (angle <= activeConfig.flexedAngle) rs.reachedFlexed = true
 
-      const turnedUpward = rs.reachedBottom && rs.prevAngle != null && angle > rs.prevAngle
+      const turnedUpward = rs.reachedFlexed && rs.prevAngle != null && angle > rs.prevAngle
       if (turnedUpward) {
         rs.state = 'ascending'
-        setCue('Drive up!')
-      } else if (angle >= STANDING_ANGLE_DEG) {
+        setPhase('UP')
+        setCue(formCheck.cue || activeConfig.upCue)
+      } else if (angle >= activeConfig.extendedAngle) {
         completeRep(rs.current)
-        rs.state = 'standing'
+        rs.state = 'up'
         rs.current = null
-        rs.reachedBottom = false
+        rs.reachedFlexed = false
+      } else if (formCheck.cue) {
+        setCue(formCheck.cue)
       }
-    } else if (rs.state === 'ascending' && angle >= STANDING_ANGLE_DEG) {
-      completeRep(rs.current)
-      rs.state = 'standing'
-      rs.current = null
-      rs.reachedBottom = false
+    } else if (rs.state === 'ascending') {
+      if (angle >= activeConfig.extendedAngle) {
+        completeRep(rs.current)
+        rs.state = 'up'
+        rs.current = null
+        rs.reachedFlexed = false
+        setPhase('UP')
+      } else if (formCheck.cue) {
+        setCue(formCheck.cue)
+      }
     }
 
     rs.prevAngle = angle
+  }
+
+  function drawSkeleton(landmarks) {
+    const canvas = canvasRef.current
+    const video = videoRef.current
+    if (!canvas || !video || !drawingUtilsRef.current) return
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+    }
+    const ctx = canvas.getContext('2d')
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    const color = formOkRef.current ? '#34d399' : '#f87171' // emerald-400 : red-400
+    drawingUtilsRef.current.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
+      color,
+      lineWidth: 3,
+    })
+    drawingUtilsRef.current.drawLandmarks(landmarks, { color, fillColor: color, radius: 4 })
   }
 
   function renderLoop() {
@@ -184,7 +438,15 @@ function LiveWebcamSession() {
       lastVideoTimeRef.current = video.currentTime
       const result = landmarkerRef.current.detectForVideo(video, performance.now())
       if (result.landmarks && result.landmarks[0]) {
-        processFrame(frameMetrics(result.landmarks[0]))
+        drawSkeleton(result.landmarks[0])
+        const s = sessionRef.current
+        if (s.restUntil && Date.now() >= s.restUntil) {
+          s.restUntil = null
+          setResting(false)
+        }
+        if (!s.restUntil) {
+          processFrame(result.landmarks[0])
+        }
       }
     }
     rafRef.current = requestAnimationFrame(renderLoop)
@@ -204,6 +466,7 @@ function LiveWebcamSession() {
   async function start() {
     setStatus('loading')
     setError('')
+    setComplete(false)
     try {
       const vision = await FilesetResolver.forVisionTasks(WASM_URL)
       landmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
@@ -217,10 +480,19 @@ function LiveWebcamSession() {
       videoRef.current.srcObject = stream
       await videoRef.current.play()
 
-      repStateRef.current = { state: 'standing', current: null, reachedBottom: false, prevAngle: null }
+      drawingUtilsRef.current = new DrawingUtils(canvasRef.current.getContext('2d'))
+      resetRepState()
       lastVideoTimeRef.current = -1
-      setRepCount(0)
-      setCue('Stand tall, then squat when ready')
+      sessionRef.current.queueIndex = 0
+      sessionRef.current.currentSet = 1
+      sessionRef.current.repCount = 0
+      sessionRef.current.restUntil = null
+      setQueueIndexState(0)
+      setCurrentSetState(1)
+      setRepCountState(0)
+      setResting(false)
+      setPhase('UP')
+      setCue('Stand tall / get set, then begin when ready')
       setStatus('running')
       rafRef.current = requestAnimationFrame(renderLoop)
     } catch (err) {
@@ -231,33 +503,112 @@ function LiveWebcamSession() {
 
   useEffect(() => stop, []) // release camera/model on unmount or tab switch
 
+  // Rest-countdown ticker, purely for the HUD display.
+  useEffect(() => {
+    if (!resting) return undefined
+    const interval = setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((sessionRef.current.restUntil - Date.now()) / 1000))
+      setRestRemaining(remaining)
+    }, 250)
+    return () => clearInterval(interval)
+  }, [resting])
+
   return (
-    <div className="card p-6">
+    <div className="card p-6 space-y-4">
+      {usingPlan && (
+        <div className="flex flex-wrap gap-2">
+          {queue.map((item, i) => (
+            <button
+              key={item.planExerciseId}
+              onClick={() => {
+                sessionRef.current.queueIndex = i
+                sessionRef.current.currentSet = 1
+                sessionRef.current.repCount = 0
+                sessionRef.current.restUntil = null
+                setQueueIndexState(i)
+                setCurrentSetState(1)
+                setRepCountState(0)
+                setResting(false)
+                resetRepState()
+              }}
+              disabled={status === 'running'}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+                i === queueIndex ? 'bg-coral-500' : 'bg-forest-900 text-slate-400'
+              }`}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+      )}
+      {!usingPlan && status !== 'running' && (
+        <div>
+          <label className="block text-xs text-slate-500 mb-1" htmlFor="manual-exercise">
+            Exercise
+          </label>
+          <select
+            id="manual-exercise"
+            value={manualExercise}
+            onChange={(e) => setManualExercise(e.target.value)}
+            className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+          >
+            {Object.entries(EXERCISE_CONFIGS).map(([key, c]) => (
+              <option key={key} value={key}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      {skipped.length > 0 && (
+        <p className="text-xs text-slate-500">
+          Not pose-trackable yet, skipped: {skipped.join(', ')}
+        </p>
+      )}
+
       <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
         <video ref={videoRef} className="w-full h-full object-cover -scale-x-100" playsInline muted />
-        {status === 'running' && (
+        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover -scale-x-100" />
+        {status === 'running' && !complete && (
           <>
             <div className="absolute top-4 left-4 bg-forest-950/80 rounded-xl px-4 py-2">
               <span className="text-4xl font-heading font-extrabold text-coral-400 tabular-nums">
                 {repCount}
               </span>
-              <span className="text-xs text-slate-400 ml-1">reps</span>
+              <span className="text-xs text-slate-400 ml-1">/ {targetReps} reps</span>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Set {currentSet}/{targetSets} · {config.label}
+              </p>
+            </div>
+            <div className="absolute top-4 right-4 bg-forest-950/80 rounded-xl px-3 py-2 text-xs font-heading font-bold">
+              <span className={formOk ? 'text-emerald-400' : 'text-red-400'}>{phase}</span>
             </div>
             <div className="absolute bottom-4 left-4 right-4 text-center">
-              <span className="inline-block bg-forest-950/80 rounded-xl px-4 py-2 text-sm font-heading font-semibold text-slate-100">
-                {cue}
+              <span
+                className={`inline-block bg-forest-950/80 rounded-xl px-4 py-2 text-sm font-heading font-semibold ${
+                  formOk ? 'text-slate-100' : 'text-red-400'
+                }`}
+              >
+                {resting ? `Resting… ${restRemaining}s` : cue}
               </span>
             </div>
           </>
         )}
-        {status !== 'running' && (
+        {complete && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-forest-950/90 text-center px-6">
+            <span className="text-3xl">🎉</span>
+            <p className="font-heading font-bold text-lg">Workout complete!</p>
+            <p className="text-sm text-slate-400">Nice work - logged to your history.</p>
+          </div>
+        )}
+        {status !== 'running' && !complete && (
           <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm px-6 text-center">
             {status === 'loading' ? 'Loading pose model…' : 'Camera off'}
           </div>
         )}
       </div>
 
-      <div className="mt-4 flex justify-center gap-3">
+      <div className="flex justify-center gap-3">
         {status === 'running' ? (
           <button
             onClick={stop}
@@ -271,13 +622,14 @@ function LiveWebcamSession() {
             disabled={status === 'loading'}
             className="px-5 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
           >
-            {status === 'loading' ? 'Starting…' : 'Start live session'}
+            {status === 'loading' ? 'Starting…' : complete ? 'Start again' : 'Start live session'}
           </button>
         )}
       </div>
-      {error && <p className="text-sm text-red-400 mt-3 text-center">{error}</p>}
-      <p className="text-xs text-slate-500 mt-3 text-center">
+      {error && <p className="text-sm text-red-400 mt-1 text-center">{error}</p>}
+      <p className="text-xs text-slate-500 text-center">
         Pose tracking runs entirely in your browser - video never leaves your device.
+        {!usingPlan && ' Launch from a plan’s "Start today’s session" to auto-log completed sets.'}
       </p>
     </div>
   )
