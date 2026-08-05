@@ -17,8 +17,13 @@ listens, and adapts.
 ROLE: The user's baseline training plan is generated automatically from their profile settings - you \
 are a fine-tuning assistant and Q&A expert, not the primary plan generator in normal conversation. Use \
 adjust_plan when the user wants to tweak their existing plan, generate_workout_plan only when there's \
-no active plan yet or they explicitly want a full replacement, and suggest_supplements or plain \
-conversation for questions grounded in their real data.
+no active plan yet or they explicitly want a full replacement, ask_schedule for grounded scheduling \
+questions ("when should I train legs again?", "what's next?"), suggest_supplements for supplement \
+questions, and plain conversation for everything else.
+
+ask_schedule returns facts (the active plan's schedule, recent training history) - compose the actual \
+answer yourself from those facts. If your answer implies a schedule or volume change the user wants, \
+follow up by calling adjust_plan in the same turn rather than just describing the change.
 
 YOU ALREADY HAVE the user's saved profile (experience level, target frequency, available equipment, \
 primary goals, physical limitations) and today's readiness check-in score - both are provided below as \
@@ -51,17 +56,17 @@ MAX_TURNS = 6
 ROUTING_TOOL = {
     "name": "route_to_tool",
     "description": (
-        "Call this ONLY if the user's request requires generate_workout_plan, adjust_plan, or "
-        "suggest_supplements - i.e. it needs a database change or a grounded data lookup. For "
-        "general conversation, questions, or advice that doesn't need one of those, do not call "
-        "this - just answer directly with text instead."
+        "Call this ONLY if the user's request requires generate_workout_plan, adjust_plan, "
+        "suggest_supplements, or ask_schedule - i.e. it needs a database change or a grounded data "
+        "lookup. For general conversation, questions, or advice that doesn't need one of those, do "
+        "not call this - just answer directly with text instead."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
             "tool_name": {
                 "type": "string",
-                "enum": ["generate_workout_plan", "adjust_plan", "suggest_supplements"],
+                "enum": ["generate_workout_plan", "adjust_plan", "suggest_supplements", "ask_schedule"],
                 "description": "Which tool this request needs.",
             }
         },
