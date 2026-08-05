@@ -20,13 +20,15 @@ adjust_plan when the user wants to tweak their existing plan, generate_workout_p
 no active plan yet or they explicitly want a full replacement, ask_schedule for grounded scheduling \
 questions ("when should I train legs again?", "what's next?"), suggest_supplements for supplement \
 questions, analyze_form for squat-form questions ("how was my squat form?", "what should I work on?"), \
-and plain conversation for everything else.
+ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating enough?"), and plain \
+conversation for everything else.
 
-ask_schedule and analyze_form return facts only (the active plan's schedule/training history, or the \
-user's most recent squat video analysis) - compose the actual answer yourself from those facts. If your \
-answer implies a schedule or volume change the user wants, follow up by calling adjust_plan in the same \
-turn rather than just describing the change. If analyze_form reports no analysis yet, tell the user to \
-upload a squat video on the Live Session page.
+ask_schedule, analyze_form, and ask_nutrition return facts only (the active plan's schedule/training \
+history, the user's most recent squat video analysis, or their recent meal-photo analyses) - compose the \
+actual answer yourself from those facts. If your answer implies a schedule or volume change the user \
+wants, follow up by calling adjust_plan in the same turn rather than just describing the change. If \
+analyze_form or ask_nutrition report no analysis yet, tell the user to upload a squat video on the Live \
+Session page or a meal photo on the Meal Photo page, respectively.
 
 YOU ALREADY HAVE the user's saved profile (experience level, target frequency, available equipment, \
 primary goals, physical limitations) and today's readiness check-in score - both are provided below as \
@@ -60,9 +62,9 @@ ROUTING_TOOL = {
     "name": "route_to_tool",
     "description": (
         "Call this ONLY if the user's request requires generate_workout_plan, adjust_plan, "
-        "suggest_supplements, ask_schedule, or analyze_form - i.e. it needs a database change or a "
-        "grounded data lookup. For general conversation, questions, or advice that doesn't need one of "
-        "those, do not call this - just answer directly with text instead."
+        "suggest_supplements, ask_schedule, analyze_form, or ask_nutrition - i.e. it needs a database "
+        "change or a grounded data lookup. For general conversation, questions, or advice that doesn't "
+        "need one of those, do not call this - just answer directly with text instead."
     ),
     "input_schema": {
         "type": "object",
@@ -75,6 +77,7 @@ ROUTING_TOOL = {
                     "suggest_supplements",
                     "ask_schedule",
                     "analyze_form",
+                    "ask_nutrition",
                 ],
                 "description": "Which tool this request needs.",
             }

@@ -163,6 +163,27 @@ class FormAnalysis(Base):
     user: Mapped["User"] = relationship()
 
 
+class MealAnalysis(Base):
+    """Summary of one Claude Vision meal-photo analysis. Kept so the
+    `ask_nutrition` agent tool can answer follow-up chat questions ("how am I
+    doing on protein this week?") from recent analyses without re-sending the
+    photo - same RAG-lite pattern as `analyze_form`/`form_analyses`."""
+
+    __tablename__ = "meal_analyses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    description: Mapped[str] = mapped_column(Text)
+    estimated_calories: Mapped[int] = mapped_column(Integer)
+    protein_g: Mapped[float] = mapped_column(Float)
+    carbs_g: Mapped[float] = mapped_column(Float)
+    fat_g: Mapped[float] = mapped_column(Float)
+    assessment: Mapped[str] = mapped_column(Text)
+
+    user: Mapped["User"] = relationship()
+
+
 CHECKIN_LABELS = {
     1: "Sick / Exhausted",
     2: "Sore",

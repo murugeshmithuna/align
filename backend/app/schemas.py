@@ -294,3 +294,19 @@ class FormAnalysisOut(BaseModel):
     rep_count: int
     video_duration_s: float | None
     reps: list[RepAnalysis]
+
+
+# ---------- Vision (meal photo analysis) ----------
+
+
+class MealAnalysisOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    analyzed_at: datetime
+    description: str
+    estimated_calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    assessment: str

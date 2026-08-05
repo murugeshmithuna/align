@@ -106,6 +106,18 @@ TOOL_SCHEMAS = [
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "ask_nutrition",
+        "description": (
+            "Gather the current user's recent uploaded meal-photo analyses (Claude Vision: description, "
+            "estimated calories/macros, goal-aware assessment per meal), so you can answer nutrition "
+            "questions - e.g. 'how's my protein been this week?' or 'am I eating enough for my goals?' - "
+            "grounded in their actual logged meals. Returns facts only - compose the actual answer "
+            "yourself. If there's no meal analysis yet, say so and suggest uploading a meal photo on the "
+            "Meal Photo page."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -266,10 +278,39 @@ def execute_analyze_form(db: Session, user_id: int, tool_input: dict) -> dict:
     }
 
 
+def execute_ask_nutrition(db: Session, user_id: int, tool_input: dict) -> dict:
+    analyses = db.scalars(
+        select(models.MealAnalysis)
+        .where(models.MealAnalysis.user_id == user_id)
+        .order_by(models.MealAnalysis.analyzed_at.desc())
+        .limit(10)
+    ).all()
+
+    if not analyses:
+        return {"has_analyses": False}
+
+    return {
+        "has_analyses": True,
+        "recent_meals": [
+            {
+                "analyzed_at": a.analyzed_at.isoformat(),
+                "description": a.description,
+                "estimated_calories": a.estimated_calories,
+                "protein_g": a.protein_g,
+                "carbs_g": a.carbs_g,
+                "fat_g": a.fat_g,
+                "assessment": a.assessment,
+            }
+            for a in analyses
+        ],
+    }
+
+
 TOOL_EXECUTORS = {
     "generate_workout_plan": execute_generate_workout_plan,
     "adjust_plan": execute_adjust_plan,
     "suggest_supplements": execute_suggest_supplements,
     "ask_schedule": execute_ask_schedule,
     "analyze_form": execute_analyze_form,
+    "ask_nutrition": execute_ask_nutrition,
 }

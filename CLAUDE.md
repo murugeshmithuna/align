@@ -157,7 +157,22 @@ BlazePose 33-landmark bundle, committed at `backend/app/vision/models/`), two ru
   separately unit-tested with synthetic angle sequences (6 synthetic reps covering good depth, a shallow
   rep, knee valgus, and excessive back lean all came back with exactly the expected flags).
 
-Voice cues beyond the live session and Claude Vision meal photo analysis are not built yet.
+**Claude Vision meal-photo analysis** (`/meal-photo`, `POST /vision/analyze-meal`): separate code path from
+the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
+schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded
+photo as an image content block in a single `claude-opus-4-8` call, forcing a `report_meal_analysis` tool
+call via `tool_choice` so the response comes back as directly-parseable structured numbers (description,
+calories, protein/carbs/fat, goal-aware assessment) instead of prose to parse. Results are stored in a new
+`meal_analyses` table; an `ask_nutrition` tool (RAG-lite, same pattern as `analyze_form`/`ask_schedule`)
+lets chat answer follow-ups like "how's my protein been?" from recent analyses. Verified live with a real
+food photo (grilled chicken, mashed potatoes, salad) and a user profile goal of "muscle gain / high protein
+intake": Claude correctly identified every component, gave a reasonable macro estimate while being honest
+about ambiguity (couldn't confirm butter/cream content in the potatoes), and tailored the assessment
+specifically to the stated goals (flagged the meal as light for a bulk, suggested a portion increase). The
+`ask_nutrition` chat follow-up correctly surfaced the single logged meal, was upfront that one meal isn't
+enough to judge a weekly trend, and asked a sensible clarifying question rather than overclaiming.
+
+Voice cues beyond the live session are not built yet.
 
 ## System architecture
 
@@ -176,8 +191,8 @@ tool/sub-agent -> database update -> response rendered in UI.
 | Vision | MediaPipe Pose (live) | Real-time webcam pose tracking for rep counting (done, client-side) |
 | Vision | `analyze_form` tool | Wraps batch pose analysis as an agent-callable tool (done) |
 | Vision | Rep Counter + Voice Cues | Detects full range-of-motion cycles; Web Speech API delivers mid-set cues (done) |
-| Multimodal | Claude Vision (food photos) | Sends meal images directly to Claude for analysis |
-| Multimodal | `analyze_meal_photo` tool | Calorie/macro estimate, eating-order reasoning, goal-aware swaps |
+| Multimodal | Claude Vision (food photos) | Sends meal images directly to Claude for analysis (done) |
+| Multimodal | `ask_nutrition` tool | RAG-lite follow-up over recent meal-photo analyses (done) |
 | Multi-Agent | Strength Coach Agent | Sub-agent reasoning from performance/training data |
 | Multi-Agent | Recovery Coach Agent | Sub-agent reasoning from recovery/soreness data |
 | Multi-Agent | Head Coach Resolver | Synthesizes both sub-agents' positions into one final recommendation |
@@ -194,6 +209,7 @@ tool/sub-agent -> database update -> response rendered in UI.
 - **Backend:** Python, FastAPI, uvicorn
 - **Database:** SQLite (SQLAlchemy ORM), Pydantic request/response models
 - **LLM:** Claude API — tool_choice / tool_use blocks for function calling; Claude Vision for meal photos
+  (image content block + forced `tool_choice` for structured output, `backend/app/agent/meal_vision.py`)
 - **Computer vision:** MediaPipe Pose Landmarker - Python Tasks API server-side for batch video
   (`mediapipe`, `opencv-python-headless`), `@mediapipe/tasks-vision` client-side (WASM) for the live
   webcam session; one shared `.task` model bundle for both
@@ -257,13 +273,15 @@ fitness-agent/
                            POST /agent/debate
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
         fatigue.py         GET /fatigue/user/{user_id}, POST /fatigue/asymmetry
-        vision.py          POST /vision/analyze-squat, GET /vision/form-analyses/user/{user_id}
+        vision.py          POST /vision/analyze-squat, GET /vision/form-analyses/user/{user_id},
+                           POST /vision/analyze-meal, GET /vision/meal-analyses/user/{user_id}
       agent/
         tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements,
-                           ask_schedule, analyze_form)
+                           ask_schedule, analyze_form, ask_nutrition)
         orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
         debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
         fatigue.py         Banister fitness/fatigue/form model + limb-asymmetry checker (pure computation, no LLM)
+        meal_vision.py     analyze_meal_photo() - single Claude Vision call, forced tool_choice for structured output
       vision/
         pose_analysis.py   MediaPipe Tasks Python API - analyze_squat_video() + unit-tested segment_reps()
         models/pose_landmarker_lite.task   Committed model bundle (~5.7MB, official Google-hosted BlazePose)
@@ -287,7 +305,8 @@ fitness-agent/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
         Debate.jsx (Strength/Recovery/Head Coach bubble cards),
-        LiveSession.jsx (live webcam pose tracking + rep counting, squat video upload)
+        LiveSession.jsx (live webcam pose tracking + rep counting, squat video upload),
+        MealPhoto.jsx (photo upload, calorie/macro + goal-aware assessment)
 ```
 
 ## Running locally
@@ -305,7 +324,7 @@ cd frontend && npm install && npm run dev
 1. ~~Orchestrator agent + Claude tool-use wiring~~ — done (`backend/app/agent/`)
 2. ~~Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite~~ — done
 3. ~~MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)~~ — done (`/live-session`)
-4. Claude Vision meal photo analysis (`analyze_meal_photo`)
+4. ~~Claude Vision meal photo analysis~~ — done (`/meal-photo`)
 5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
 6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/progress`)
 7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/progress`)

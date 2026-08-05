@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard.jsx'
 import LiveSession from './pages/LiveSession.jsx'
 import Progress from './pages/Progress.jsx'
 import Debate from './pages/Debate.jsx'
+import MealPhoto from './pages/MealPhoto.jsx'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
         <Route path="/live-session" element={<LiveSession />} />
         <Route path="/progress" element={<Progress />} />
         <Route path="/debate" element={<Debate />} />
+        <Route path="/meal-photo" element={<MealPhoto />} />
       </Route>
     </Routes>
   )
