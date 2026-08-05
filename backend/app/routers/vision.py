@@ -100,7 +100,9 @@ async def analyze_meal(
         protein_g=result["protein_g"],
         carbs_g=result["carbs_g"],
         fat_g=result["fat_g"],
-        assessment=result["assessment"],
+        macro_summary=result["macro_summary"],
+        quick_tip=result["quick_tip"],
+        timing_note=result["timing_note"],
     )
     db.add(analysis)
     db.commit()

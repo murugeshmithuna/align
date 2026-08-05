@@ -299,7 +299,9 @@ def execute_ask_nutrition(db: Session, user_id: int, tool_input: dict) -> dict:
                 "protein_g": a.protein_g,
                 "carbs_g": a.carbs_g,
                 "fat_g": a.fat_g,
-                "assessment": a.assessment,
+                "macro_summary": a.macro_summary,
+                "quick_tip": a.quick_tip,
+                "timing_note": a.timing_note,
             }
             for a in analyses
         ],

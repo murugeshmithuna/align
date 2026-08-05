@@ -189,7 +189,12 @@ class MealAnalysis(Base):
     protein_g: Mapped[float] = mapped_column(Float)
     carbs_g: Mapped[float] = mapped_column(Float)
     fat_g: Mapped[float] = mapped_column(Float)
-    assessment: Mapped[str] = mapped_column(Text)
+    # Three short (<15-word) feedback fields, schema-enforced on the way in
+    # (see meal_vision.py's strict tool schema) rather than one free-text
+    # blob the model has to self-format into bullets.
+    macro_summary: Mapped[str] = mapped_column(String(200))
+    quick_tip: Mapped[str] = mapped_column(String(200))
+    timing_note: Mapped[str] = mapped_column(String(200))
 
     user: Mapped["User"] = relationship()
 
