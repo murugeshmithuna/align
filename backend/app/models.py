@@ -34,6 +34,12 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
 
+    # Set once a user signs in with Google; null for accounts created via the
+    # plain name/email flow. `google_sub` (Google's stable per-account "sub"
+    # claim, not the email) is what upserts key off - see auth.py.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
+    photo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Onboarding / baseline profile - injected into the orchestrator's system
     # prompt so the chat agent never has to ask for this again.
     experience_level: Mapped[str | None] = mapped_column(String(50), nullable=True)
@@ -43,6 +49,9 @@ class User(Base):
     )
     primary_goals_csv: Mapped[str | None] = mapped_column("primary_goals", String(255), nullable=True)
     physical_limitations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    preferred_units: Mapped[str] = mapped_column(String(10), default="metric")  # "metric" | "imperial"
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
@@ -104,6 +113,7 @@ class PlanExercise(Base):
     sets: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     target_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rest_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 
     plan: Mapped["Plan"] = relationship(back_populates="plan_exercises")

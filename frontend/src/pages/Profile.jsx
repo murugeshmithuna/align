@@ -17,6 +17,21 @@ const GOAL_OPTIONS = [
   { value: 'endurance', label: 'Endurance' },
 ]
 
+// height_cm/weight_kg are always stored in metric - these just convert for
+// display when the user's preference is imperial.
+const CM_PER_IN = 2.54
+const KG_PER_LB = 0.45359237
+
+function metricToDisplay(value, units, factor) {
+  if (value == null || value === '') return ''
+  return units === 'imperial' ? Number((value / factor).toFixed(1)) : value
+}
+
+function displayToMetric(value, units, factor) {
+  if (value === '' || value == null) return null
+  return units === 'imperial' ? Number(value) * factor : Number(value)
+}
+
 export default function Profile() {
   const { userId } = useSession()
   const { showToast } = useToast()
@@ -27,6 +42,9 @@ export default function Profile() {
   const [equipment, setEquipment] = useState([])
   const [goals, setGoals] = useState([])
   const [limitations, setLimitations] = useState('')
+  const [heightDisplay, setHeightDisplay] = useState('')
+  const [weightDisplay, setWeightDisplay] = useState('')
+  const [preferredUnits, setPreferredUnits] = useState('metric')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [hasSaved, setHasSaved] = useState(false)
@@ -35,11 +53,15 @@ export default function Profile() {
     api
       .getProfile(userId)
       .then((data) => {
+        const units = data.preferred_units || 'metric'
         setExperienceLevel(data.experience_level || 'beginner')
         setTargetFrequency(data.target_frequency || 3)
         setEquipment(data.available_equipment || [])
         setGoals(data.primary_goals || [])
         setLimitations(data.physical_limitations || '')
+        setPreferredUnits(units)
+        setHeightDisplay(metricToDisplay(data.height_cm, units, CM_PER_IN))
+        setWeightDisplay(metricToDisplay(data.weight_kg, units, KG_PER_LB))
         setHasSaved(Boolean(data.experience_level))
       })
       .catch(() => {
@@ -47,6 +69,17 @@ export default function Profile() {
       })
       .finally(() => setLoading(false))
   }, [userId])
+
+  // Switching the unit toggle converts the currently-typed value in place,
+  // rather than clearing it or silently reinterpreting the same number under
+  // a different unit.
+  function handleUnitsChange(nextUnits) {
+    const heightCm = displayToMetric(heightDisplay, preferredUnits, CM_PER_IN)
+    const weightKg = displayToMetric(weightDisplay, preferredUnits, KG_PER_LB)
+    setHeightDisplay(metricToDisplay(heightCm, nextUnits, CM_PER_IN))
+    setWeightDisplay(metricToDisplay(weightKg, nextUnits, KG_PER_LB))
+    setPreferredUnits(nextUnits)
+  }
 
   function toggle(list, setList, value) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
@@ -67,6 +100,9 @@ export default function Profile() {
         available_equipment: equipment,
         primary_goals: goals,
         physical_limitations: limitations || null,
+        height_cm: displayToMetric(heightDisplay, preferredUnits, CM_PER_IN),
+        weight_kg: displayToMetric(weightDisplay, preferredUnits, KG_PER_LB),
+        preferred_units: preferredUnits,
       })
       showToast(isFirstSave ? 'Profile saved - your baseline plan is ready!' : 'Profile saved.')
       setHasSaved(true)
@@ -149,6 +185,61 @@ export default function Profile() {
                 {opt.label}
               </label>
             ))}
+          </div>
+        </div>
+
+        <div>
+          <span className="block text-sm mb-1">Units</span>
+          <div className="flex gap-4 text-sm text-slate-300">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="units"
+                checked={preferredUnits === 'metric'}
+                onChange={() => handleUnitsChange('metric')}
+              />
+              Metric (cm / kg)
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                name="units"
+                checked={preferredUnits === 'imperial'}
+                onChange={() => handleUnitsChange('imperial')}
+              />
+              Imperial (in / lb)
+            </label>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm mb-1" htmlFor="height">
+              Height ({preferredUnits === 'metric' ? 'cm' : 'in'})
+            </label>
+            <input
+              id="height"
+              type="number"
+              min="0"
+              step="0.1"
+              value={heightDisplay}
+              onChange={(e) => setHeightDisplay(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-1" htmlFor="weight">
+              Weight ({preferredUnits === 'metric' ? 'kg' : 'lb'})
+            </label>
+            <input
+              id="weight"
+              type="number"
+              min="0"
+              step="0.1"
+              value={weightDisplay}
+              onChange={(e) => setWeightDisplay(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+            />
           </div>
         </div>
 
