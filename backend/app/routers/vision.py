@@ -7,12 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
+from app.agent.meal_vision import analyze_meal_photo
 from app.database import get_db
 from app.vision.pose_analysis import analyze_squat_video
 
 router = APIRouter(prefix="/vision", tags=["vision"])
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
+MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
 @router.post("/analyze-squat", response_model=schemas.FormAnalysisOut)
@@ -64,6 +67,56 @@ async def analyze_squat(
         "video_duration_s": result["video_duration_s"],
         "reps": reps,
     }
+
+
+@router.post("/analyze-meal", response_model=schemas.MealAnalysisOut)
+async def analyze_meal(
+    user_id: int = Form(...),
+    photo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+):
+    if not db.get(models.User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    media_type = photo.content_type or "image/jpeg"
+    if media_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported image type: {media_type}")
+
+    image_bytes = await photo.read()
+    if len(image_bytes) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image too large (max 10 MB)")
+
+    try:
+        result = analyze_meal_photo(db, user_id, image_bytes, media_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    analysis = models.MealAnalysis(
+        user_id=user_id,
+        description=result["description"],
+        estimated_calories=result["estimated_calories"],
+        protein_g=result["protein_g"],
+        carbs_g=result["carbs_g"],
+        fat_g=result["fat_g"],
+        assessment=result["assessment"],
+    )
+    db.add(analysis)
+    db.commit()
+    db.refresh(analysis)
+    return analysis
+
+
+@router.get("/meal-analyses/user/{user_id}", response_model=list[schemas.MealAnalysisOut])
+def list_meal_analyses(user_id: int, db: Session = Depends(get_db)):
+    stmt = (
+        select(models.MealAnalysis)
+        .where(models.MealAnalysis.user_id == user_id)
+        .order_by(models.MealAnalysis.analyzed_at.desc())
+        .limit(20)
+    )
+    return db.scalars(stmt).all()
 
 
 @router.get("/form-analyses/user/{user_id}", response_model=list[schemas.FormAnalysisOut])

@@ -56,7 +56,7 @@ const FEATURE_CATEGORIES = [
       {
         title: 'Food Photo Analysis',
         description: 'Snap a meal photo for a calorie/macro estimate and goal-aware swaps.',
-        to: null,
+        to: '/meal-photo',
       },
       {
         title: 'Multi-Agent Debate',

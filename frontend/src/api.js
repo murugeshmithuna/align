@@ -36,12 +36,26 @@ export const api = {
   getFatigue: (userId) => request(`/fatigue/user/${userId}`),
   checkAsymmetry: (payload) => request('/fatigue/asymmetry', { method: 'POST', body: JSON.stringify(payload) }),
 
-  // Multipart upload - can't use the JSON `request()` helper above.
+  // Multipart uploads - can't use the JSON `request()` helper above.
   analyzeSquat: async (userId, file) => {
     const formData = new FormData()
     formData.append('user_id', userId)
     formData.append('video', file)
     const res = await fetch(`${API_BASE_URL}/vision/analyze-squat`, { method: 'POST', body: formData })
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      const error = new Error(data?.detail || `HTTP ${res.status}`)
+      error.status = res.status
+      throw error
+    }
+    return data
+  },
+
+  analyzeMeal: async (userId, file) => {
+    const formData = new FormData()
+    formData.append('user_id', userId)
+    formData.append('photo', file)
+    const res = await fetch(`${API_BASE_URL}/vision/analyze-meal`, { method: 'POST', body: formData })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
       const error = new Error(data?.detail || `HTTP ${res.status}`)
