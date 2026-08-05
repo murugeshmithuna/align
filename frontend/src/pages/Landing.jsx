@@ -1,28 +1,142 @@
 import { Link } from 'react-router-dom'
 import HeroScene from '../components/HeroScene.jsx'
+import { useSession } from '../context/SessionContext.jsx'
 
-const FEATURES = [
+// Every feature from the system spec, grouped into the categories a visitor
+// actually thinks in. `to: null` means the feature isn't built yet - it still
+// gets its own card (so nothing is hidden), just an honest "Coming soon"
+// badge instead of a dead or fake link.
+const FEATURE_CATEGORIES = [
   {
-    title: 'Pose Tracking',
-    tag: 'Vision',
-    description:
-      'MediaPipe pose estimation checks squat form from an uploaded video and counts reps live from your webcam.',
+    name: 'Core Coaching',
+    description: 'Talk to your coach - it reads your profile and readiness automatically.',
+    features: [
+      {
+        title: 'AI Workout Plan Generation',
+        description: 'Describe your goals in plain language and get a structured training plan.',
+        to: '/dashboard',
+      },
+      {
+        title: 'Adaptive Plan Adjustment',
+        description: "Volume and intensity adjust to your logged performance and today's readiness.",
+        to: '/dashboard',
+      },
+      {
+        title: 'Supplement Guidance',
+        description: 'Recommendations grounded in your actual goals and training history.',
+        to: '/dashboard',
+      },
+      {
+        title: 'Grounded Schedule Q&A',
+        description: '"When should I train legs again?" - answered from your real logs, not guesses.',
+        to: null,
+      },
+    ],
   },
   {
-    title: 'Multi-Agent Coach',
-    tag: 'Multi-Agent',
-    description:
-      'A Strength Coach and a Recovery Coach debate your training data, resolved by a Head Coach into one recommendation.',
+    name: 'Vision & Live Coaching',
+    description: 'Real-time form feedback while you train.',
+    features: [
+      {
+        title: 'Live Rep Counting & Voice Coaching',
+        description: 'Webcam pose tracking counts reps and calls out cues mid-set.',
+        to: '/live-session',
+      },
+      {
+        title: 'Squat Form Check',
+        description: 'Upload a video for joint-angle analysis - depth, knee tracking, back angle.',
+        to: '/live-session',
+      },
+    ],
   },
   {
-    title: 'Fatigue Model',
-    tag: 'Modeling',
-    description:
-      'A real Banister impulse-response model tracks fitness and fatigue from your actual training load - not LLM guesswork.',
+    name: 'Multimodal & Multi-Agent',
+    description: 'Beyond chat: vision on your meals, debate between specialist coaches.',
+    features: [
+      {
+        title: 'Food Photo Analysis',
+        description: 'Snap a meal photo for a calorie/macro estimate and goal-aware swaps.',
+        to: null,
+      },
+      {
+        title: 'Multi-Agent Debate',
+        description: 'A Strength Coach and a Recovery Coach argue it out; a Head Coach resolves it.',
+        to: null,
+      },
+    ],
+  },
+  {
+    name: 'Analytics & Modeling',
+    description: 'Trends and physiology, not vibes.',
+    features: [
+      {
+        title: 'Progress Charts & Weekly Recap',
+        description: 'Volume and PR trends over time, plus an auto-generated weekly summary.',
+        to: '/progress',
+      },
+      {
+        title: 'Fatigue & Injury-Risk Modeling',
+        description: 'A real Banister impulse-response model projects fitness and fatigue trends.',
+        to: null,
+      },
+      {
+        title: 'Limb Asymmetry Check',
+        description: 'Left/right movement comparison reusing pose-estimation landmark data.',
+        to: null,
+      },
+    ],
+  },
+  {
+    name: 'Account & Daily Management',
+    description: 'The baseline the coach builds everything else from.',
+    features: [
+      {
+        title: 'Onboarding & Baseline Profile',
+        description: 'Set experience level, frequency, equipment, and goals once.',
+        to: '/profile',
+      },
+      {
+        title: 'Daily Readiness Check-In',
+        description: "Log how you feel today and today's plan adjusts automatically.",
+        to: '/checkin',
+      },
+      {
+        title: 'Calendar-Aware Scheduling',
+        description: 'Optional read-only Google Calendar sync factors busy days into scheduling.',
+        to: null,
+      },
+    ],
   },
 ]
 
+function FeatureCard({ feature }) {
+  const isBuilt = Boolean(feature.to)
+  return (
+    <div className="card p-5 flex flex-col h-full">
+      <h3 className="font-heading font-semibold">{feature.title}</h3>
+      <p className="text-sm text-slate-400 mt-1.5 flex-1">{feature.description}</p>
+      {isBuilt ? (
+        <Link
+          to={feature.to}
+          className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-coral-400 hover:text-coral-300 transition-colors"
+        >
+          Open →
+        </Link>
+      ) : (
+        <span className="mt-4 inline-block text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Coming soon
+        </span>
+      )}
+    </div>
+  )
+}
+
 export default function Landing() {
+  const { isAuthenticated } = useSession()
+  const primaryCta = isAuthenticated
+    ? { to: '/dashboard', label: 'Go to Dashboard' }
+    : { to: '/login', label: 'Get Started' }
+
   return (
     <div className="min-h-screen font-body">
       <HeroScene />
@@ -33,56 +147,68 @@ export default function Landing() {
           <span className="font-heading font-bold text-lg tracking-tight">AI Fitness Agent</span>
         </div>
         <Link
-          to="/login"
+          to={primaryCta.to}
           className="px-4 py-2 rounded-full border border-forest-600 hover:border-coral-400 transition-colors text-sm font-heading font-semibold"
         >
-          Sign In
+          {isAuthenticated ? 'Dashboard' : 'Sign In'}
         </Link>
       </header>
 
-      <main className="flex flex-col items-center justify-center text-center px-6 py-16">
-        <p className="uppercase tracking-[0.2em] text-coral-400 text-xs font-semibold mb-4">
-          A coach that watches, listens, and adapts
-        </p>
-        <h1 className="font-heading font-extrabold text-4xl md:text-6xl leading-tight max-w-3xl">
-          Your training plan,
-          <span className="text-coral-500"> alive and adapting.</span>
+      {/* Hero: website title first, tagline right under it, one clear CTA */}
+      <main className="flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
+        <h1 className="font-heading font-extrabold text-5xl md:text-7xl leading-tight">
+          AI Fitness Agent
         </h1>
-        <p className="mt-6 max-w-xl text-slate-300 text-base md:text-lg">
+        <p className="mt-4 max-w-2xl text-coral-400 text-lg md:text-xl font-heading font-semibold">
+          A coach that watches, listens, and adapts.
+        </p>
+        <p className="mt-5 max-w-xl text-slate-300 text-base md:text-lg">
           Onboard once, then let a multi-agent coach generate, adjust, and explain your training -
           grounded in your real logs, recovery, and daily readiness.
         </p>
 
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <div className="mt-10">
           <Link
-            to="/login"
-            className="px-6 py-3 rounded-full bg-coral-500 hover:bg-coral-600 transition-colors font-heading font-semibold shadow-lg shadow-coral-500/20"
+            to={primaryCta.to}
+            className="px-8 py-3.5 rounded-full bg-coral-500 hover:bg-coral-600 transition-colors font-heading font-semibold shadow-lg shadow-coral-500/20 inline-block"
           >
-            Get Started
-          </Link>
-          <Link
-            to="/login"
-            className="px-6 py-3 rounded-full border border-forest-600 hover:border-coral-400 transition-colors font-heading font-semibold"
-          >
-            Sign In
+            {primaryCta.label}
           </Link>
         </div>
       </main>
 
-      <section className="px-6 md:px-12 pb-20">
-        <h2 className="font-heading font-bold text-sm uppercase tracking-widest text-slate-400 text-center mb-6">
-          What it does
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-5xl mx-auto">
-          {FEATURES.map((feature) => (
-            <div key={feature.title} className="card p-6">
-              <span className="text-coral-400 text-xs font-semibold">{feature.tag}</span>
-              <h3 className="font-heading font-semibold text-lg mt-1">{feature.title}</h3>
-              <p className="text-sm text-slate-400 mt-2">{feature.description}</p>
-            </div>
-          ))}
+      {/* Features: one section per category, generous spacing between them */}
+      <section className="px-6 md:px-12 pb-8">
+        <div className="max-w-5xl mx-auto text-center mb-4">
+          <p className="uppercase tracking-[0.2em] text-coral-400 text-xs font-semibold">
+            Everything in one coach
+          </p>
+          <h2 className="font-heading font-bold text-2xl md:text-3xl mt-2">
+            Every feature, one tap away
+          </h2>
         </div>
       </section>
+
+      {FEATURE_CATEGORIES.map((category, i) => (
+        <section
+          key={category.name}
+          className={`px-6 md:px-12 py-10 ${i % 2 === 1 ? 'bg-forest-900/40' : ''}`}
+        >
+          <div className="max-w-5xl mx-auto">
+            <h3 className="font-heading font-bold text-lg">{category.name}</h3>
+            <p className="text-sm text-slate-400 mt-1 mb-6">{category.description}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {category.features.map((feature) => (
+                <FeatureCard key={feature.title} feature={feature} />
+              ))}
+            </div>
+          </div>
+        </section>
+      ))}
+
+      <footer className="px-6 md:px-12 py-10 border-t border-forest-800 text-center">
+        <p className="text-sm text-slate-500">AI Fitness Agent - a coach that watches, listens, and adapts.</p>
+      </footer>
     </div>
   )
 }

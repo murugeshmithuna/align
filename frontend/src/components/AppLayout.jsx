@@ -5,9 +5,9 @@ import Navbar from './Navbar.jsx'
 // Gates every nested route behind an active session and wraps them in the
 // shared top navbar.
 export default function AppLayout() {
-  const { userId } = useSession()
+  const { isAuthenticated } = useSession()
 
-  if (!userId) {
+  if (!isAuthenticated) {
     return <Navigate to="/login" replace />
   }
 
