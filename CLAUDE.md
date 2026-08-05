@@ -103,7 +103,26 @@ readiness 2/5): Strength Coach argued to push, Recovery Coach argued to back off
 resolved decisively toward recovery, explicitly re-reasoning about the Strength Coach's own data point
 rather than just averaging the two positions.
 
-Vision, voice, and the Banister model are not built yet.
+**Banister fatigue model + asymmetry checker** (`/progress`, `GET /fatigue/user/{user_id}`,
+`POST /fatigue/asymmetry`): `backend/app/agent/fatigue.py` is pure computation, no LLM call - like
+`GET /logs/user/{id}/progress`, not agent-routed. Per-log training load is a session-RPE-style proxy
+(`sets*reps*weight * rpe/10`), aggregated per day (rest days included as zero-load so the exponential
+decay actually applies across gaps) and run through the classic two-component Banister model: Fitness
+decays slowly (τ=42 days), Fatigue decays quickly (τ=7 days), Form = Fitness - 2×Fatigue. A deterministic
+risk read (`low`/`moderate`/`high`) thresholds today's Form/Fitness ratio - no LLM needed since it's a
+plain numeric rule, same philosophy as `plan_status_for_score()`. Frontend adds a 3-line Fitness/Fatigue/
+Form chart to the Progress page (validated categorical palette - emerald/coral/sky-blue - via the
+dataviz skill's `validate_palette.js`, since a 3-series chart needs one unlike the existing single-series
+volume/PR charts) plus a risk badge. The asymmetry checker takes raw left/right numeric samples (not
+video) and flags >10% side-to-side difference - the standard inter-limb asymmetry threshold - since real
+per-rep landmark measurements don't exist until MediaPipe pose tracking (next milestone) is built; the
+math is written to consume exactly that shape of data once it does, so wiring it up later is a UI-only
+change, not a model rewrite. Verified live: 3 weeks of increasingly heavy squat logs followed by a few
+rest days correctly showed Fitness/Fatigue both rising during training then Fatigue decaying faster than
+Fitness during the rest days (Form recovering, as expected physiologically); asymmetry check correctly
+flagged a 15.7% left-dominant sample set and correctly passed a 2.1% sample set.
+
+Vision, voice, and Claude Vision meal analysis are not built yet.
 
 ## System architecture
 
@@ -127,8 +146,8 @@ tool/sub-agent -> database update -> response rendered in UI.
 | Multi-Agent | Strength Coach Agent | Sub-agent reasoning from performance/training data |
 | Multi-Agent | Recovery Coach Agent | Sub-agent reasoning from recovery/soreness data |
 | Multi-Agent | Head Coach Resolver | Synthesizes both sub-agents' positions into one final recommendation |
-| Modeling | Banister Impulse-Response Model | Real fitness-fatigue calculation from training load history |
-| Modeling | Asymmetry Checker | Left/right limb comparison, reusing pose-estimation landmark data |
+| Modeling | Banister Impulse-Response Model | Real fitness-fatigue calculation from training load history (done) |
+| Modeling | Asymmetry Checker | Left/right comparison; takes raw measurements now, pose-landmark data later (done) |
 | Data | SQLite (users, exercises, logs, plans, soreness_notes) | Structured relational storage for all user data |
 | Data | RAG-lite context injection | Pulls recent logs/plan from SQLite, formats into prompt context before LLM calls |
 | Backend | FastAPI CRUD endpoints | Create user, log workout, fetch logs, serve all agent-tool DB operations |
@@ -200,11 +219,13 @@ fitness-agent/
         agent.py          POST /agent/chat, POST /agent/chat/stream (SSE), GET /agent/weekly-recap/{user_id},
                            POST /agent/debate
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
+        fatigue.py         GET /fatigue/user/{user_id}, POST /fatigue/asymmetry
       agent/
         tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements,
                            ask_schedule)
         orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
         debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
+        fatigue.py         Banister fitness/fatigue/form model + limb-asymmetry checker (pure computation, no LLM)
     requirements.txt
     .env.example        ANTHROPIC_API_KEY=
   frontend/                Vite + React SPA (npm install && npm run dev)
@@ -245,6 +266,6 @@ cd frontend && npm install && npm run dev
 3. MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)
 4. Claude Vision meal photo analysis (`analyze_meal_photo`)
 5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
-6. Banister impulse-response fatigue model + asymmetry checker
+6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/progress`)
 7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/progress`)
 8. Optional: Google Calendar read-only integration
