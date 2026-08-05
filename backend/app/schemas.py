@@ -332,4 +332,6 @@ class MealAnalysisOut(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
-    assessment: str
+    macro_summary: str
+    quick_tip: str
+    timing_note: str

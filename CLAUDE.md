@@ -205,15 +205,39 @@ unit tests, and this is a parameterization of the same logic.
 **Claude Vision meal-photo analysis** (`/meal-photo`, `POST /vision/analyze-meal`): separate code path from
 the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
 schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded
-photo as an image content block in a single `claude-opus-4-8` call, forcing a `report_meal_analysis` tool
-call via `tool_choice` so the response comes back as directly-parseable structured numbers (description,
-calories, protein/carbs/fat, goal-aware assessment) instead of prose to parse. Results are stored in a new
-`meal_analyses` table; an `ask_nutrition` tool (RAG-lite, same pattern as `analyze_form`/`ask_schedule`)
-lets chat answer follow-ups like "how's my protein been?" from recent analyses. Verified live with a real
-food photo (grilled chicken, mashed potatoes, salad) and a user profile goal of "muscle gain / high protein
-intake": Claude correctly identified every component, gave a reasonable macro estimate while being honest
-about ambiguity (couldn't confirm butter/cream content in the potatoes), and tailored the assessment
-specifically to the stated goals (flagged the meal as light for a bulk, suggested a portion increase). The
+photo as an image content block in a single `claude-opus-4-8` call, forcing a **strict** `report_meal_analysis`
+tool call (`"strict": true` + `"additionalProperties": false` on the schema - verified against the API
+reference before use, not guessed) via `tool_choice`, so the response comes back as directly-parseable
+structured numbers instead of prose to parse. Coach feedback is three separate short fields
+(`macro_summary`/`quick_tip`/`timing_note`, each schema-constrained to "under 15 words, no preamble")
+rather than one free-text blob the model has to self-format into bullets - the length/shape constraint is
+enforced by the schema, not by hoping a prose instruction is followed. `max_tokens` dropped from 1024 to
+400 to match (generous headroom for three short sentences + five numbers, not a real latency lever - see
+below). Results are stored in `meal_analyses`; `ask_nutrition` (RAG-lite, same pattern as
+`analyze_form`/`ask_schedule`) lets chat answer follow-ups like "how's my protein been?" from recent
+analyses.
+
+Frontend compresses the photo client-side before upload (canvas resize to fit 800px on the long edge,
+re-encoded as JPEG at 0.7 quality - a typical phone photo is several MB at 3000px+, more than a macro
+estimate needs) and shows a floating modal with a spinner and cycling stage text ("Analyzing image…" ->
+"Calculating macros…" -> "Generating coach insight…") while the request is in flight, since a single opaque
+API call has no real progress events to report - purely to replace a frozen-looking button with something
+that reads as "working," not literal progress. Submit button and file input are both disabled while loading
+to prevent duplicate requests.
+
+**Real latency finding, not a target hit**: this was requested with an "under 2-3 seconds" goal. Measured
+live end-to-end: ~28s. That's consistent with - not a regression from - the `claude-opus-4-8` latency
+already documented elsewhere in this file (baseline plan generation: "~15-30s, confirmed live"), which
+reflects this environment's model/proxy setup, not something a token ceiling or schema change can fix -
+vision input processing and Opus-tier generation time dominate, and 2-3s was never realistic for a
+vision-capable Opus call here regardless of optimization. The image compression and lower token ceiling
+are still real, valid improvements (less data over the wire, no wasted generation budget) - they just
+don't add up to an order-of-magnitude win on their own. The loading modal is doing the actual heavy lifting
+for the "app hangs" complaint, independent of how long the call actually takes.
+
+Verified live with a real food photo (grilled chicken, mashed potatoes, salad) and a user profile goal of
+"muscle gain / high protein intake": Claude correctly identified every component, gave a reasonable macro
+estimate, and all three feedback fields came back at 10-12 words each - within the enforced ceiling. The
 `ask_nutrition` chat follow-up correctly surfaced the single logged meal, was upfront that one meal isn't
 enough to judge a weekly trend, and asked a sensible clarifying question rather than overclaiming.
 
