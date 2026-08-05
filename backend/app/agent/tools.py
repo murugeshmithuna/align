@@ -94,6 +94,18 @@ TOOL_SCHEMAS = [
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "analyze_form",
+        "description": (
+            "Gather the current user's most recent uploaded squat-video analysis (MediaPipe pose "
+            "detection: rep count, and per-rep depth/knee-tracking/back-angle pass-fail flags), so you "
+            "can answer questions like 'how was my squat form?' or 'what should I work on?' grounded in "
+            "real measurements rather than generic cues. Returns facts only - compose the actual "
+            "critique yourself. If there's no analysis yet, say so and suggest uploading a squat video "
+            "on the Live Session page."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -234,9 +246,30 @@ def execute_ask_schedule(db: Session, user_id: int, tool_input: dict) -> dict:
     }
 
 
+def execute_analyze_form(db: Session, user_id: int, tool_input: dict) -> dict:
+    analysis = db.scalar(
+        select(models.FormAnalysis)
+        .where(models.FormAnalysis.user_id == user_id)
+        .order_by(models.FormAnalysis.analyzed_at.desc())
+    )
+    if not analysis:
+        return {"has_analysis": False}
+
+    return {
+        "has_analysis": True,
+        "exercise_name": analysis.exercise_name,
+        "analyzed_at": analysis.analyzed_at.isoformat(),
+        "rep_count": analysis.rep_count,
+        "reps_with_good_depth": analysis.reps_with_good_depth,
+        "reps_with_good_knee_tracking": analysis.reps_with_good_knee_tracking,
+        "reps_with_good_back_angle": analysis.reps_with_good_back_angle,
+    }
+
+
 TOOL_EXECUTORS = {
     "generate_workout_plan": execute_generate_workout_plan,
     "adjust_plan": execute_adjust_plan,
     "suggest_supplements": execute_suggest_supplements,
     "ask_schedule": execute_ask_schedule,
+    "analyze_form": execute_analyze_form,
 }
