@@ -2,6 +2,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
+from app.models import _today
 
 TOOL_SCHEMAS = [
     {
@@ -79,6 +80,17 @@ TOOL_SCHEMAS = [
             "history so a supplement recommendation can be grounded in real data rather than "
             "generic advice. Returns facts only - compose the actual recommendation yourself "
             "in your final response."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "ask_schedule",
+        "description": (
+            "Gather the current user's active plan schedule (which exercises fall on which day) and "
+            "recent training history, so you can answer scheduling questions - e.g. 'when should I "
+            "train legs again?' or 'what's next?' - grounded in their real data rather than generic "
+            "advice. Returns facts only - compose the actual answer yourself. If your answer implies "
+            "a schedule change the user wants, follow up with adjust_plan in the same turn."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
@@ -177,8 +189,54 @@ def execute_suggest_supplements(db: Session, user_id: int, tool_input: dict) -> 
     }
 
 
+def execute_ask_schedule(db: Session, user_id: int, tool_input: dict) -> dict:
+    user = db.get(models.User, user_id)
+    if not user:
+        return {"error": "user not found"}
+
+    plans = db.scalars(
+        select(models.Plan).where(models.Plan.user_id == user_id).order_by(models.Plan.created_at.desc())
+    ).all()
+    plan = next((p for p in plans if p.is_active), plans[0] if plans else None)
+
+    plan_schedule = []
+    if plan:
+        for pe in plan.plan_exercises:
+            plan_schedule.append(
+                {
+                    "exercise": pe.exercise.name,
+                    "muscle_group": pe.exercise.muscle_group,
+                    "day_of_week": pe.day_of_week,  # 0=Monday .. 6=Sunday
+                    "sets": pe.sets,
+                    "reps": pe.reps,
+                }
+            )
+
+    recent_logs = db.scalars(
+        select(models.WorkoutLog)
+        .where(models.WorkoutLog.user_id == user_id)
+        .order_by(models.WorkoutLog.performed_at.desc())
+        .limit(20)
+    ).all()
+
+    return {
+        "today_day_of_week": _today().weekday(),  # 0=Monday .. 6=Sunday
+        "active_plan_name": plan.name if plan else None,
+        "plan_schedule": plan_schedule,
+        "recent_logs": [
+            {
+                "exercise": log.exercise.name,
+                "muscle_group": log.exercise.muscle_group,
+                "performed_at": log.performed_at.isoformat(),
+            }
+            for log in recent_logs
+        ],
+    }
+
+
 TOOL_EXECUTORS = {
     "generate_workout_plan": execute_generate_workout_plan,
     "adjust_plan": execute_adjust_plan,
     "suggest_supplements": execute_suggest_supplements,
+    "ask_schedule": execute_ask_schedule,
 }
