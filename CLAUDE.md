@@ -67,6 +67,25 @@ orchestrator injects that profile into its system prompt on every turn, so the c
 the user to restate it — confirmed live: a bare "set me up with a workout plan" produced a full plan
 matching the saved equipment/frequency/limitations with zero clarifying questions.
 
+**Progress charts + weekly AI recap** (`/progress`): `GET /logs/user/{user_id}/progress` aggregates
+volume-by-date (sum of sets×reps×weight per day) and per-exercise weight history with a `is_pr` flag
+(running-max comparison, ties count) computed server-side. `GET /agent/weekly-recap/{user_id}` gathers
+the last 7 days of logs + check-ins and asks `claude-haiku-4-5` (fast model - pure summarization, no
+tools) for a short natural-language recap; returns a canned message instead of calling the LLM when
+there's no activity yet. Frontend renders both with Chart.js (`chart.js` + `react-chartjs-2`): single-
+series line/area charts (no legend needed per the dataviz skill's rule - one hue is enough when there's
+one series), PRs marked via larger point radius + surface ring rather than a second competing color, a
+"view as table" fallback under each chart. Verified live: seeded 3 weeks of progressive-overload squat
+logs + flat-then-dip-then-recover bench logs - `is_pr` correctly flags every squat session (monotonic
+increase) and correctly flags `false` only on the bench session that dipped below the existing record.
+
+**Deployed:** frontend on Vercel (`https://fitness-agent-topaz.vercel.app`, project `fitness-agent`,
+team `mithuna2`), backend on Render (`https://fitness-agent-wuvh.onrender.com`, service `fitness-agent`,
+**Free plan**). `VITE_API_BASE_URL` set directly to the Render URL. Two real caveats living in
+production right now: (1) Render's Free plan has **no persistent disk** - SQLite data resets on
+redeploys/restarts, upgrade to Starter (~$7/mo) + attach a Disk to fix; (2) Render Free spins down on
+inactivity, so the first request after idle time has a real cold-start delay (30s+).
+
 Vision, voice, multi-agent debate, and the Banister model are not built yet.
 
 ## System architecture
@@ -161,10 +180,11 @@ fitness-agent/
         soreness.py
         user_profile.py    POST /user/profile, GET /user/profile/{user_id}
         checkin.py         POST /user/checkin, GET /user/checkin/today/{user_id}
-        agent.py          POST /agent/chat, POST /agent/chat/stream (SSE)
+        agent.py          POST /agent/chat, POST /agent/chat/stream (SSE), GET /agent/weekly-recap/{user_id}
+        logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
       agent/
         tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements)
-        orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection
+        orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
     requirements.txt
     .env.example        ANTHROPIC_API_KEY=
   frontend/                Vite + React SPA (npm install && npm run dev)
@@ -183,7 +203,8 @@ fitness-agent/
         ChatPanel.jsx (SSE streaming chat), CheckinForm.jsx, CheckinModal.jsx
       pages/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
-        LiveSession.jsx, Progress.jsx (last two are roadmap placeholders)
+        Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
+        LiveSession.jsx (still a roadmap placeholder)
 ```
 
 ## Running locally
@@ -204,5 +225,5 @@ cd frontend && npm install && npm run dev
 4. Claude Vision meal photo analysis (`analyze_meal_photo`)
 5. Strength Coach / Recovery Coach / Head Coach multi-agent debate flow
 6. Banister impulse-response fatigue model + asymmetry checker
-7. Progress charts (Chart.js) + weekly AI recap
+7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/progress`)
 8. Optional: Google Calendar read-only integration

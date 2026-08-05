@@ -28,6 +28,9 @@ export const api = {
   submitCheckin: (payload) => request('/user/checkin', { method: 'POST', body: JSON.stringify(payload) }),
 
   listPlans: (userId) => request(`/plans/user/${userId}`),
+
+  getProgress: (userId) => request(`/logs/user/${userId}/progress`),
+  getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every
