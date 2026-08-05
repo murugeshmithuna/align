@@ -1,5 +1,6 @@
 import json
 from collections.abc import Iterator
+from datetime import timedelta
 
 import anthropic
 from sqlalchemy import select
@@ -8,7 +9,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.agent.tools import TOOL_EXECUTORS, TOOL_SCHEMAS
 from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, FAST_MODEL
-from app.models import _today
+from app.models import _today, _utcnow
 
 SYSTEM_PROMPT = """You are the orchestrator agent for the AI Fitness Agent, a coach that watches, \
 listens, and adapts.
@@ -261,3 +262,60 @@ def stream_agent_turn(db: Session, user_id: int, message: str) -> Iterator[str]:
 
     yield _sse({"content": "\n\nI couldn't finish that within the allotted steps - please try rephrasing."})
     yield _sse({"done": True})
+
+
+def generate_weekly_recap(db: Session, user_id: int) -> str:
+    """Summarizes the user's last 7 days of logs/check-ins in plain language.
+    Pure text generation (no tools, no plan changes) - uses the fast model
+    since this is a summarization task, not multi-step reasoning."""
+    client = _get_client()
+    _get_user_or_raise(db, user_id)
+
+    since_dt = _utcnow() - timedelta(days=7)
+    since_date = _today() - timedelta(days=7)
+
+    log_rows = db.execute(
+        select(models.WorkoutLog, models.Exercise.name)
+        .join(models.Exercise, models.WorkoutLog.exercise_id == models.Exercise.id)
+        .where(models.WorkoutLog.user_id == user_id, models.WorkoutLog.performed_at >= since_dt)
+        .order_by(models.WorkoutLog.performed_at.asc())
+    ).all()
+
+    checkins = db.scalars(
+        select(models.CheckIn)
+        .where(models.CheckIn.user_id == user_id, models.CheckIn.checkin_date >= since_date)
+        .order_by(models.CheckIn.checkin_date.asc())
+    ).all()
+
+    if not log_rows and not checkins:
+        return (
+            "No activity logged in the past week yet - log a few sessions and check in daily, "
+            "and I'll be able to summarize your week."
+        )
+
+    log_lines = (
+        "\n".join(
+            f"- {log.performed_at.date()}: {name} - {log.sets}x{log.reps} @ {log.weight or 'bodyweight'}"
+            + (f", RPE {log.rpe}" if log.rpe else "")
+            for log, name in log_rows
+        )
+        or "none logged"
+    )
+    checkin_lines = (
+        "\n".join(f"- {c.checkin_date}: {c.score}/5 ({c.label})" for c in checkins) or "none logged"
+    )
+
+    prompt = (
+        "Summarize this user's past 7 days of training in a short, encouraging weekly recap "
+        "(3-5 sentences). Mention notable trends (volume, consistency, readiness), and end with "
+        "one concrete, specific suggestion for next week.\n\n"
+        f"Workout logs (last 7 days):\n{log_lines}\n\n"
+        f"Daily readiness check-ins (last 7 days):\n{checkin_lines}"
+    )
+
+    response = client.messages.create(
+        model=FAST_MODEL,
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return "".join(block.text for block in response.content if block.type == "text")

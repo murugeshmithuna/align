@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.agent.orchestrator import run_agent_turn, stream_agent_turn
+from app.agent.orchestrator import generate_weekly_recap, run_agent_turn, stream_agent_turn
 from app.database import get_db
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -28,3 +28,13 @@ def agent_chat_stream(payload: schemas.AgentChatRequest, db: Session = Depends(g
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+@router.get("/weekly-recap/{user_id}", response_model=schemas.WeeklyRecapOut)
+def weekly_recap(user_id: int, db: Session = Depends(get_db)):
+    if not db.get(models.User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        return {"recap": generate_weekly_recap(db, user_id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))

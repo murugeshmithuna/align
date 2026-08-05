@@ -132,6 +132,33 @@ class LogOut(BaseModel):
     notes: str | None
 
 
+# ---------- Progress ----------
+
+
+class VolumePoint(BaseModel):
+    date: date
+    total_volume: float
+
+
+class ExerciseHistoryPoint(BaseModel):
+    performed_at: datetime
+    weight: float | None
+    reps: int | None
+    sets: int | None
+    is_pr: bool
+
+
+class ExerciseProgress(BaseModel):
+    exercise_id: int
+    exercise_name: str
+    history: list[ExerciseHistoryPoint]
+
+
+class ProgressOut(BaseModel):
+    volume_by_date: list[VolumePoint]
+    exercises: list[ExerciseProgress]
+
+
 # ---------- Soreness notes ----------
 
 
@@ -191,3 +218,7 @@ class AgentToolCall(BaseModel):
 class AgentChatResponse(BaseModel):
     reply: str
     tool_calls: list[AgentToolCall] = []
+
+
+class WeeklyRecapOut(BaseModel):
+    recap: str
