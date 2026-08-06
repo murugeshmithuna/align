@@ -40,6 +40,35 @@ worth flagging: the request asked for `/plan/active` as the Active Plan card's t
 data model - the card already links to whichever plan's real ID is currently active, which is the same UX
 outcome without a redundant second route resolving a magic string to that same ID.
 
+**Cosmic parallax hero background** (`CosmicParallaxBg.jsx`, Landing page only): replaced the earlier
+three.js particle-field `HeroScene.jsx` (now deleted, along with the `three` dependency it was the only
+consumer of - removing it dropped the production JS bundle from ~1.59MB to ~1.07MB). Converted from a TSX
+component spec the user pasted (this project has no TypeScript anywhere - dropped the `interface`/
+`React.FC` typing, kept the same props/logic) into plain JSX: layered star fields (700/200/100 dots at
+increasing size, each generated as a giant CSS `box-shadow` list of random `{x}px {y}px #FFF` entries -
+the classic single-div-many-shadows starfield trick - each layer drifting upward at a different speed via
+its own `animation-duration` for a parallax effect), a glowing horizon, a planet silhouette, and large
+low-opacity `head`/`text` ghost-text watermarked behind the real foreground heading. Explicitly scoped to
+just the Landing page's hero section (wrapped in its own `relative overflow-hidden` container, not the
+whole scrollable page) per the user's direction that the cosmic backdrop itself should stay hero-only,
+while the rest of the site stays visually "unified" with it simply by construction - every glow/planet
+color reuses this app's existing `--color-forest-*`/coral design tokens from `index.css` rather than a
+new, unrelated palette, so nothing elsewhere needed to change to feel consistent.
+
+**Real bug caught and fixed via a screenshot, not by reasoning about the CSS alone**: the planet
+silhouette (`#earth`) was originally sized with `aspect-ratio: 1/1` at `width: 160%` - on a roughly square
+or tall container that reads as a shallow dome peeking over the bottom edge, but on this hero's actual
+short, wide box (~1280×640) forcing a 1:1 aspect ratio made the circle so large it painted over the entire
+scene, hiding the star layers behind it completely (confirmed by checking the star element's computed
+`box-shadow` directly - the shadow list was present and correct, so the "missing stars" were actually
+present but fully occluded, not a generation bug). Fixed by decoupling the shape from `aspect-ratio`
+entirely - a fixed `height: 400px` with `bottom: -320px` on a `width: 160%` box, so `border-radius: 50%`
+renders it as a flattened ellipse (a wide/short box with `border-radius: 50%` is an ellipse inscribed in
+that box, not a forced circle) with only its ~80px top arc visible, regardless of the container's actual
+height. Verified with a before/after screenshot comparison - the first render showed a plain gradient with
+no visible stars, the fixed version shows scattered white dots, a warm coral horizon glow, and a green
+planet dome, matching the intended "deep space" look.
+
 **Dashboard widgets replaced a redundant "Quick links" grid** (the grid above just repeated the Navbar's
 own links one scroll down - removed, not restyled) **with three real data-driven cards**, still with zero
 inline feature tools per the strict-separation rule above - every card here still only links out, or in one
@@ -664,8 +693,8 @@ tool/sub-agent -> database update -> response rendered in UI.
 - **Calendar:** Google Calendar API (optional, read-only)
 - **Charts:** Plotly or Chart.js
 - **Frontend:** React + Vite + React Router, Tailwind CSS v4 (`@tailwindcss/vite`, no separate config
-  file - theme tokens live in `src/index.css`), three.js (landing-page hero), `@mediapipe/tasks-vision`
-  for the live pose-tracking overlay, `jspdf` for the workout-summary PDF export
+  file - theme tokens live in `src/index.css`), `@mediapipe/tasks-vision` for the live pose-tracking
+  overlay, `jspdf` for the workout-summary PDF export, `@react-oauth/google` for Google Sign-In
 - **Deployment:** Render/Railway (backend), Vercel (frontend)
 
 ## Visual design direction
@@ -771,7 +800,7 @@ fitness-agent/
         Header.jsx (minimal top bar - hamburger + logo left, avatar/name/logout right),
         Sidebar.jsx (slide-in left drawer, 8 core routes w/ emoji icons - replaces the deleted
           horizontal Navbar.jsx), AppLayout.jsx (auth gate + mounts Header/Sidebar/AIMessageBar),
-        HeroScene.jsx (three.js), CheckinForm.jsx, CheckinModal.jsx,
+        CosmicParallaxBg.jsx (deep-space parallax hero backdrop), CheckinForm.jsx, CheckinModal.jsx,
         AIMessageBar.jsx (floating FAB + slide-over drawer, available on every authenticated page - the
           only chat surface in the app now; replaced the deleted ChatPanel.jsx that used to live inline
           on the Dashboard. Plain JSX + inline SVG icons, no TypeScript/shadcn/lucide-react - this

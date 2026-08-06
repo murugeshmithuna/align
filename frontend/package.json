@@ -19,8 +19,7 @@
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
-    "tailwindcss": "^4.3.3",
-    "three": "^0.185.1"
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
