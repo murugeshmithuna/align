@@ -659,7 +659,7 @@ dashboard.
 
 ## Database schema (current)
 
-- `users` — id, name, email, google_sub (nullable, set on Google sign-in - not built yet, deferred),
+- `users` — id, name, email, google_sub (nullable, unique - set on Google sign-in, see `/auth/google`),
   photo_url, experience_level, target_frequency, available_equipment (CSV), primary_goals (CSV),
   physical_limitations, height_cm, weight_kg, preferred_units (metric/imperial), age, sex, activity_level
   (baseline-calculator inputs), daily_calorie_target, daily_protein_target, daily_carbs_target,
@@ -756,6 +756,43 @@ fitness-agent/
         MealPhoto.jsx (dual photo/text input tabs, editable Review & Edit modal w/ read-only auto-
           recalculating macros, button-triggered Daily Review card, logged-meal history w/ P/C/F badges)
 ```
+
+**Google Sign-In** (`/login`, `POST /auth/google`): the `User.google_sub`/`photo_url` columns and
+`GoogleAuthRequest`/`GoogleAuthOut` schemas had existed since early in the project but were unused until
+the user supplied a real Google Cloud OAuth Client ID/Secret (a downloaded `client_secret_*.json`).
+Frontend uses `@react-oauth/google`'s `<GoogleLogin>` (Google Identity Services, not a redirect-based
+OAuth flow) - clicking it gets a signed JWT `id_token` directly in the browser, no server round-trip
+needed just to start the flow. `backend/app/routers/auth.py`'s `POST /auth/google` verifies that token
+server-side via `google.oauth2.id_token.verify_oauth2_token()` (checks the cryptographic signature against
+Google's own public certs and confirms the `aud` claim matches `GOOGLE_CLIENT_ID` - a token is never
+trusted on its claims alone) and upserts a `User` keyed on `google_sub` (Google's stable per-account id,
+not email - a user could change their email on Google's side without it affecting this). If no user has
+that `google_sub` yet but one already exists with the same email (i.e. they'd previously signed up via
+the plain name/email flow), that existing account is linked (`google_sub` and `photo_url` backfilled)
+rather than creating a duplicate. `Login.jsx`'s Google button sits above the existing plain-login form
+with an "or" divider - both paths still work, this is additive, not a replacement. Since
+`GoogleAuthOut` already returns the full `UserOut` (including `experience_level`), the post-login redirect
+decision (`/dashboard` vs. `/profile` for first-timers) reads directly off that response instead of the
+second `GET /user/profile` round-trip the plain-login path's `enterAs()` does.
+
+Real Google Cloud project (`fitness-app-504711`) - `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` live in
+`backend/.env` (gitignored, never committed - only empty placeholders went into `.env.example`), the
+client ID (not secret, safe to expose in a browser bundle) lives in `frontend/.env` as
+`VITE_GOOGLE_CLIENT_ID`. The OAuth client's authorized JavaScript origins already covered both local dev
+ports (`localhost:5173`, `localhost:5180`) and the production Vercel URL, so no Google Cloud Console
+changes were needed on top of what the user had already configured. Verified live: the backend endpoint
+correctly rejects a malformed token with a clear 401 rather than a stack trace; the frontend button renders
+correctly (a real GSI iframe mounts, `client_id` correctly threaded through from `main.jsx`'s
+`GoogleOAuthProvider`) alongside the untouched existing login form. A full click-through with a real Google
+account's consent screen can't be scripted in this sandboxed environment (Google's popup flow requires
+genuine user interaction) - that step is on the user to confirm live. One transient, non-reproducible React
+"Invalid hook call" console error appeared on a single cold-load test run and did not recur on retry;
+treated as test-environment noise, not a real bug, consistent with this project's practice of not chasing
+one-off anomalies that don't reproduce. A real, reproducible "origin not allowed for this client ID" GSI
+warning did appear on every run despite the origin matching the configured list exactly - almost certainly
+Google Cloud Console's own config-propagation delay (well-documented as taking anywhere from minutes to
+longer after creating/editing OAuth credentials), not a bug in this code; if it persists for the user
+beyond that window, double-check the exact origin string (protocol/host/port) in Google Cloud Console.
 
 ## Running locally
 
