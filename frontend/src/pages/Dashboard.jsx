@@ -63,8 +63,6 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([])
   const [meals, setMeals] = useState([])
   const [activityLoading, setActivityLoading] = useState(true)
-  const [tip, setTip] = useState('')
-  const [tipLoading, setTipLoading] = useState(true)
 
   useEffect(() => {
     api
@@ -91,40 +89,6 @@ export default function Dashboard() {
       })
       .finally(() => setActivityLoading(false))
   }, [userId])
-
-  // The AI tip is fetched in the background, separately from the rest of the
-  // page - it needs a real model call (no fabricated "insight"), but nothing
-  // else on the dashboard should wait on it.
-  useEffect(() => {
-    if (activityLoading) return
-    const mostRecentLog = logs[0]
-    const mostRecentMeal = meals[0]
-    if (!mostRecentLog && !mostRecentMeal) {
-      setTipLoading(false)
-      return
-    }
-    const parts = []
-    if (mostRecentLog) {
-      parts.push(
-        `Most recent workout: ${mostRecentLog.exercise.name}, ${mostRecentLog.sets}x${mostRecentLog.reps}${
-          mostRecentLog.weight ? ` @ ${mostRecentLog.weight}` : ''
-        }.`,
-      )
-    }
-    if (mostRecentMeal) {
-      parts.push(`Most recent meal logged: ${mostRecentMeal.description} (~${mostRecentMeal.estimated_calories} kcal).`)
-    }
-    api
-      .chat({
-        user_id: userId,
-        message: `${parts.join(' ')} Give me exactly one short encouraging or actionable coaching sentence based on this - no preamble, no questions.`,
-      })
-      .then((data) => setTip(data.reply))
-      .catch(() => setTip(''))
-      .finally(() => setTipLoading(false))
-    // Only re-run when the underlying activity actually changes, not on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activityLoading, userId])
 
   function handleCheckinSubmitted(result) {
     setCheckin(result)
@@ -352,7 +316,15 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Recent Activity + AI Coach Insight */}
+        {/* Recent Activity - a clean log of the single most recent item, no
+            AI-generated text. A prior version fetched a one-off /agent/chat
+            "tip" here per most-recent-activity; removed entirely, since that
+            call shared the orchestrator's system prompt (which lists real
+            tool names like ask_nutrition in prose) and could echo one back
+            to the user, or narrate about needing to call a tool it never
+            actually called. Aggregated, tool-free nutrition insights now
+            live on /nutrition (daily review) and /analytics (weekly review)
+            instead of a per-item micro-insight here. */}
         <div className="card p-6">
           <h2 className="font-heading font-semibold mb-3">Recent activity</h2>
           {activityLoading ? (
@@ -371,26 +343,24 @@ export default function Dashboard() {
           ) : (
             <div>
               <p className="text-sm font-semibold">{mostRecentMeal.description}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                ~{mostRecentMeal.estimated_calories} kcal ·{' '}
-                {new Date(mostRecentMeal.analyzed_at).toLocaleDateString()}
-              </p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-xs text-slate-400 tabular-nums">
+                  {mostRecentMeal.estimated_calories} kcal · {new Date(mostRecentMeal.analyzed_at).toLocaleDateString()}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                  P {Math.round(mostRecentMeal.protein_g)}g
+                </span>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400">
+                  C {Math.round(mostRecentMeal.carbs_g)}g
+                </span>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                  F {Math.round(mostRecentMeal.fat_g)}g
+                </span>
+              </div>
             </div>
           )}
-
-          <div className="mt-4 pt-4 border-t border-forest-800">
-            <p className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">AI Coach insight</p>
-            {tipLoading ? (
-              <p className="text-sm text-slate-500 flex items-center gap-2">
-                <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
-                Thinking…
-              </p>
-            ) : tip ? (
-              <p className="text-sm text-slate-300 leading-relaxed">{tip}</p>
-            ) : (
-              <p className="text-sm text-slate-500">Log a workout or meal to get a tailored tip here.</p>
-            )}
-          </div>
         </div>
       </div>
 

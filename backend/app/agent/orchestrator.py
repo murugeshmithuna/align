@@ -1,6 +1,6 @@
 import json
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import anthropic
 from sqlalchemy import select
@@ -604,3 +604,154 @@ def generate_weekly_digest(db: Session, user_id: int) -> dict:
     )
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
+
+
+NUTRITION_REVIEW_TOOL = {
+    "name": "report_nutrition_review",
+    "description": "Report a short structured nutrition review.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "macro_status": {
+                "type": "string",
+                "description": (
+                    "One sentence comparing actual macros to the user's targets - cite real numbers "
+                    "(e.g. 'Hit 140g/160g protein, carbs ran high at 310g'). If no targets are set, say so."
+                ),
+            },
+            "key_pattern": {
+                "type": "string",
+                "description": (
+                    "One sentence naming a specific, concrete pattern in what was actually eaten - a "
+                    "particular meal, a timing pattern, a recurring choice. Not generic advice."
+                ),
+            },
+            "recommendation": {
+                "type": "string",
+                "description": "One concrete, specific, actionable adjustment tied to the pattern above.",
+            },
+        },
+        "required": ["macro_status", "key_pattern", "recommendation"],
+        "additionalProperties": False,
+    },
+}
+
+
+def _build_target_context(user: models.User) -> str:
+    parts = []
+    if user.daily_calorie_target:
+        parts.append(f"{user.daily_calorie_target} kcal")
+    if user.daily_protein_target:
+        parts.append(f"{user.daily_protein_target}g protein")
+    if user.daily_carbs_target:
+        parts.append(f"{user.daily_carbs_target}g carbs")
+    if user.daily_fat_target:
+        parts.append(f"{user.daily_fat_target}g fat")
+    return f"Daily targets: {', '.join(parts)}." if parts else "Daily targets: none set."
+
+
+def _run_nutrition_review(client, prompt: str) -> dict:
+    response = client.messages.create(
+        model=FAST_MODEL,
+        max_tokens=400,
+        tools=[NUTRITION_REVIEW_TOOL],
+        tool_choice={"type": "tool", "name": "report_nutrition_review"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    tool_block = next(block for block in response.content if block.type == "tool_use")
+    return tool_block.input
+
+
+def generate_daily_nutrition_review(db: Session, user_id: int) -> dict:
+    """Aggregated, tool-free nutrition synthesis over TODAY's logged meals -
+    built the same way as generate_weekly_digest (a forced strict tool call,
+    no `system` prompt, no other tools in scope) specifically so the model
+    can never narrate about needing to call a tool or leak an internal tool
+    name the way the old per-meal chat-based insight could. All of today's
+    real meal data is gathered from the DB *before* this function ever calls
+    the LLM, so there's nothing left for the model to claim it lacks access
+    to."""
+    client = _get_client()
+    user = _get_user_or_raise(db, user_id)
+
+    today_start = datetime.combine(_today(), time.min)
+    meals = db.scalars(
+        select(models.MealAnalysis)
+        .where(models.MealAnalysis.user_id == user_id, models.MealAnalysis.analyzed_at >= today_start)
+        .order_by(models.MealAnalysis.analyzed_at.asc())
+    ).all()
+
+    if not meals:
+        return {
+            "macro_status": "No meals logged today yet.",
+            "key_pattern": "Nothing to analyze - log a meal to get today's review.",
+            "recommendation": "Log at least one meal today so this review has real data to work with.",
+        }
+
+    totals = {
+        "calories": sum(m.estimated_calories for m in meals),
+        "protein_g": round(sum(m.protein_g for m in meals), 1),
+        "carbs_g": round(sum(m.carbs_g for m in meals), 1),
+        "fat_g": round(sum(m.fat_g for m in meals), 1),
+    }
+    meal_lines = "\n".join(
+        f"- {m.analyzed_at.strftime('%H:%M')}: {m.description} (~{m.estimated_calories} kcal, "
+        f"{m.protein_g}g protein, {m.carbs_g}g carbs, {m.fat_g}g fat)"
+        for m in meals
+    )
+
+    prompt = (
+        "Review this user's meals logged TODAY against their daily targets. Each field is ONE specific, "
+        "concrete sentence citing real numbers - no fluff, no generic advice.\n\n"
+        f"{_build_target_context(user)}\n\n"
+        f"Today's totals so far: {totals['calories']} kcal, {totals['protein_g']}g protein, "
+        f"{totals['carbs_g']}g carbs, {totals['fat_g']}g fat.\n\n"
+        f"Meals logged today:\n{meal_lines}"
+    )
+    return _run_nutrition_review(client, prompt)
+
+
+def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
+    """Weekly twin of generate_daily_nutrition_review - aggregates the last 7
+    days of meal_analyses into a consistency/protein-target/calorie-average
+    audit, same tool-free strict-call pattern for the same reason."""
+    client = _get_client()
+    user = _get_user_or_raise(db, user_id)
+
+    since_dt = _utcnow() - timedelta(days=7)
+    meals = db.scalars(
+        select(models.MealAnalysis)
+        .where(models.MealAnalysis.user_id == user_id, models.MealAnalysis.analyzed_at >= since_dt)
+        .order_by(models.MealAnalysis.analyzed_at.asc())
+    ).all()
+
+    if not meals:
+        return {
+            "macro_status": "No meals logged in the past 7 days.",
+            "key_pattern": "Nothing to analyze yet this week.",
+            "recommendation": "Log meals throughout the week so next week's audit has real data to work with.",
+        }
+
+    days_logged = len({m.analyzed_at.date() for m in meals})
+    avg_calories = round(sum(m.estimated_calories for m in meals) / days_logged)
+    avg_protein = round(sum(m.protein_g for m in meals) / days_logged, 1)
+    avg_carbs = round(sum(m.carbs_g for m in meals) / days_logged, 1)
+    avg_fat = round(sum(m.fat_g for m in meals) / days_logged, 1)
+    meal_lines = "\n".join(
+        f"- {m.analyzed_at.strftime('%a %H:%M')}: {m.description} (~{m.estimated_calories} kcal, "
+        f"{m.protein_g}g protein, {m.carbs_g}g carbs, {m.fat_g}g fat)"
+        for m in meals
+    )
+
+    prompt = (
+        "Audit this user's past 7 days of nutrition logging against their daily targets. Analyze "
+        "consistency (how many of the last 7 days actually have a logged meal), whether protein targets "
+        "are being hit on average, and the calorie average/trend over the week. Each field is ONE "
+        "specific, concrete sentence citing real numbers - no fluff, no generic advice.\n\n"
+        f"{_build_target_context(user)}\n\n"
+        f"Logged meals on {days_logged} of the last 7 days. Daily averages on days logged: "
+        f"{avg_calories} kcal, {avg_protein}g protein, {avg_carbs}g carbs, {avg_fat}g fat.\n\n"
+        f"All meals logged this week:\n{meal_lines}"
+    )
+    return _run_nutrition_review(client, prompt)

@@ -80,6 +80,11 @@ export const api = {
   analyzeMealText: (payload) =>
     request('/vision/analyze-meal-text', { method: 'POST', body: JSON.stringify(payload) }),
   saveMeal: (payload) => request('/vision/save-meal', { method: 'POST', body: JSON.stringify(payload) }),
+  estimateIngredient: (payload) =>
+    request('/vision/estimate-ingredient', { method: 'POST', body: JSON.stringify(payload) }),
+
+  getDailyNutritionReview: (userId) => request(`/agent/nutrition-review/daily/${userId}`),
+  getWeeklyNutritionReview: (userId) => request(`/agent/nutrition-review/weekly/${userId}`),
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every

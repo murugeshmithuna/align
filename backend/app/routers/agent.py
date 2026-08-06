@@ -4,7 +4,14 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.agent.debate import run_coach_debate
-from app.agent.orchestrator import generate_weekly_digest, generate_weekly_recap, run_agent_turn, stream_agent_turn
+from app.agent.orchestrator import (
+    generate_daily_nutrition_review,
+    generate_weekly_digest,
+    generate_weekly_nutrition_review,
+    generate_weekly_recap,
+    run_agent_turn,
+    stream_agent_turn,
+)
 from app.database import get_db
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -47,6 +54,26 @@ def weekly_digest(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     try:
         return generate_weekly_digest(db, user_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.get("/nutrition-review/daily/{user_id}", response_model=schemas.NutritionReviewOut)
+def nutrition_review_daily(user_id: int, db: Session = Depends(get_db)):
+    if not db.get(models.User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        return generate_daily_nutrition_review(db, user_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.get("/nutrition-review/weekly/{user_id}", response_model=schemas.NutritionReviewOut)
+def nutrition_review_weekly(user_id: int, db: Session = Depends(get_db)):
+    if not db.get(models.User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        return generate_weekly_nutrition_review(db, user_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 

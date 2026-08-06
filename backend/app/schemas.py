@@ -5,6 +5,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 
 ExperienceLevel = Literal["beginner", "intermediate", "advanced"]
 UnitPreference = Literal["metric", "imperial"]
+Sex = Literal["male", "female"]
+ActivityLevel = Literal["sedentary", "light", "moderate", "very_active"]
 
 
 # ---------- Users ----------
@@ -35,10 +37,14 @@ class UserOut(BaseModel):
     height_cm: float | None
     weight_kg: float | None
     preferred_units: UnitPreference
+    age: int | None
+    sex: Sex | None
+    activity_level: ActivityLevel | None
     daily_calorie_target: int | None
     daily_protein_target: float | None
     daily_carbs_target: float | None
     daily_fat_target: float | None
+    daily_fiber_target: float | None
     created_at: datetime
 
 
@@ -52,10 +58,14 @@ class UserProfileUpdate(BaseModel):
     height_cm: float | None = None
     weight_kg: float | None = None
     preferred_units: UnitPreference | None = None
+    age: int | None = None
+    sex: Sex | None = None
+    activity_level: ActivityLevel | None = None
     daily_calorie_target: int | None = None
     daily_protein_target: float | None = None
     daily_carbs_target: float | None = None
     daily_fat_target: float | None = None
+    daily_fiber_target: float | None = None
 
 
 # ---------- Auth (Google Sign-In) ----------
@@ -275,6 +285,12 @@ class WeeklyDigestOut(BaseModel):
     next_week_focus: str
 
 
+class NutritionReviewOut(BaseModel):
+    macro_status: str
+    key_pattern: str
+    recommendation: str
+
+
 class DebateRequest(BaseModel):
     user_id: int
     question: str | None = None
@@ -405,3 +421,15 @@ class MealSaveRequest(BaseModel):
     macro_summary: str
     quick_tip: str
     timing_note: str
+
+
+class IngredientEstimateRequest(BaseModel):
+    name: str
+    quantity: str
+
+
+class IngredientEstimateOut(BaseModel):
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
