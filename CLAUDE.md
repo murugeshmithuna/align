@@ -793,20 +793,45 @@ fitness-agent/
 **Google Sign-In** (`/login`, `POST /auth/google`): the `User.google_sub`/`photo_url` columns and
 `GoogleAuthRequest`/`GoogleAuthOut` schemas had existed since early in the project but were unused until
 the user supplied a real Google Cloud OAuth Client ID/Secret (a downloaded `client_secret_*.json`).
-Frontend uses `@react-oauth/google`'s `<GoogleLogin>` (Google Identity Services, not a redirect-based
-OAuth flow) - clicking it gets a signed JWT `id_token` directly in the browser, no server round-trip
-needed just to start the flow. `backend/app/routers/auth.py`'s `POST /auth/google` verifies that token
-server-side via `google.oauth2.id_token.verify_oauth2_token()` (checks the cryptographic signature against
-Google's own public certs and confirms the `aud` claim matches `GOOGLE_CLIENT_ID` - a token is never
-trusted on its claims alone) and upserts a `User` keyed on `google_sub` (Google's stable per-account id,
-not email - a user could change their email on Google's side without it affecting this). If no user has
-that `google_sub` yet but one already exists with the same email (i.e. they'd previously signed up via
-the plain name/email flow), that existing account is linked (`google_sub` and `photo_url` backfilled)
-rather than creating a duplicate. `Login.jsx`'s Google button sits above the existing plain-login form
-with an "or" divider - both paths still work, this is additive, not a replacement. Since
-`GoogleAuthOut` already returns the full `UserOut` (including `experience_level`), the post-login redirect
-decision (`/dashboard` vs. `/profile` for first-timers) reads directly off that response instead of the
-second `GET /user/profile` round-trip the plain-login path's `enterAs()` does.
+Frontend uses `@react-oauth/google`'s `<GoogleLogin>` (Google Identity Services). `backend/app/routers/
+auth.py`'s `POST /auth/google` verifies the resulting JWT `id_token` server-side via `google.oauth2.
+id_token.verify_oauth2_token()` (checks the cryptographic signature against Google's own public certs and
+confirms the `aud` claim matches `GOOGLE_CLIENT_ID` - a token is never trusted on its claims alone) and
+upserts a `User` keyed on `google_sub` (Google's stable per-account id, not email - a user could change
+their email on Google's side without it affecting this). If no user has that `google_sub` yet but one
+already exists with the same email (i.e. they'd previously signed up via the plain name/email flow), that
+existing account is linked (`google_sub` and `photo_url` backfilled) rather than creating a duplicate.
+`Login.jsx`'s Google button sits above the existing plain-login form with an "or" divider - both paths
+still work, this is additive, not a replacement.
+
+**Real bug found in live use, fixed with a redirect flow instead of the default popup**: the button
+initially used `<GoogleLogin>`'s default flow - a popup window + `postMessage` handshake between
+accounts.google.com and this app, with `GoogleAuthOut`'s full `UserOut` (`experience_level` included)
+letting the post-login redirect decision skip the second `GET /user/profile` round-trip the plain-login
+path's `enterAs()` needs. That default flow got confirmed stuck live in Safari - clicking an account in the
+picker did nothing at all, with no console error, until "Prevent Cross-Site Tracking" was manually
+disabled in Safari's settings, which fixed it immediately. Root cause: Safari's Intelligent Tracking
+Prevention blocks third-party storage access in exactly the popup context this handshake depends on - not
+something real end users should ever have to manually work around, so browser-sniffing to keep the popup
+for other browsers wasn't an acceptable fix; the whole flow moved to Google's redirect mode instead, which
+is a normal top-level page navigation and isn't subject to that restriction in any browser.
+
+The redirect flow's `login_uri` must be same-origin with whatever page rendered the button, because
+Google's CSRF protection sets a `g_csrf_token` cookie on that origin and later compares it against a
+matching field in the POST body - a cookie set on the frontend's origin (Vercel) would never reach a
+different origin (Render, the actual API host). Since the frontend and backend are on different domains,
+`frontend/api/google-redirect.js` is a small Vercel serverless function serving as that same-origin target
+instead: it verifies the CSRF cookie/body-field match, forwards the credential to the *existing*
+`POST /auth/google` JSON endpoint completely unchanged, and 302-redirects back to `/login?uid=...&is_new=
+...` (or `?google_error=...` on failure). `Login.jsx` picks that up in a mount-time effect and feeds it
+into the exact same `enterAs()` bridge the plain-login path already uses - no new/second session mechanism
+was introduced for this. Verified as thoroughly as a sandboxed environment allows without a real Google
+credential: unit-tested `google-redirect.js`'s branches directly (non-POST request, CSRF mismatch, backend
+success, backend rejection - each mocking `fetch` to avoid a real network call) and confirmed each redirects
+correctly; separately loaded `/login` with `?uid=&is_new=` and `?google_error=` query strings in a real
+browser and confirmed `enterAs()`'s routing and the error-message path both fire correctly. The actual
+live round-trip through a real Google consent screen after deploying the Vercel function is the one thing
+that has to be confirmed by the user - a real OAuth exchange can't be scripted end-to-end here.
 
 Real Google Cloud project (`fitness-app-504711`) - `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` live in
 `backend/.env` (gitignored, never committed - only empty placeholders went into `.env.example`), the
