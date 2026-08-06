@@ -45,6 +45,7 @@ export default function Profile() {
   const [heightDisplay, setHeightDisplay] = useState('')
   const [weightDisplay, setWeightDisplay] = useState('')
   const [preferredUnits, setPreferredUnits] = useState('metric')
+  const [calorieTarget, setCalorieTarget] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [hasSaved, setHasSaved] = useState(false)
@@ -62,6 +63,7 @@ export default function Profile() {
         setPreferredUnits(units)
         setHeightDisplay(metricToDisplay(data.height_cm, units, CM_PER_IN))
         setWeightDisplay(metricToDisplay(data.weight_kg, units, KG_PER_LB))
+        setCalorieTarget(data.daily_calorie_target ?? '')
         setHasSaved(Boolean(data.experience_level))
       })
       .catch(() => {
@@ -103,6 +105,7 @@ export default function Profile() {
         height_cm: displayToMetric(heightDisplay, preferredUnits, CM_PER_IN),
         weight_kg: displayToMetric(weightDisplay, preferredUnits, KG_PER_LB),
         preferred_units: preferredUnits,
+        daily_calorie_target: calorieTarget === '' ? null : Number(calorieTarget),
       })
       showToast(isFirstSave ? 'Profile saved - your baseline plan is ready!' : 'Profile saved.')
       setHasSaved(true)
@@ -241,6 +244,25 @@ export default function Profile() {
               className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="block text-sm mb-1" htmlFor="calorie-target">
+            Daily calorie target (optional)
+          </label>
+          <input
+            id="calorie-target"
+            type="number"
+            min="0"
+            step="10"
+            placeholder="e.g. 2400"
+            value={calorieTarget}
+            onChange={(e) => setCalorieTarget(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+          />
+          <p className="text-xs text-slate-500 mt-1">
+            Powers the calorie progress bar on your dashboard - leave blank if you'd rather not set one.
+          </p>
         </div>
 
         <div>
