@@ -244,6 +244,18 @@ estimate, and all three feedback fields came back at 10-12 words each - within t
 `ask_nutrition` chat follow-up correctly surfaced the single logged meal, was upfront that one meal isn't
 enough to judge a weekly trend, and asked a sensible clarifying question rather than overclaiming.
 
+**Global AI assistant** (`AIMessageBar.jsx`, mounted in `AppLayout`): a floating action button + slide-over
+drawer available from every authenticated page, not just the Dashboard - requested as a shadcn
+`/components/ui` TypeScript component with `lucide-react` icons, none of which exist in this project (no
+TypeScript anywhere, no shadcn setup, no lucide-react dependency - confirmed by searching before building
+anything). Built in plain JSX matching the app's existing conventions instead: inline SVG icons, Tailwind
+classes matching the rest of the design system, reuses the exact same `streamAgentChat` SSE logic already
+used by the Dashboard's `ChatPanel` rather than a second chat implementation. Verified live: FAB toggles the
+drawer, persists across route changes (mounted once in `AppLayout`, not per-page), and a real message
+streams a real reply into the drawer end-to-end. (One test run briefly returned an empty reply - traced to
+a transient Manifest proxy OAuth error, `M102: anthropic subscription credentials could not be refreshed`,
+not a bug in this component; a retry a minute later worked normally.)
+
 Voice cues beyond the live session are not built yet.
 
 ## System architecture
@@ -377,8 +389,11 @@ fitness-agent/
         SessionContext.jsx   Active user_id in localStorage
         ToastContext.jsx      useToast() + toast rendering
       components/
-        Navbar.jsx, AppLayout.jsx (auth gate + navbar), HeroScene.jsx (three.js),
-        ChatPanel.jsx (SSE streaming chat), CheckinForm.jsx, CheckinModal.jsx
+        Navbar.jsx, AppLayout.jsx (auth gate + navbar + mounts AIMessageBar), HeroScene.jsx (three.js),
+        ChatPanel.jsx (SSE streaming chat, Dashboard-only), CheckinForm.jsx, CheckinModal.jsx,
+        AIMessageBar.jsx (floating FAB + slide-over drawer, available on every authenticated page -
+          reuses the same streamAgentChat SSE logic as ChatPanel, plain JSX + inline SVG icons, no
+          TypeScript/shadcn/lucide-react - this project doesn't use any of those)
       pages/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
