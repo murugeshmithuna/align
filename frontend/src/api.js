@@ -83,12 +83,15 @@ export const api = {
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every
-// decoded frame ({content}, {tool, status}, {error}, {done}) as it arrives.
-export async function streamAgentChat(userId, message, onEvent) {
+// decoded frame ({content}, {tool, status}, {widget}, {history}, {error},
+// {done}) as it arrives. `history` is the prior turn's opaque conversation
+// state (echoed back from a previous {history} frame) - the backend is
+// stateless, so the caller owns persisting and replaying it.
+export async function streamAgentChat(userId, message, onEvent, history = []) {
   const res = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, message }),
+    body: JSON.stringify({ user_id: userId, message, history }),
   })
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => ({}))

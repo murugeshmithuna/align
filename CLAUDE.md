@@ -105,9 +105,70 @@ which made Haiku try to write a full exercise list itself and silently truncate 
 fixed by giving the router a schema that only ever needs `{"tool_name": "..."}`.)
 
 **Streaming** (`/agent/chat/stream`) uses `client.messages.stream(...)` and yields SSE frames
-(`data: {"content": "..."}`, `data: {"tool": name, "status": "running"|"done"}`, `data: {"done": true}`).
-Verified live with real inter-chunk timing (httpx `iter_raw()`) that Manifest forwards chunks
+(`data: {"content": "..."}`, `data: {"tool": name, "status": "running"|"done"}`, `data: {"widget": {...}}`,
+`data: {"history": [...]}`, `data: {"done": true}` - the last two added in the interaction-model overhaul
+below). Verified live with real inter-chunk timing (httpx `iter_raw()`) that Manifest forwards chunks
 incrementally (~200ms gaps) rather than buffering the full response.
+
+**AI Coach interaction overhaul** (cross-turn memory + `present_choice` widgets): fixed three real bugs
+reported from live use, not hypothetical ones - the agent ignored short replies like "2" (it had genuinely
+never seen the question it was replying to), it kept asking about equipment/goals/plan details that were
+already in the profile, and it wrote numbered-list questionnaires in plain text instead of anything
+clickable.
+
+- **Root cause of the "2" bug**: `/agent/chat` and `/agent/chat/stream` were fully stateless per call -
+  each request built `messages = [{"role": "user", "content": message}]` from scratch, so a follow-up
+  message had zero knowledge of what was asked before it. Fixed by having the backend return the full
+  Claude-format conversation as an opaque `history` field on every response/SSE frame, which the client
+  persists (`historyRef` in `AIMessageBar.jsx`) and echoes back as `AgentChatRequest.history` on the next
+  call. `run_agent_turn`/`stream_agent_turn` now skip the cheap routing pass entirely once `history` is
+  non-empty (a continuing thread always goes straight to the reasoning model, since interpreting a short
+  reply needs real context, not just tool classification) and prepend it to `messages` otherwise. Content
+  blocks are serialized via a hand-written `_serialize_content()` rather than `block.model_dump()` - the
+  latter includes response-only fields (`parsed_output`, etc.) that the API rejects with a 400 ("Extra
+  inputs are not permitted") if echoed straight back as input on a later call, caught live when the first
+  streaming test dropped mid-response.
+- **`present_choice` "soft" tool** (`orchestrator.py`, deliberately kept out of `tools.py`'s
+  `TOOL_SCHEMAS`/`TOOL_EXECUTORS` since it never touches the database): lets the model pause a turn and
+  hand back a structured `{prompt, widget_type: single_choice|multi_select|confirm, options}` payload
+  instead of asking a question in prose. The orchestrator loop intercepts this tool call specially - it
+  still appends a placeholder `tool_result` (`{"status": "presented_to_user_awaiting_response"}`) so the
+  conversation stays a valid prefix for the *next* call's `history` (the Anthropic API requires a
+  `tool_use` block be immediately followed by a matching `tool_result`), then returns/yields the widget and
+  stops the loop rather than calling Claude again - the real "result" is whatever the user picks, which
+  arrives as a later message, not something the backend can synthesize.
+- **Always-injected active-plan context**: `_build_plan_context()` (new) gathers the active plan's full
+  weekly schedule (day → exercises/sets/reps) into the system prompt on every turn, alongside the existing
+  profile and check-in context - previously the plan's schedule was only available on-demand via the
+  `ask_schedule` tool, so a request needing both plan awareness *and* a domain-tool call in the same turn
+  had a gap. `SYSTEM_PROMPT` was rewritten to explicitly forbid re-asking about anything in profile/plan/
+  check-in context, mandate `present_choice` over text questionnaires, and cap replies at "2 short
+  sentences of explanation, then the result" with an explicit list of banned filler phrases.
+- **Frontend widget rendering** (`AIMessageBar.jsx`): `single_choice` renders as pill buttons, `multi_select`
+  as a checkbox grid + a "Continue" button (disabled until ≥1 checked), `confirm` as one primary button
+  labeled with the model's own action text (e.g. "Apply Updates to Plan"). Once answered, a widget collapses
+  to a plain "You chose: ..." line so it isn't still clickable if the user scrolls back up. Clicking sends
+  the exact option text as the next message - no ambiguity for the model to resolve.
+- **Short typed-reply mapping** (`resolveShortReply()`): if a widget is active and the user types instead of
+  clicking - a bare number ("2"), a confirm-shorthand word ("yes"/"do it"/"tailor it"), or text that matches
+  an option - it's mapped to the exact option string *before* being sent, the same way a button click would
+  be. Anything that doesn't match falls through as raw text, which the memory fix above means the model can
+  usually still resolve from context even without the frontend's help (verified live: sending a bare "2"
+  with no frontend mapping at all still produced a correct, grounded plan rather than "I don't understand" -
+  the frontend mapping is the more deterministic first line of defense, the memory fix is what makes the
+  fallback actually work too).
+
+Verified live end-to-end (real API calls and a real browser, not scripted mocks): a deliberately
+open-ended "I want to train today, what should I do" produced a `single_choice` widget (Legs/Push/Pull/Full
+Body) referencing the actual profile equipment and goal, with zero re-asking of anything already known;
+clicking "Legs" correctly resolved to a real `generate_workout_plan` call grounded in that choice. A
+"rework my whole plan, let me pick priority muscle groups" produced a `multi_select` checkbox grid; checking
+two boxes and clicking "Continue" sent "Quads, Hamstrings/Glutes" and produced a plan actually built around
+those two groups. Typing the bare number "1" against a live `single_choice` session-length widget correctly
+mapped to "30 minutes" (not the literal string "1") and produced a real `adjust_plan` call trimming that
+day's actual exercises to fit. No reply in any of these threads produced a fabricated-fluff response
+("I'd be happy to help!", "Here is your tailored plan") - every reply matched the 2-sentence-then-action
+format.
 
 Onboarding is now a settings form, not a chat conversation. `POST /user/profile` /
 `GET /user/profile/{user_id}` let the frontend set/read a user's baseline (`experience_level`,

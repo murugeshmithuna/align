@@ -23,22 +23,31 @@ questions, analyze_form for squat-form questions ("how was my squat form?", "wha
 ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating enough?"), and plain \
 conversation for everything else.
 
-ask_schedule, analyze_form, and ask_nutrition return facts only (the active plan's schedule/training \
-history, the user's most recent squat video analysis, or their recent meal-photo analyses) - compose the \
-actual answer yourself from those facts. If your answer implies a schedule or volume change the user \
-wants, follow up by calling adjust_plan in the same turn rather than just describing the change. If \
-analyze_form or ask_nutrition report no analysis yet, tell the user to upload a squat video on the Live \
-Session page or a meal photo on the Meal Photo page, respectively.
+ask_schedule, analyze_form, and ask_nutrition return facts only (the user's training history, most \
+recent squat video analysis, or recent meal-photo analyses) - compose the actual answer yourself from \
+those facts. If your answer implies a schedule or volume change the user wants, follow up by calling \
+adjust_plan in the same turn rather than just describing the change. If analyze_form or ask_nutrition \
+report no analysis yet, tell the user to upload a squat video on the Live Session page or a meal photo \
+on the Meal Photo page, respectively.
 
-YOU ALREADY HAVE the user's saved profile (experience level, target frequency, available equipment, \
-primary goals, physical limitations) and today's readiness check-in score - both are provided below as \
-context on every turn. Do not ask the user to restate any of it.
+CONTEXT YOU ALREADY HAVE, provided below on every turn: the user's onboarding profile (experience \
+level, target frequency, available equipment, primary goals/focus areas, physical limitations), their \
+active plan and its full weekly schedule, and today's readiness check-in score. These are already known \
+facts, not open questions - NEVER ask the user to restate, re-confirm, or re-select their equipment, \
+goals, experience level, or current plan. If the profile says "Dumbbells", use dumbbells without asking.
 
-NO CLARIFYING QUESTIONS for standard requests. When the user asks for a routine (e.g. "abs workout", \
-"leg day", "adjust today's session"), IMMEDIATELY call generate_workout_plan or adjust_plan using the \
-existing profile and check-in context - do not ask about session length, exercise preferences, or \
-baseline details first. Output the final plan directly. Only ask a follow-up question if something is \
-truly impossible to proceed without; in every other case, act first and explain your choices afterward.
+NO TEXT QUESTIONNAIRES. When you genuinely need the user to choose or confirm something before you can \
+proceed - session length, which muscle groups to focus on, whether to apply a proposed change - call \
+present_choice. Never ask a question as a numbered list, a bulleted list, or multiple prose questions in \
+a row; present_choice renders as real buttons/checkboxes in the UI and the user's next message is their \
+selection, so it always replaces a text question, never supplements one.
+
+ACT FIRST. For standard requests ("abs workout", "leg day", "adjust today's session"), IMMEDIATELY call \
+generate_workout_plan or adjust_plan using the existing profile/plan/check-in context - do not ask about \
+session length, exercise preferences, or baseline details first. Output the result directly. Only use \
+present_choice when something is truly impossible to proceed without (e.g. the request is genuinely \
+open-ended, like "give me a session" with no other detail); in every other case, act first and explain \
+your choice afterward in at most one sentence.
 
 Today's plan status (see context below) may already be auto-adjusted based on a low readiness score \
 before the user ever opens chat: a low score (1-2) means today's baseline routine has already been \
@@ -47,11 +56,54 @@ asks about today's session, reflect that status, and if they want the specifics 
 apply the actual reduced sets/reps/intensity. A high score (4-5) means the planned volume/intensity is \
 fine, or can be nudged up if the user wants to push.
 
-Only call a tool when the request requires a database change or grounded data lookup. For general \
-conversation, questions, or clarifications, respond directly without calling a tool. Every tool call is \
-automatically scoped to the current user - never ask the user for their user_id."""
+Only call a domain tool (generate_workout_plan, adjust_plan, suggest_supplements, ask_schedule, \
+analyze_form, ask_nutrition) when the request requires a database change or grounded data lookup. For \
+general conversation, respond directly without calling a tool. Every tool call is automatically scoped \
+to the current user - never ask the user for their user_id.
+
+OUTPUT FORMAT: at most 2 short sentences of explanation, then the result (the plan/adjustment, or a \
+present_choice widget) immediately after - no greetings, no "I'd be happy to help!", no "Here is your \
+tailored plan", no restating the user's question back to them."""
 
 MAX_TURNS = 6
+
+# A "soft" tool - it never touches the database. Calling it pauses the loop
+# and hands a structured widget spec back to the frontend to render as real
+# buttons/checkboxes instead of the model asking a question in prose. Kept
+# separate from tools.py's TOOL_SCHEMAS/TOOL_EXECUTORS since those are all
+# real DB-executing actions; this one is UI-only and handled inline below.
+PRESENT_CHOICE_TOOL = {
+    "name": "present_choice",
+    "description": (
+        "Ask the user to choose or confirm something via an interactive UI widget instead of asking a "
+        "question in plain text. Use this ANY time you need input to proceed: 'single_choice' for one-of "
+        "several options (e.g. session length), 'multi_select' for choosing several (e.g. muscle focus "
+        "areas), or 'confirm' for a single yes/apply action (e.g. 'apply these changes to the plan?'). "
+        "Never ask a question as prose or a numbered/bulleted list - always call this instead."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "The question or explanation - at most 2 short sentences, no fluff.",
+            },
+            "widget_type": {
+                "type": "string",
+                "enum": ["single_choice", "multi_select", "confirm"],
+            },
+            "options": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Choices to render as buttons/checkboxes. For 'confirm', provide exactly one label "
+                    "(e.g. 'Apply Updates to Plan')."
+                ),
+            },
+        },
+        "required": ["prompt", "widget_type", "options"],
+    },
+}
 
 # The routing pass only ever needs to name a tool, never fill in its full
 # arguments (that's the heavier model's job) - so it gets its own tiny schema.
@@ -101,6 +153,29 @@ def _build_profile_context(user: models.User) -> str:
     )
 
 
+_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _build_plan_context(db: Session, user_id: int) -> str:
+    plans = db.scalars(
+        select(models.Plan).where(models.Plan.user_id == user_id).order_by(models.Plan.created_at.desc())
+    ).all()
+    plan = next((p for p in plans if p.is_active), plans[0] if plans else None)
+    if not plan:
+        return "Active plan: none yet - the user has no training plan (offer to generate one)."
+
+    by_day: dict[str, list[str]] = {}
+    for pe in plan.plan_exercises:
+        day = _DAY_NAMES[pe.day_of_week] if pe.day_of_week is not None else "unscheduled"
+        by_day.setdefault(day, []).append(f"{pe.exercise.name} ({pe.sets}x{pe.reps})")
+    schedule = "\n".join(f"- {day}: {', '.join(exs)}" for day, exs in by_day.items()) or "no exercises yet"
+
+    return (
+        f'Active plan (do not ask the user to restate any of this): "{plan.name}" (plan_id={plan.id}).\n'
+        f"Weekly schedule:\n{schedule}"
+    )
+
+
 def _build_checkin_context(db: Session, user_id: int) -> str:
     checkin = db.scalar(
         select(models.CheckIn).where(
@@ -139,29 +214,62 @@ def _run_tool(db: Session, user_id: int, block) -> dict:
     return executor(db, user_id, block.input) if executor is not None else {"error": f"unknown tool {block.name}"}
 
 
-def run_agent_turn(db: Session, user_id: int, message: str) -> dict:
+def _serialize_content(content) -> list[dict]:
+    """Converts SDK response content blocks into plain JSON-safe dicts - both
+    for shipping back to the frontend as `history` and for feeding straight
+    back into a later `messages.create()` call. Deliberately only keeps the
+    fields the API accepts as *input* on a content block - `block.model_dump()`
+    also includes response-only fields (e.g. `parsed_output`) that the API
+    rejects with a 400 ("Extra inputs are not permitted") if echoed back."""
+    serialized = []
+    for block in content:
+        if block.type == "text":
+            serialized.append({"type": "text", "text": block.text})
+        elif block.type == "tool_use":
+            serialized.append({"type": "tool_use", "id": block.id, "name": block.name, "input": block.input})
+    return serialized
+
+
+def run_agent_turn(db: Session, user_id: int, message: str, history: list[dict] | None = None) -> dict:
+    """`history` is the full prior conversation (as returned in a previous
+    call's `history` field) - this API is stateless, so the caller is
+    responsible for echoing it back on every turn. Without it, a short reply
+    like "2" or "yes" has no context to resolve against and looks like a
+    non-sequitur to the model."""
     client = _get_client()
     user = _get_user_or_raise(db, user_id)
     system_prompt = (
-        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_checkin_context(db, user_id)}"
+        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
+        f"{_build_checkin_context(db, user_id)}"
     )
 
-    # Fast routing pass: a cheap model answers directly whenever no tool is
-    # needed, so plain conversation never touches the heavier reasoning model.
-    router_response = client.messages.create(
-        model=FAST_MODEL,
-        max_tokens=1024,
-        system=system_prompt,
-        tools=[ROUTING_TOOL],
-        messages=[{"role": "user", "content": message}],
-    )
-    if router_response.stop_reason != "tool_use":
-        reply = "".join(block.text for block in router_response.content if block.type == "text")
-        return {"reply": reply, "tool_calls": []}
+    history = list(history or [])
 
-    # Tool path: redo the loop from scratch on the heavier reasoning model,
-    # since it's the one that should actually author the plan/adjustment.
-    messages: list[dict] = [{"role": "user", "content": message}]
+    if not history:
+        # Fast routing pass: a cheap model answers directly whenever no tool is
+        # needed, so plain conversation never touches the heavier reasoning
+        # model. Only applies to a brand-new conversation - once there's
+        # history, a short reply needs the full context to interpret, so
+        # continuing threads always go straight to the reasoning model below.
+        router_response = client.messages.create(
+            model=FAST_MODEL,
+            max_tokens=1024,
+            system=system_prompt,
+            tools=[ROUTING_TOOL],
+            messages=[{"role": "user", "content": message}],
+        )
+        if router_response.stop_reason != "tool_use":
+            reply = "".join(block.text for block in router_response.content if block.type == "text")
+            new_history = [
+                {"role": "user", "content": message},
+                {"role": "assistant", "content": _serialize_content(router_response.content)},
+            ]
+            return {"reply": reply, "tool_calls": [], "widget": None, "history": new_history}
+
+    # Tool path: the heavier reasoning model actually authors the plan/
+    # adjustment, and can pause the turn via present_choice for real
+    # structured user input instead of guessing or asking in prose.
+    messages: list[dict] = history + [{"role": "user", "content": message}]
     tool_call_log: list[dict] = []
 
     for _ in range(MAX_TURNS):
@@ -169,18 +277,33 @@ def run_agent_turn(db: Session, user_id: int, message: str) -> dict:
             model=CLAUDE_MODEL,
             max_tokens=4096,
             system=system_prompt,
-            tools=TOOL_SCHEMAS,
+            tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
             messages=messages,
         )
-        messages.append({"role": "assistant", "content": response.content})
+        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         if response.stop_reason != "tool_use":
             final_text = "".join(block.text for block in response.content if block.type == "text")
-            return {"reply": final_text, "tool_calls": tool_call_log}
+            return {"reply": final_text, "tool_calls": tool_call_log, "widget": None, "history": messages}
 
+        widget_payload = None
         tool_results = []
         for block in response.content:
             if block.type != "tool_use":
+                continue
+            if block.name == "present_choice":
+                # No real tool_result to give back - the actual "result" is
+                # whatever the user picks, which arrives as a later message.
+                # Still satisfy the API's tool_use/tool_result pairing so this
+                # turn is a valid prefix for the next call's history.
+                widget_payload = block.input
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({"status": "presented_to_user_awaiting_response"}),
+                    }
+                )
                 continue
             result = _run_tool(db, user_id, block)
             tool_call_log.append({"name": block.name, "input": block.input, "result": result})
@@ -193,9 +316,19 @@ def run_agent_turn(db: Session, user_id: int, message: str) -> dict:
             )
         messages.append({"role": "user", "content": tool_results})
 
+        if widget_payload is not None:
+            return {
+                "reply": widget_payload.get("prompt", ""),
+                "tool_calls": tool_call_log,
+                "widget": widget_payload,
+                "history": messages,
+            }
+
     return {
         "reply": "I couldn't finish that within the allotted steps - please try rephrasing.",
         "tool_calls": tool_call_log,
+        "widget": None,
+        "history": messages,
     }
 
 
@@ -203,12 +336,16 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
-def stream_agent_turn(db: Session, user_id: int, message: str) -> Iterator[str]:
+def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dict] | None = None) -> Iterator[str]:
     """Yields SSE-formatted `data: {...}\\n\\n` frames as the agent responds.
 
     Frame shapes: {"content": "<token>"} for streamed text, {"tool": name,
-    "status": "running"|"done"} while a tool executes, {"error": "..."} on
-    failure, and a final {"done": true}.
+    "status": "running"|"done"} while a tool executes, {"widget": {...}} when
+    the model pauses for structured user input via present_choice instead of
+    asking in prose, {"error": "..."} on failure, {"history": [...]} carrying
+    the updated conversation state the client must echo back as `history` on
+    its next request (this endpoint is stateless - see run_agent_turn), and a
+    final {"done": true}.
     """
     try:
         client = _get_client()
@@ -218,52 +355,72 @@ def stream_agent_turn(db: Session, user_id: int, message: str) -> Iterator[str]:
         return
 
     system_prompt = (
-        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_checkin_context(db, user_id)}"
+        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
+        f"{_build_checkin_context(db, user_id)}"
     )
 
-    # Fast routing pass: stream the cheap model's tokens immediately. If it
-    # answers directly (no tool needed) that IS the final response.
-    with client.messages.stream(
-        model=FAST_MODEL,
-        max_tokens=1024,
-        system=system_prompt,
-        tools=[ROUTING_TOOL],
-        messages=[{"role": "user", "content": message}],
-    ) as stream:
-        for text in stream.text_stream:
-            yield _sse({"content": text})
-        router_response = stream.get_final_message()
+    history = list(history or [])
 
-    if router_response.stop_reason != "tool_use":
-        yield _sse({"done": True})
-        return
+    if not history:
+        # Fast routing pass: stream the cheap model's tokens immediately. If it
+        # answers directly (no tool needed) that IS the final response.
+        with client.messages.stream(
+            model=FAST_MODEL,
+            max_tokens=1024,
+            system=system_prompt,
+            tools=[ROUTING_TOOL],
+            messages=[{"role": "user", "content": message}],
+        ) as stream:
+            for text in stream.text_stream:
+                yield _sse({"content": text})
+            router_response = stream.get_final_message()
 
-    # Tool path: hand off to the heavier reasoning model, starting the
-    # conversation over so the router's (unused) tool_use block never needs
-    # a matching tool_result.
-    messages: list[dict] = [{"role": "user", "content": message}]
+        if router_response.stop_reason != "tool_use":
+            new_history = [
+                {"role": "user", "content": message},
+                {"role": "assistant", "content": _serialize_content(router_response.content)},
+            ]
+            yield _sse({"history": new_history})
+            yield _sse({"done": True})
+            return
+
+    # Tool path: hand off to the heavier reasoning model, which can pause the
+    # turn via present_choice for real structured user input.
+    messages: list[dict] = history + [{"role": "user", "content": message}]
 
     for _ in range(MAX_TURNS):
         with client.messages.stream(
             model=CLAUDE_MODEL,
             max_tokens=4096,
             system=system_prompt,
-            tools=TOOL_SCHEMAS,
+            tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
             messages=messages,
         ) as stream:
             for text in stream.text_stream:
                 yield _sse({"content": text})
             response = stream.get_final_message()
 
-        messages.append({"role": "assistant", "content": response.content})
+        messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         if response.stop_reason != "tool_use":
+            yield _sse({"history": messages})
             yield _sse({"done": True})
             return
 
+        widget_payload = None
         tool_results = []
         for block in response.content:
             if block.type != "tool_use":
+                continue
+            if block.name == "present_choice":
+                widget_payload = block.input
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({"status": "presented_to_user_awaiting_response"}),
+                    }
+                )
                 continue
             yield _sse({"tool": block.name, "status": "running"})
             result = _run_tool(db, user_id, block)
@@ -277,7 +434,14 @@ def stream_agent_turn(db: Session, user_id: int, message: str) -> Iterator[str]:
             )
         messages.append({"role": "user", "content": tool_results})
 
+        if widget_payload is not None:
+            yield _sse({"widget": widget_payload})
+            yield _sse({"history": messages})
+            yield _sse({"done": True})
+            return
+
     yield _sse({"content": "\n\nI couldn't finish that within the allotted steps - please try rephrasing."})
+    yield _sse({"history": messages})
     yield _sse({"done": True})
 
 
