@@ -266,7 +266,14 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <span className="text-xs text-slate-500">Today's meals logged</span>
+            <div className="flex items-baseline justify-between mb-1">
+              <span className="text-xs text-slate-500">Today's calories</span>
+              {profile?.daily_calorie_target && (
+                <span className="text-sm font-semibold tabular-nums">
+                  {todaysNutrition.calories.toLocaleString()} / {profile.daily_calorie_target.toLocaleString()} kcal
+                </span>
+              )}
+            </div>
             {activityLoading ? (
               <p className="text-sm text-slate-500 mt-1">Loading…</p>
             ) : todaysNutrition.count === 0 ? (
@@ -277,13 +284,31 @@ export default function Dashboard() {
                 </Link>
                 .
               </p>
+            ) : profile?.daily_calorie_target ? (
+              <>
+                <div className="h-2 rounded-full bg-forest-900 overflow-hidden">
+                  <div
+                    className="h-full bg-coral-500 rounded-full transition-all"
+                    style={{
+                      width: `${Math.min(100, (todaysNutrition.calories / profile.daily_calorie_target) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  {Math.round(todaysNutrition.protein)}g protein · {todaysNutrition.count} meal
+                  {todaysNutrition.count === 1 ? '' : 's'} logged
+                </p>
+              </>
             ) : (
               <p className="text-sm font-semibold mt-1 tabular-nums">
                 {todaysNutrition.calories.toLocaleString()} kcal · {Math.round(todaysNutrition.protein)}g protein
                 <span className="text-xs text-slate-500 font-normal">
                   {' '}
-                  ({todaysNutrition.count} meal{todaysNutrition.count === 1 ? '' : 's'} logged - no daily
-                  target set)
+                  ({todaysNutrition.count} meal{todaysNutrition.count === 1 ? '' : 's'} logged -{' '}
+                  <Link to="/profile" className="text-coral-400 hover:text-coral-300">
+                    set a daily target
+                  </Link>
+                  )
                 </span>
               </p>
             )}

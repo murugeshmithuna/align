@@ -52,6 +52,7 @@ class User(Base):
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     preferred_units: Mapped[str] = mapped_column(String(10), default="metric")  # "metric" | "imperial"
+    daily_calorie_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 

@@ -50,10 +50,11 @@ case pre-loads and *navigates* to `/workout/live` rather than rendering it inlin
   today, with a "Log manually" link to `/workout/log` alongside it either way.
 - **This week**: workouts-this-week count (distinct calendar days with a log in the last 7 days) against
   `target_frequency` from the profile, rendered as a progress bar; today's logged meal calories/protein
-  from `meal_analyses`. Deliberate scoping decision, not an oversight: there's no `daily_calorie_target`
-  field anywhere in this data model, so rather than fabricate one to match the request's example
-  ("1,850 / 2,400 kcal"), this shows the real logged number with an explicit "no daily target set" label -
-  consistent with this project's running rule of not inventing numbers just to fill a UI slot.
+  from `meal_analyses` against `daily_calorie_target` (also from the profile) as a second progress bar.
+  This field didn't originally exist in the data model - flagged rather than fabricated a number to match
+  the "1,850 / 2,400 kcal" example, then added for real once asked: `User.daily_calorie_target` (nullable
+  int), a "Daily calorie target (optional)" field on `/profile`, and the Dashboard falls back to an honest
+  "no daily target set" (with a link to go set one) only when it's actually still unset.
 - **Recent activity**: whichever of the most recent workout log or most recent meal analysis is actually
   newer (real timestamp comparison, not "always show logs first"), plus a genuine AI Coach insight -
   fetched via the same non-streaming `api.chat()` used by the PDF export's end-of-workout note, given a

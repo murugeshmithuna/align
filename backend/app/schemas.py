@@ -35,6 +35,7 @@ class UserOut(BaseModel):
     height_cm: float | None
     weight_kg: float | None
     preferred_units: UnitPreference
+    daily_calorie_target: int | None
     created_at: datetime
 
 
@@ -48,6 +49,7 @@ class UserProfileUpdate(BaseModel):
     height_cm: float | None = None
     weight_kg: float | None = None
     preferred_units: UnitPreference | None = None
+    daily_calorie_target: int | None = None
 
 
 # ---------- Auth (Google Sign-In) ----------
