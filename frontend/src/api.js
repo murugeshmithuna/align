@@ -21,6 +21,9 @@ export const api = {
   listUsers: () => request('/users'),
   createUser: (payload) => request('/users', { method: 'POST', body: JSON.stringify(payload) }),
 
+  listExercises: () => request('/exercises'),
+  createExercise: (payload) => request('/exercises', { method: 'POST', body: JSON.stringify(payload) }),
+
   getProfile: (userId) => request(`/user/profile/${userId}`),
   saveProfile: (payload) => request('/user/profile', { method: 'POST', body: JSON.stringify(payload) }),
 
@@ -32,6 +35,7 @@ export const api = {
   activatePlan: (planId) => request(`/plans/${planId}/activate`, { method: 'PATCH' }),
 
   createLog: (payload) => request('/logs', { method: 'POST', body: JSON.stringify(payload) }),
+  listLogs: (userId) => request(`/logs/user/${userId}`),
 
   getProgress: (userId) => request(`/logs/user/${userId}/progress`),
   getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),

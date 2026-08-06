@@ -3,9 +3,10 @@ import { useSession } from '../context/SessionContext.jsx'
 
 const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
-  { to: '/live-session', label: 'Live Session' },
-  { to: '/meal-photo', label: 'Meal Photo' },
-  { to: '/progress', label: 'Progress Charts' },
+  { to: '/workout/live', label: 'Live Session' },
+  { to: '/workout/log', label: 'Log Workout' },
+  { to: '/nutrition/analyze', label: 'Meal Photo' },
+  { to: '/analytics', label: 'Analytics' },
   { to: '/debate', label: 'Coach Debate' },
   { to: '/profile', label: 'Profile Settings' },
 ]

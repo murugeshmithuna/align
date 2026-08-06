@@ -16,10 +16,13 @@ soreness_notes, checkins), and a health-check endpoint.
 single-page shell. Multi-page flow: `/` (Landing, public) → `/login` (user picker/create - no real auth,
 just a session established client-side via localStorage) → `/profile` (baseline onboarding form, gates
 first-timers before they reach the dashboard) → `/dashboard` (active plan summary, today's readiness,
-streaming chat) → `/checkin` (also auto-shown as a modal on the dashboard once/day) → `/live-session` and
-`/progress` (placeholder pages for not-yet-built vision/chart milestones). A shared `AppLayout` +
-`Navbar` gate the authenticated routes and provide navigation between Dashboard / Live Session /
-Progress Charts / Profile Settings.
+streaming chat) → `/checkin` (also auto-shown as a modal on the dashboard once/day). Feature routes live
+under their own paths rather than crowding the dashboard: `/plans` + `/plan/:planId` (plan browsing/detail/
+activation), `/workout/live` (MediaPipe live session) + `/workout/log` (manual set logging), `/nutrition/
+analyze` (meal photo), `/analytics` (progress charts + fatigue model), `/debate` (multi-agent coach debate).
+Routes were renamed from their original flatter paths (`/live-session`, `/meal-photo`, `/progress`,
+`/plans/:planId`) into this `/workout/*`, `/nutrition/*` grouping at the user's request. A shared
+`AppLayout` + `Navbar` gate the authenticated routes and provide navigation between them.
 
 **Daily readiness check-in:** `POST /user/checkin` (upsert, one row per user per UTC day) /
 `GET /user/checkin/today/{user_id}`. Score 1-5 (Sick/Exhausted → Sore → Normal → Good → Pumped Up) is
@@ -67,7 +70,7 @@ orchestrator injects that profile into its system prompt on every turn, so the c
 the user to restate it — confirmed live: a bare "set me up with a workout plan" produced a full plan
 matching the saved equipment/frequency/limitations with zero clarifying questions.
 
-**Progress charts + weekly AI recap** (`/progress`): `GET /logs/user/{user_id}/progress` aggregates
+**Progress charts + weekly AI recap** (`/analytics`): `GET /logs/user/{user_id}/progress` aggregates
 volume-by-date (sum of sets×reps×weight per day) and per-exercise weight history with a `is_pr` flag
 (running-max comparison, ties count) computed server-side. `GET /agent/weekly-recap/{user_id}` gathers
 the last 7 days of logs + check-ins and asks `claude-haiku-4-5` (fast model - pure summarization, no
@@ -116,7 +119,7 @@ readiness 2/5): Strength Coach argued to push, Recovery Coach argued to back off
 resolved decisively toward recovery, explicitly re-reasoning about the Strength Coach's own data point
 rather than just averaging the two positions.
 
-**Banister fatigue model + asymmetry checker** (`/progress`, `GET /fatigue/user/{user_id}`,
+**Banister fatigue model + asymmetry checker** (`/analytics`, `GET /fatigue/user/{user_id}`,
 `POST /fatigue/asymmetry`): `backend/app/agent/fatigue.py` is pure computation, no LLM call - like
 `GET /logs/user/{id}/progress`, not agent-routed. Per-log training load is a session-RPE-style proxy
 (`sets*reps*weight * rpe/10`), aggregated per day (rest days included as zero-load so the exponential
@@ -136,7 +139,7 @@ rest days correctly showed Fitness/Fatigue both rising during training then Fati
 Fitness during the rest days (Form recovering, as expected physiologically); asymmetry check correctly
 flagged a 15.7% left-dominant sample set and correctly passed a 2.1% sample set.
 
-**MediaPipe vision** (`/live-session`): one model (`pose_landmarker_lite.task`, the official Google-hosted
+**MediaPipe vision** (`/workout/live`): one model (`pose_landmarker_lite.task`, the official Google-hosted
 BlazePose 33-landmark bundle, committed at `backend/app/vision/models/`), two runtimes.
 - **Batch** (`POST /vision/analyze-squat`, multipart video upload): `backend/app/vision/pose_analysis.py`
   runs the new MediaPipe Tasks Python API (`mediapipe==1.0.0` dropped the old `mp.solutions.pose` -
@@ -155,7 +158,7 @@ BlazePose 33-landmark bundle, committed at `backend/app/vision/models/`), two ru
   grounded in those facts. Verified live: seeded a 5-rep analysis with a clear knee-valgus pattern (2/5
   knee-tracking pass, 4/5 depth, 5/5 back angle) and the orchestrator correctly identified knee tracking
   as the priority fix with specific coaching cues, not a generic answer.
-- **Live** (`/live-session`, "Live webcam" tab): client-side only, via `@mediapipe/tasks-vision` -
+- **Live** (`/workout/live`, "Live webcam" tab): client-side only, via `@mediapipe/tasks-vision` -
   `PoseLandmarker` runs entirely in the browser (WASM from jsDelivr, same model file from the same GCS
   URL as the batch path) inside a `requestAnimationFrame` loop reading the webcam `<video>` element, so
   there's no server round-trip for live tracking. The same thresholds/state machine from
@@ -170,7 +173,7 @@ BlazePose 33-landmark bundle, committed at `backend/app/vision/models/`), two ru
   separately unit-tested with synthetic angle sequences (6 synthetic reps covering good depth, a shallow
   rep, knee valgus, and excessive back lean all came back with exactly the expected flags).
 
-**Live Session rebuild** (`/live-session`): extended the client-side pose path to a full plan-driven
+**Live Session rebuild** (`/workout/live`): extended the client-side pose path to a full plan-driven
 workout runner. `EXERCISE_CONFIGS` in `LiveSession.jsx` generalizes the squat state machine to any
 exercise reducible to a 3-point angle that starts extended ("UP"), flexes to a "DOWN" position, then
 returns - squat (hip-knee-ankle), bicep curl (shoulder-elbow-wrist), push-up (shoulder-elbow-wrist,
@@ -202,7 +205,7 @@ wasn't verified (no real camera subject available in this sandboxed session, sam
 original build) - the state-machine algorithm itself was already proven via the batch path's synthetic
 unit tests, and this is a parameterization of the same logic.
 
-**Claude Vision meal-photo analysis** (`/meal-photo`, `POST /vision/analyze-meal`): separate code path from
+**Claude Vision meal-photo analysis** (`/nutrition/analyze`, `POST /vision/analyze-meal`): separate code path from
 the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
 schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded
 photo as an image content block in a single `claude-opus-4-8` call, forcing a **strict** `report_meal_analysis`
@@ -382,6 +385,8 @@ fitness-agent/
         Debate.jsx (Strength/Recovery/Head Coach bubble cards),
         LiveSession.jsx (plan-driven multi-exercise pose tracking, skeleton overlay, auto-log/advance,
           squat video upload), PlanDetail.jsx, PlanList.jsx,
+        WorkoutLog.jsx (manual set logging - exercise picker w/ inline "+ new", sets/reps/weight/rpe,
+          recent-logs list),
         MealPhoto.jsx (photo upload, calorie/macro + goal-aware assessment)
 ```
 
@@ -399,9 +404,9 @@ cd frontend && npm install && npm run dev
 
 1. ~~Orchestrator agent + Claude tool-use wiring~~ — done (`backend/app/agent/`)
 2. ~~Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite~~ — done
-3. ~~MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)~~ — done (`/live-session`)
-4. ~~Claude Vision meal photo analysis~~ — done (`/meal-photo`)
+3. ~~MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)~~ — done (`/workout/live`)
+4. ~~Claude Vision meal photo analysis~~ — done (`/nutrition/analyze`)
 5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
-6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/progress`)
-7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/progress`)
+6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/analytics`)
+7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/analytics`)
 8. Optional: Google Calendar read-only integration

@@ -41,7 +41,7 @@ export default function PlanList() {
           {plans.map((plan) => (
             <Link
               key={plan.id}
-              to={`/plans/${plan.id}`}
+              to={`/plan/${plan.id}`}
               className="card p-5 flex items-center justify-between hover:border-coral-400 transition-colors block"
             >
               <div>
