@@ -303,6 +303,37 @@ streams a real reply into the drawer end-to-end. (One test run briefly returned 
 a transient Manifest proxy OAuth error, `M102: anthropic subscription credentials could not be refreshed`,
 not a bug in this component; a retry a minute later worked normally.)
 
+**Voice cue upgrade** (`/workout/live`): `speak()` moved from a module-level helper into `LiveWebcamSession`
+itself so it can close over a `voiceEnabledRef` - a mute toggle button (speaker icon, top of the controls
+row) now gates every cue, and `window.speechSynthesis.cancel()` on mute stops whatever's mid-sentence.
+`speak()` also changed from cancel-and-interrupt to skip-if-already-speaking (checks `.speaking` before
+queuing a new utterance) - a form-correction cue starting mid-sentence no longer gets cut off by a rep-
+count cue a moment later. Completed reps now speak the actual rep number ("One", "Two", ... - a small
+word-list up to twenty, numeral fallback beyond that) instead of a generic "Good rep", except when that
+rep's form check failed, in which case the form-correction cue takes priority and the number isn't spoken
+at all for that rep. Set-completion phrasing standardized to "Set complete! Great job." Verified live
+(headless Chromium, fake camera): the mute button correctly toggles its icon/label and the Export-PDF
+button stays correctly hidden until a workout is actually complete.
+
+**Shareable workout PDF** (`/workout/live`, "Export as PDF" on the Workout Complete screen): real session
+metrics are tracked as the session runs, not fabricated after the fact - `formFrameCountsRef` tallies
+`checkForm()`'s ok/fail result every processed frame (Form Accuracy % is genuinely `ok / total`, not a
+placeholder number), `completedExercisesRef` records each exercise's actual sets/reps/weight as it
+finishes, and `sessionStartedAtRef` gives a real elapsed duration. `buildWorkoutPdf()` renders the summary
+with jsPDF's own text/line drawing primitives - not `html2canvas` - since this content (a title, a date, a
+short list, a few numbers) is fundamentally textual/tabular; real vector text keeps the file small and the
+text selectable, instead of rasterizing a DOM snapshot into an oversized embedded image. (jsPDF still pulls
+in `html2canvas` transitively for its own unused `.html()` method - no public "core-only" entry point in
+its package exports to avoid that; accepted as a known tradeoff, same category as the other large
+dependencies already in this app - MediaPipe, three.js, Chart.js.) The "AI Coach's Notes" section comes
+from a real `POST /agent/chat` call (added a non-streaming `api.chat()` wrapper for this) summarizing the
+session's actual exercises/form accuracy and asking for a short note - added to the PDF only if that call
+succeeds, with a graceful fallback string otherwise. Verified via a standalone Node script (jsPDF supports
+a Node output target) calling the exact same `buildWorkoutPdf` logic used in the browser: both a normal
+session (mixed weighted/bodyweight exercises) and an edge-case empty session produce valid PDFs (correct
+`%PDF-` magic bytes), and the raw PDF text objects were inspected directly to confirm "Back Squat - 3 x 8 @
+185", "Total Volume", and "Form Accuracy Score" all appear exactly as expected in the output.
+
 Voice cues beyond the live session are not built yet.
 
 ## System architecture
@@ -350,7 +381,7 @@ tool/sub-agent -> database update -> response rendered in UI.
 - **Charts:** Plotly or Chart.js
 - **Frontend:** React + Vite + React Router, Tailwind CSS v4 (`@tailwindcss/vite`, no separate config
   file - theme tokens live in `src/index.css`), three.js (landing-page hero), `@mediapipe/tasks-vision`
-  for the live pose-tracking overlay
+  for the live pose-tracking overlay, `jspdf` for the workout-summary PDF export
 - **Deployment:** Render/Railway (backend), Vercel (frontend)
 
 ## Visual design direction

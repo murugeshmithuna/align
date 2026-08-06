@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { DrawingUtils, FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision'
+import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 
@@ -194,18 +195,144 @@ function frameAngleAndSide(landmarks, config) {
   return { angle, side }
 }
 
-function speak(text) {
-  if (!('speechSynthesis' in window)) return
-  window.speechSynthesis.cancel()
-  const utterance = new SpeechSynthesisUtterance(text)
-  utterance.rate = 1.05
-  window.speechSynthesis.speak(utterance)
+// Rep counts almost never exceed this in a single set; falls back to the
+// numeral otherwise (speechSynthesis pronounces numerals correctly anyway).
+const NUMBER_WORDS = [
+  '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen',
+  'Eighteen', 'Nineteen', 'Twenty',
+]
+function repNumberWord(n) {
+  return NUMBER_WORDS[n] || String(n)
+}
+
+function SpeakerOnIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth="2">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M11 5 6 9H3v6h3l5 4V5ZM15.5 8.5a5 5 0 0 1 0 7M18 5.5a9 9 0 0 1 0 13"
+      />
+    </svg>
+  )
+}
+
+function SpeakerOffIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className="w-4 h-4" stroke="currentColor" strokeWidth="2">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M11 5 6 9H3v6h3l5 4V5Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="m16 9 5 6m0-6-5 6" />
+    </svg>
+  )
 }
 
 function tabClass(active) {
   return `px-4 py-2 rounded-lg text-sm font-heading font-semibold transition-colors ${
     active ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
   }`
+}
+
+// Text-based PDF via jsPDF's own drawing primitives rather than html2canvas -
+// this content is fundamentally tabular/textual (a title, a date, a short
+// exercise list, a few numbers), so rendering it as real vector text keeps
+// the file small and the text selectable/searchable, instead of rasterizing
+// a DOM snapshot into an oversized embedded image.
+function buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, aiNote }) {
+  const doc = new jsPDF()
+  const CORAL = [255, 122, 77]
+  const SLATE = [100, 116, 139]
+  const INK = [15, 23, 42]
+  const marginX = 20
+  let y = 22
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(...CORAL)
+  doc.text('AI Fitness Agent', marginX, y)
+  y += 8
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(12)
+  doc.setTextColor(...INK)
+  doc.text('Workout Summary', marginX, y)
+  y += 6
+
+  doc.setFontSize(10)
+  doc.setTextColor(...SLATE)
+  doc.text(new Date().toLocaleDateString(undefined, { dateStyle: 'long' }), marginX, y)
+  y += 4
+  doc.setDrawColor(...SLATE)
+  doc.line(marginX, y, 190, y)
+  y += 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...INK)
+  doc.text('Completed Exercises', marginX, y)
+  y += 7
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  let totalVolume = 0
+  if (exercises.length === 0) {
+    doc.setTextColor(...SLATE)
+    doc.text('No exercises completed this session.', marginX, y)
+    y += 7
+  } else {
+    for (const ex of exercises) {
+      const weightLabel = ex.weight ? `@ ${ex.weight}` : '(bodyweight)'
+      doc.setTextColor(...INK)
+      doc.text(`${ex.name} - ${ex.sets} x ${ex.reps} ${weightLabel}`, marginX, y)
+      y += 6
+      totalVolume += ex.sets * ex.reps * (ex.weight || 0)
+    }
+    y += 4
+  }
+
+  doc.setDrawColor(...SLATE)
+  doc.line(marginX, y, 190, y)
+  y += 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...INK)
+  doc.text('Key Performance Metrics', marginX, y)
+  y += 8
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const metrics = [
+    ['Total Volume', `${totalVolume.toLocaleString()}`],
+    ['Form Accuracy Score', formAccuracyPct == null ? 'n/a' : `${formAccuracyPct}%`],
+    ['Workout Duration', durationLabel],
+  ]
+  for (const [label, value] of metrics) {
+    doc.setTextColor(...SLATE)
+    doc.text(label, marginX, y)
+    doc.setTextColor(...INK)
+    doc.text(value, marginX + 60, y)
+    y += 7
+  }
+  y += 5
+
+  doc.setDrawColor(...SLATE)
+  doc.line(marginX, y, 190, y)
+  y += 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...INK)
+  doc.text("AI Coach's Notes", marginX, y)
+  y += 8
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  doc.setTextColor(...INK)
+  const noteLines = doc.splitTextToSize(aiNote || 'No notes generated for this session.', 170)
+  doc.text(noteLines, marginX, y)
+
+  doc.save(`workout-summary-${new Date().toISOString().slice(0, 10)}.pdf`)
 }
 
 // Builds the exercise queue for the session: from the plan exercises passed
@@ -289,6 +416,12 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const formOkRef = useRef(true)
   const prevLandmarksRef = useRef(null)
   const cameraShiftingRef = useRef(false)
+  const voiceEnabledRef = useRef(true)
+  // Session metrics for the PDF export - counted every processed frame /
+  // completed exercise, not recomputed after the fact.
+  const sessionStartedAtRef = useRef(null)
+  const formFrameCountsRef = useRef({ ok: 0, total: 0 })
+  const completedExercisesRef = useRef([])
 
   // `renderLoop` recurses via requestAnimationFrame(renderLoop) using the
   // closure captured when `start()` first scheduled it - it never picks up a
@@ -318,6 +451,65 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const [cue, setCue] = useState('Start the session, then step into frame')
   const [formOk, setFormOk] = useState(true)
   const [cameraShifting, setCameraShifting] = useState(false)
+  const [voiceEnabled, setVoiceEnabledState] = useState(true)
+  const [exportingPdf, setExportingPdf] = useState(false)
+  const [exportError, setExportError] = useState('')
+
+  function toggleVoice() {
+    const next = !voiceEnabledRef.current
+    voiceEnabledRef.current = next
+    setVoiceEnabledState(next)
+    if (!next) window.speechSynthesis?.cancel()
+  }
+
+  // Skips (doesn't interrupt) a new cue if one is already speaking, rather
+  // than cancelling the in-progress utterance - avoids cutting off "go
+  // lower" mid-word to say a rep number a moment later.
+  function speak(text) {
+    if (!voiceEnabledRef.current || !('speechSynthesis' in window)) return
+    if (window.speechSynthesis.speaking) return
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 1.05
+    window.speechSynthesis.speak(utterance)
+  }
+
+  async function handleExportPdf() {
+    setExportingPdf(true)
+    setExportError('')
+    try {
+      const exercises = completedExercisesRef.current
+      const counts = formFrameCountsRef.current
+      const formAccuracyPct = counts.total > 0 ? Math.round((counts.ok / counts.total) * 100) : null
+      const elapsedSeconds = sessionStartedAtRef.current
+        ? Math.round((Date.now() - sessionStartedAtRef.current) / 1000)
+        : 0
+      const minutes = Math.floor(elapsedSeconds / 60)
+      const seconds = elapsedSeconds % 60
+      const durationLabel = `${minutes}m ${seconds}s`
+
+      let aiNote = ''
+      if (userId && exercises.length > 0) {
+        const summary = exercises
+          .map((ex) => `${ex.name}: ${ex.sets}x${ex.reps}${ex.weight ? ` @ ${ex.weight}` : ''}`)
+          .join('; ')
+        try {
+          const { reply } = await api.chat({
+            user_id: userId,
+            message: `I just finished a live-tracked workout: ${summary}. Form accuracy was ${formAccuracyPct ?? 'n/a'}%. Write a short (1-2 sentence) encouraging end-of-workout note for my PDF summary - no questions, no follow-up offer, just the note.`,
+          })
+          aiNote = reply
+        } catch {
+          aiNote = ''
+        }
+      }
+
+      buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, aiNote })
+    } catch (err) {
+      setExportError(err.message || 'Could not generate the PDF')
+    } finally {
+      setExportingPdf(false)
+    }
+  }
 
   function setManualExercise(value) {
     sessionRef.current.manualExercise = value
@@ -356,6 +548,12 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   }
 
   async function logCompletedExercise(item) {
+    completedExercisesRef.current.push({
+      name: item.name,
+      sets: item.targetSets,
+      reps: item.targetReps,
+      weight: item.targetWeight,
+    })
     if (!userId) return
     try {
       await api.createLog({
@@ -406,14 +604,21 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     resetRepState()
     s.restUntil = Date.now() + rest * 1000
     setResting(true)
-    speak(`Set complete. Rest ${rest} seconds.`)
+    speak('Set complete! Great job.')
   }
 
   function completeRep(rep) {
     const s = sessionRef.current
     s.repCount += 1
-    setRepCountState(s.repCount)
-    if (s.repCount >= getTargetReps()) {
+    const repNumber = s.repCount
+    setRepCountState(repNumber)
+
+    // Form-correction cues take priority over the rep count - only one
+    // utterance plays per rep. handleSetComplete() (called first, below)
+    // takes priority over both when this rep also finishes the set, since
+    // speak() skips rather than interrupts once something is already
+    // speaking - "Set complete!" naturally wins over "Ten" on the last rep.
+    if (repNumber >= getTargetReps()) {
       handleSetComplete()
     }
 
@@ -423,8 +628,8 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       setCue(formCue)
       speak(formCue)
     } else {
-      setCue('Good rep!')
-      speak('Good rep')
+      setCue(`Rep ${repNumber}`)
+      speak(repNumberWord(repNumber))
     }
   }
 
@@ -444,6 +649,8 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     const formCheck = activeConfig.checkForm(landmarks, side)
     formOkRef.current = formCheck.ok
     setFormOk(formCheck.ok)
+    formFrameCountsRef.current.total += 1
+    if (formCheck.ok) formFrameCountsRef.current.ok += 1
 
     const rs = repStateRef.current
 
@@ -589,6 +796,9 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       prevLandmarksRef.current = null
       cameraShiftingRef.current = false
       setCameraShifting(false)
+      sessionStartedAtRef.current = Date.now()
+      formFrameCountsRef.current = { ok: 0, total: 0 }
+      completedExercisesRef.current = []
       sessionRef.current.queueIndex = 0
       sessionRef.current.currentSet = 1
       sessionRef.current.repCount = 0
@@ -703,10 +913,18 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
           </>
         )}
         {complete && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-forest-950/90 text-center px-6">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6">
             <span className="text-3xl">🎉</span>
             <p className="font-heading font-bold text-lg">Workout complete!</p>
             <p className="text-sm text-slate-400">Nice work - logged to your history.</p>
+            <button
+              onClick={handleExportPdf}
+              disabled={exportingPdf}
+              className="mt-2 px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+            >
+              {exportingPdf ? 'Generating PDF…' : 'Export as PDF'}
+            </button>
+            {exportError && <p className="text-xs text-red-400">{exportError}</p>}
           </div>
         )}
         {status !== 'running' && !complete && (
@@ -716,7 +934,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         )}
       </div>
 
-      <div className="flex justify-center gap-3">
+      <div className="flex justify-center items-center gap-3">
         {status === 'running' ? (
           <button
             onClick={stop}
@@ -733,6 +951,13 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
             {status === 'loading' ? 'Starting…' : complete ? 'Start again' : 'Start live session'}
           </button>
         )}
+        <button
+          onClick={toggleVoice}
+          aria-label={voiceEnabled ? 'Mute voice cues' : 'Unmute voice cues'}
+          className="w-9 h-9 rounded-lg border border-forest-700 hover:border-coral-400 flex items-center justify-center text-slate-300 transition-colors"
+        >
+          {voiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
+        </button>
       </div>
       {error && <p className="text-sm text-red-400 mt-1 text-center">{error}</p>}
       <p className="text-xs text-slate-500 text-center">

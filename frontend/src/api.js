@@ -18,6 +18,8 @@ async function request(path, options = {}) {
 export const api = {
   health: () => request('/health'),
 
+  chat: (payload) => request('/agent/chat', { method: 'POST', body: JSON.stringify(payload) }),
+
   listUsers: () => request('/users'),
   createUser: (payload) => request('/users', { method: 'POST', body: JSON.stringify(payload) }),
 
@@ -39,6 +41,7 @@ export const api = {
 
   getProgress: (userId) => request(`/logs/user/${userId}/progress`),
   getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),
+  getWeeklyDigest: (userId) => request(`/agent/weekly-digest/${userId}`),
   runDebate: (payload) => request('/agent/debate', { method: 'POST', body: JSON.stringify(payload) }),
 
   getFatigue: (userId) => request(`/fatigue/user/${userId}`),
