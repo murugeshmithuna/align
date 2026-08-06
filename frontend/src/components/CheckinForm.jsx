@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api.js'
+import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 const LABELS = {
   1: 'Sick / Exhausted',
@@ -13,6 +14,7 @@ export default function CheckinForm({ userId, onSubmitted }) {
   const [score, setScore] = useState(3)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [submitted, flashSubmitted] = useSavedFlash()
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -20,6 +22,10 @@ export default function CheckinForm({ userId, onSubmitted }) {
     setError('')
     try {
       const result = await api.submitCheckin({ user_id: userId, score: Number(score) })
+      flashSubmitted()
+      // Briefly show "Submitted ✓" before the parent closes/navigates away
+      // on submission - otherwise it'd never actually be visible.
+      await new Promise((resolve) => setTimeout(resolve, 500))
       onSubmitted?.(result)
     } catch (err) {
       setError(err.message)
@@ -57,10 +63,10 @@ export default function CheckinForm({ userId, onSubmitted }) {
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || submitted}
         className="w-full px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
       >
-        {submitting ? 'Saving…' : 'Submit check-in'}
+        {submitting ? 'Saving…' : submitted ? 'Submitted ✓' : 'Submit check-in'}
       </button>
     </form>
   )

@@ -4,6 +4,7 @@ import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { CM_PER_IN, KG_PER_LB, displayToMetric, metricToDisplay } from '../utils/units.js'
+import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 const EQUIPMENT_OPTIONS = [
   { value: 'bodyweight', label: 'Bodyweight' },
@@ -33,6 +34,7 @@ export default function Profile() {
   const [preferredUnits, setPreferredUnits] = useState('metric')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saved, flashSaved] = useSavedFlash()
   const [hasSaved, setHasSaved] = useState(false)
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export default function Profile() {
       })
       showToast(isFirstSave ? 'Profile saved - your baseline plan is ready!' : 'Profile saved.')
       setHasSaved(true)
+      flashSaved()
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -246,10 +249,10 @@ export default function Profile() {
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || saved}
             className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
           >
-            {saving ? (hasSaved ? 'Saving…' : 'Generating your plan…') : 'Save profile'}
+            {saving ? (hasSaved ? 'Saving…' : 'Generating your plan…') : saved ? 'Saved ✓' : 'Save profile'}
           </button>
           {hasSaved && (
             <button
