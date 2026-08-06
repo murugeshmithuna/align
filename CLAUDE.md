@@ -21,7 +21,8 @@ the dashboard) → `/dashboard` (active plan summary + today's readiness + a qui
 feature route - no feature's actual tool renders inline here) → `/checkin` (also auto-shown as a modal on
 the dashboard once/day). Every feature lives on its own dedicated route: `/plans` + `/plan/:planId` (plan
 browsing/detail/activation), `/workout/live` (MediaPipe live session) + `/workout/log` (manual set
-logging), `/nutrition` (meal photo), `/analytics` (progress charts + fatigue model), `/coach-resolution`
+logging), `/nutrition` (meal photo), `/nutrition/calculator` (baseline macro/fiber goal calculator),
+`/analytics` (progress charts + fatigue model), `/coach-resolution`
 (unified coach decision, formerly the adversarial "Coach Debate" - see below). Routes were renamed from
 their original flatter paths (`/live-session`, `/meal-photo`,
 `/progress`, `/plans/:planId`, `/nutrition/analyze`) into this `/workout/*`, `/nutrition` grouping at the
@@ -513,10 +514,16 @@ user confirms. `User` gained `age`/`sex`/`activity_level` (calculator inputs) an
 (a calculated output, alongside the existing calorie/protein/carbs/fat targets). Protein targets scale
 1.8-2.2 g/kg bodyweight by goal (higher for muscle gain/fat loss, to preserve lean mass); fat is fixed at
 25% of calories; carbs absorb the remaining calorie budget; fiber is `14g per 1,000 kcal`, clamped to the
-requested 25-38g baseline range. `/profile` gained a separate "Nutrition goals" form (its own `Save Goals`
-button, independent of the main "Save profile" submit) with Age/Sex/Activity Level/Primary Goal inputs, an
-"Auto-Calculate Baseline Goals" button that fills the five target fields, and a `Stepper` (+/- buttons
-around a number input) for manually nudging any of them afterward.
+requested 25-38g baseline range. Originally landed as a second form stacked at the bottom of `/profile`
+(its own `Save Goals` button, independent of the main "Save profile" submit); later extracted wholesale
+into its own dedicated `/nutrition/calculator` page (`NutritionCalculator.jsx` - see the sidebar overhaul
+below) once that placement was flagged as buried/hard to find. Age/Sex/Activity Level/Primary Goal inputs,
+an "Auto-Calculate Baseline Goals" button that fills five target fields, and a `Stepper` (+/- buttons
+around a number input, rendered inside a `MacroTargetCard` - emoji + label header, the current value in
+large type, then the stepper) for manually nudging any of them afterward. Since the calculator now lives
+on its own route rather than reading `/profile`'s in-memory state, it has its own Height/Weight/Units
+inputs too, saving back to the exact same underlying `User.height_cm`/`weight_kg` fields `/profile` uses -
+editing either page keeps the one stored value in sync, there's no divergent second copy.
 
 **Real bug caught and fixed during live testing**: the `Stepper`'s native `<input type="number" step={5}>`
 looked fine on screen, but an auto-calculated value like `176` (protein) isn't a multiple of `5` - HTML5
@@ -527,6 +534,26 @@ ever arrived) after the button click reported as successful. Fixed by setting th
 `step="any"` (disables native step validation) while keeping the +/- buttons' fixed increment as a
 separate JS-only value - confirmed live afterward: auto-calculate, a stepper nudge (+10 via two clicks),
 Save Goals, and a full page reload all round-tripped the exact edited numbers correctly.
+
+**Left hamburger sidebar drawer, replacing the horizontal Navbar** (`Sidebar.jsx` + `Header.jsx`, wired into
+`AppLayout.jsx`): the old always-visible top `Navbar.jsx` (7+ text links crammed into one row) is deleted
+entirely. `Header.jsx` is now a minimal bar - a `☰` hamburger + logo on the left, a real user
+avatar/name/logout on the right (fetches the profile for `name`/`photo_url`; falls back to a coral circle
+with the first letter of the name if there's no `photo_url`, e.g. non-Google accounts - never a fabricated
+image). Clicking the hamburger opens `Sidebar.jsx`, a slide-in left drawer (`-translate-x-full` ->
+`translate-x-0`, backdrop click or its own close button to dismiss) listing exactly 8 core routes with an
+emoji icon each: Home/Dashboard, Live Session, Log Workout, Meal Tracker & Vision AI, Nutritional & Macro
+Calculator, Analytics & AI Audits, Coach Resolution & Strategy, Profile & Goal Settings. `/plans`,
+`/plan/:planId`, and `/checkin` are deliberately not in this list - they already have their own in-app
+entry points (Dashboard's Active Plan card, the daily check-in modal) and didn't need global nav presence
+on top of that. Each item is a real `NavLink` (not a parallel non-URL view-state machine) - clicking one
+still updates the actual URL and closes the drawer, so deep-linking, browser back/forward, and every
+route-state-passing pattern already in use elsewhere (e.g. Dashboard's "Start today's live workout"
+handing `planExercises` to `/workout/live` via router state) keeps working unmodified. The "single dynamic
+view, no reload" requirement this was built to satisfy was already true of client-side route navigation
+before this change - what was actually broken was the *presentation* (a cramped horizontal link row), not
+the navigation mechanism, so the fix targets that directly rather than replacing a working router with a
+custom state machine that would have broken deep-linking for no real benefit.
 
 **Global AI assistant** (`AIMessageBar.jsx`, mounted in `AppLayout`): a floating action button + slide-over
 drawer available from every authenticated page, not just the Dashboard - requested as a shadcn
@@ -738,9 +765,13 @@ fitness-agent/
       utils/
         nutritionGoals.js    calculateBMR()/calculateTDEE()/calculateBaselineGoals() - pure functions,
                              no side effects, no backend involvement in the math itself
+        units.js             CM_PER_IN/KG_PER_LB + metricToDisplay()/displayToMetric() - shared between
+                             Profile.jsx and NutritionCalculator.jsx's separate height/weight inputs
       components/
-        Navbar.jsx, AppLayout.jsx (auth gate + navbar + mounts AIMessageBar), HeroScene.jsx (three.js),
-        CheckinForm.jsx, CheckinModal.jsx,
+        Header.jsx (minimal top bar - hamburger + logo left, avatar/name/logout right),
+        Sidebar.jsx (slide-in left drawer, 8 core routes w/ emoji icons - replaces the deleted
+          horizontal Navbar.jsx), AppLayout.jsx (auth gate + mounts Header/Sidebar/AIMessageBar),
+        HeroScene.jsx (three.js), CheckinForm.jsx, CheckinModal.jsx,
         AIMessageBar.jsx (floating FAB + slide-over drawer, available on every authenticated page - the
           only chat surface in the app now; replaced the deleted ChatPanel.jsx that used to live inline
           on the Dashboard. Plain JSX + inline SVG icons, no TypeScript/shadcn/lucide-react - this
@@ -754,7 +785,9 @@ fitness-agent/
         WorkoutLog.jsx (manual set logging - exercise picker w/ inline "+ new", sets/reps/weight/rpe,
           recent-logs list),
         MealPhoto.jsx (dual photo/text input tabs, editable Review & Edit modal w/ read-only auto-
-          recalculating macros, button-triggered Daily Review card, logged-meal history w/ P/C/F badges)
+          recalculating macros, button-triggered Daily Review card, logged-meal history w/ P/C/F badges),
+        NutritionCalculator.jsx (`/nutrition/calculator` - extracted out of Profile.jsx: own
+          height/weight/age/sex/activity/goal inputs, Auto-Calculate button, 5 visual MacroTargetCards)
 ```
 
 **Google Sign-In** (`/login`, `POST /auth/google`): the `User.google_sub`/`photo_url` columns and
