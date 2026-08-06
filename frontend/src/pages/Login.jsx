@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { GoogleLogin } from '@react-oauth/google'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
@@ -40,6 +41,24 @@ export default function Login() {
     }
   }
 
+  // GoogleAuthOut already includes the full user record (experience_level
+  // included), so this can decide the redirect directly - no need for the
+  // second /user/profile round-trip enterAs() does for the plain-login path.
+  async function handleGoogleSuccess(credentialResponse) {
+    setBusy(true)
+    setError('')
+    try {
+      const { user, is_new_user } = await api.googleSignIn(credentialResponse.credential)
+      setUserId(user.id)
+      showToast(is_new_user ? `Welcome, ${user.name}!` : `Welcome back, ${user.name}!`)
+      navigate(user.experience_level ? '/dashboard' : '/profile')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleCreate(event) {
     event.preventDefault()
     if (!name.trim() || !email.trim()) return
@@ -65,6 +84,19 @@ export default function Login() {
         </p>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+
+        <div className="mb-6 flex justify-center">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError('Google sign-in failed - please try again.')}
+          />
+        </div>
+
+        <div className="flex items-center gap-3 mb-6">
+          <div className="flex-1 h-px bg-forest-800" />
+          <span className="text-xs text-slate-500 uppercase tracking-widest">or</span>
+          <div className="flex-1 h-px bg-forest-800" />
+        </div>
 
         <div className="mb-6">
           <h2 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Existing accounts</h2>

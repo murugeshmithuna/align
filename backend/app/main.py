@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import models
 from app.database import Base, engine
-from app.routers import agent, checkin, exercises, fatigue, logs, plans, soreness, user_profile, users, vision
+from app.routers import agent, auth, checkin, exercises, fatigue, logs, plans, soreness, user_profile, users, vision
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +22,7 @@ app.add_middleware(
 )
 
 app.include_router(users.router)
+app.include_router(auth.router)
 app.include_router(exercises.router)
 app.include_router(plans.router)
 app.include_router(logs.router)

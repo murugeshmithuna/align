@@ -22,6 +22,7 @@ export const api = {
 
   listUsers: () => request('/users'),
   createUser: (payload) => request('/users', { method: 'POST', body: JSON.stringify(payload) }),
+  googleSignIn: (idToken) => request('/auth/google', { method: 'POST', body: JSON.stringify({ id_token: idToken }) }),
 
   listExercises: () => request('/exercises'),
   createExercise: (payload) => request('/exercises', { method: 'POST', body: JSON.stringify(payload) }),

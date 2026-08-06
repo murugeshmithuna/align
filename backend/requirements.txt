@@ -8,3 +8,5 @@ python-dotenv==1.0.1
 python-multipart==0.0.32
 mediapipe==1.0.0
 opencv-python-headless==5.0.0.93
+google-auth==2.36.0
+requests==2.34.2
