@@ -862,6 +862,17 @@ browser and confirmed `enterAs()`'s routing and the error-message path both fire
 live round-trip through a real Google consent screen after deploying the Vercel function is the one thing
 that has to be confirmed by the user - a real OAuth exchange can't be scripted end-to-end here.
 
+**Config gap caught in that live round-trip**: switching to `ux_mode="redirect"` requires the exact
+`login_uri` to be registered as an **Authorized redirect URI** in Google Cloud Console - a separate
+allowlist from the **Authorized JavaScript origins** the original popup flow needed, which is all that was
+set up when the client was first created. Missing this produces `Error 400: redirect_uri_mismatch` at
+Google's own consent screen, before the request ever reaches this app's code - confirmed live the first
+time the user actually clicked through post-deploy. Fixed by adding
+`https://fitness-agent-sigma.vercel.app/api/google-redirect` under Authorized redirect URIs (Google Cloud
+Console -> APIs & Services -> Credentials -> this OAuth Client ID). Worth remembering if the production
+domain ever changes - the redirect URI has to be updated there too, it isn't inferred from anything in
+this repo.
+
 Real Google Cloud project (`fitness-app-504711`) - `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` live in
 `backend/.env` (gitignored, never committed - only empty placeholders went into `.env.example`), the
 client ID (not secret, safe to expose in a browser bundle) lives in `frontend/.env` as
