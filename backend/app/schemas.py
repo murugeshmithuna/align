@@ -239,6 +239,11 @@ class CheckInOut(BaseModel):
 class AgentChatRequest(BaseModel):
     user_id: int
     message: str
+    # Stateless API - the client echoes back the `history` it was given on
+    # the previous response so short/context-dependent replies ("2", "yes")
+    # can be resolved against the prior turn instead of looking like a
+    # non-sequitur. Opaque to the caller - just persist and replay verbatim.
+    history: list[dict] = []
 
 
 class AgentToolCall(BaseModel):
@@ -247,9 +252,17 @@ class AgentToolCall(BaseModel):
     result: dict
 
 
+class AgentChoiceWidget(BaseModel):
+    prompt: str
+    widget_type: Literal["single_choice", "multi_select", "confirm"]
+    options: list[str]
+
+
 class AgentChatResponse(BaseModel):
     reply: str
     tool_calls: list[AgentToolCall] = []
+    widget: AgentChoiceWidget | None = None
+    history: list[dict] = []
 
 
 class WeeklyRecapOut(BaseModel):
