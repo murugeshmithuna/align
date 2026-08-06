@@ -98,6 +98,23 @@ one series), PRs marked via larger point radius + surface ring rather than a sec
 logs + flat-then-dip-then-recover bench logs - `is_pr` correctly flags every squat session (monotonic
 increase) and correctly flags `false` only on the bench session that dipped below the existing record.
 
+**Weekly AI Digest** (`/analytics`, `GET /agent/weekly-digest/{user_id}`): a second, structured weekly
+synthesis alongside the existing prose recap - not a replacement, since the two serve different needs
+(free-text narrative vs. a scannable three-bullet digest). `generate_weekly_digest()` in `orchestrator.py`
+gathers the same logs/check-ins as the prose recap *plus* the last 7 days of `meal_analyses` (nutrition
+data the prose recap never included), then forces a **strict** tool call (`report_weekly_digest`, same
+`strict: true` + `additionalProperties: false` pattern as `meal_vision.py`) returning exactly three fields
+- `biggest_win`, `recovery_note`, `next_week_focus` - so the three-bullet shape is schema-enforced, not
+just requested in a prompt. Frontend card shows a spinner + "Synthesizing weekly performance…" while
+loading, then renders the fixed 🚀/⚠️/🎯 format. Verified live with a realistic seeded week (progressive-
+overload squats 185→195→205 lbs, a readiness dip to 2/5 after the heaviest session, one meal log): the
+digest correctly identified the specific weight progression, correctly correlated the readiness drop with
+the heaviest session rather than just restating the numbers, and on one run explicitly flagged the meal
+log's protein number in its next-week recommendation - confirming the nutrition data is actually reaching
+the model, not just being gathered and ignored. The empty-week case (no logs/check-ins/meals at all)
+returns a deterministic canned response without calling the LLM, same philosophy as the prose recap's
+empty-state handling.
+
 **Deployed:** frontend on Vercel (`https://fitness-agent-sigma.vercel.app`, project `fitness-agent`,
 team `mithuna2` - re-imported fresh; the old `fitness-agent-topaz.vercel.app` project was deleted after
 its `vercel.json` SPA rewrite would not take effect no matter what was tried, including on a from-scratch

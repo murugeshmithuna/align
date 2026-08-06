@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.agent.debate import run_coach_debate
-from app.agent.orchestrator import generate_weekly_recap, run_agent_turn, stream_agent_turn
+from app.agent.orchestrator import generate_weekly_digest, generate_weekly_recap, run_agent_turn, stream_agent_turn
 from app.database import get_db
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -37,6 +37,16 @@ def weekly_recap(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     try:
         return {"recap": generate_weekly_recap(db, user_id)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.get("/weekly-digest/{user_id}", response_model=schemas.WeeklyDigestOut)
+def weekly_digest(user_id: int, db: Session = Depends(get_db)):
+    if not db.get(models.User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    try:
+        return generate_weekly_digest(db, user_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 

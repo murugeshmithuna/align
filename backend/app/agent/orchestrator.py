@@ -336,3 +336,107 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
         messages=[{"role": "user", "content": prompt}],
     )
     return "".join(block.text for block in response.content if block.type == "text")
+
+
+WEEKLY_DIGEST_TOOL = {
+    "name": "report_weekly_digest",
+    "description": "Report the three-bullet weekly training/nutrition digest.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "biggest_win": {
+                "type": "string",
+                "description": "The single most notable positive from this week - specific, one sentence.",
+            },
+            "recovery_note": {
+                "type": "string",
+                "description": "One recovery, form, or readiness concern worth flagging - specific, one sentence.",
+            },
+            "next_week_focus": {
+                "type": "string",
+                "description": "One concrete, specific target for next week - one sentence.",
+            },
+        },
+        "required": ["biggest_win", "recovery_note", "next_week_focus"],
+        "additionalProperties": False,
+    },
+}
+
+
+def generate_weekly_digest(db: Session, user_id: int) -> dict:
+    """Structured 3-bullet weekly synthesis across workouts, readiness, AND
+    nutrition (the prose weekly recap above only covers workouts/check-ins) -
+    a forced, strict tool call so the three fields are actually enforced by
+    schema rather than hoping the model self-formats into exactly three
+    bullets, same pattern as meal_vision.py's report_meal_analysis."""
+    client = _get_client()
+    _get_user_or_raise(db, user_id)
+
+    since_dt = _utcnow() - timedelta(days=7)
+    since_date = _today() - timedelta(days=7)
+
+    log_rows = db.execute(
+        select(models.WorkoutLog, models.Exercise.name)
+        .join(models.Exercise, models.WorkoutLog.exercise_id == models.Exercise.id)
+        .where(models.WorkoutLog.user_id == user_id, models.WorkoutLog.performed_at >= since_dt)
+        .order_by(models.WorkoutLog.performed_at.asc())
+    ).all()
+
+    checkins = db.scalars(
+        select(models.CheckIn)
+        .where(models.CheckIn.user_id == user_id, models.CheckIn.checkin_date >= since_date)
+        .order_by(models.CheckIn.checkin_date.asc())
+    ).all()
+
+    meals = db.scalars(
+        select(models.MealAnalysis)
+        .where(models.MealAnalysis.user_id == user_id, models.MealAnalysis.analyzed_at >= since_dt)
+        .order_by(models.MealAnalysis.analyzed_at.asc())
+    ).all()
+
+    if not log_rows and not checkins and not meals:
+        return {
+            "biggest_win": "No activity logged yet this week.",
+            "recovery_note": "Nothing to flag - there's no data yet.",
+            "next_week_focus": "Log a few workouts and check in daily so next week's digest has something to work with.",
+        }
+
+    log_lines = (
+        "\n".join(
+            f"- {log.performed_at.date()}: {name} - {log.sets}x{log.reps} @ {log.weight or 'bodyweight'}"
+            + (f", RPE {log.rpe}" if log.rpe else "")
+            for log, name in log_rows
+        )
+        or "none logged"
+    )
+    checkin_lines = (
+        "\n".join(f"- {c.checkin_date}: {c.score}/5 ({c.label})" for c in checkins) or "none logged"
+    )
+    meal_lines = (
+        "\n".join(
+            f"- {m.analyzed_at.date()}: {m.description} (~{m.estimated_calories} kcal, "
+            f"{m.protein_g}g protein)"
+            for m in meals
+        )
+        or "none logged"
+    )
+
+    prompt = (
+        "Synthesize this user's past 7 days of training, readiness, and nutrition into a three-bullet "
+        "digest. Each field is ONE specific, concrete sentence - no fluff, no generic advice, reference "
+        "actual numbers/trends from the data below wherever possible.\n\n"
+        f"Workout logs (last 7 days):\n{log_lines}\n\n"
+        f"Daily readiness check-ins (last 7 days):\n{checkin_lines}\n\n"
+        f"Meal photo analyses (last 7 days):\n{meal_lines}"
+    )
+
+    response = client.messages.create(
+        model=FAST_MODEL,
+        max_tokens=400,
+        tools=[WEEKLY_DIGEST_TOOL],
+        tool_choice={"type": "tool", "name": "report_weekly_digest"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    tool_block = next(block for block in response.content if block.type == "tool_use")
+    return tool_block.input
