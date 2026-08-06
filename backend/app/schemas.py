@@ -248,6 +248,12 @@ class WeeklyRecapOut(BaseModel):
     recap: str
 
 
+class WeeklyDigestOut(BaseModel):
+    biggest_win: str
+    recovery_note: str
+    next_week_focus: str
+
+
 class DebateRequest(BaseModel):
     user_id: int
     question: str | None = None

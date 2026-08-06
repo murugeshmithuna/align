@@ -177,6 +177,9 @@ export default function Progress() {
   const [recap, setRecap] = useState('')
   const [recapLoading, setRecapLoading] = useState(false)
   const [recapError, setRecapError] = useState('')
+  const [digest, setDigest] = useState(null)
+  const [digestLoading, setDigestLoading] = useState(false)
+  const [digestError, setDigestError] = useState('')
   const [showVolumeTable, setShowVolumeTable] = useState(false)
   const [showExerciseTable, setShowExerciseTable] = useState(false)
   const [fatigue, setFatigue] = useState(null)
@@ -216,6 +219,19 @@ export default function Progress() {
       setRecapError(err.message)
     } finally {
       setRecapLoading(false)
+    }
+  }
+
+  async function loadDigest() {
+    setDigestLoading(true)
+    setDigestError('')
+    try {
+      const data = await api.getWeeklyDigest(userId)
+      setDigest(data)
+    } catch (err) {
+      setDigestError(err.message)
+    } finally {
+      setDigestLoading(false)
     }
   }
 
@@ -280,6 +296,51 @@ export default function Progress() {
           !recapLoading && (
             <p className="text-sm text-slate-500">Generate a summary of your last 7 days.</p>
           )
+        )}
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-heading font-semibold">Weekly AI Insights</h2>
+          <button
+            onClick={loadDigest}
+            disabled={digestLoading}
+            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
+          >
+            {digestLoading ? 'Synthesizing…' : digest ? 'Regenerate' : 'Generate'}
+          </button>
+        </div>
+        {digestError && <p className="text-sm text-red-400">{digestError}</p>}
+        {digestLoading ? (
+          <p className="text-sm text-slate-500 flex items-center gap-2">
+            <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+            Synthesizing weekly performance…
+          </p>
+        ) : digest ? (
+          <ul className="space-y-2 text-sm text-slate-200">
+            <li className="flex gap-2">
+              <span>🚀</span>
+              <span>
+                <span className="font-semibold">Biggest Win:</span> {digest.biggest_win}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span>⚠️</span>
+              <span>
+                <span className="font-semibold">Recovery/Form Note:</span> {digest.recovery_note}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span>🎯</span>
+              <span>
+                <span className="font-semibold">Next Week Focus:</span> {digest.next_week_focus}
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Aggregates your last 7 days of workouts, readiness, and meal photos into three bullets.
+          </p>
         )}
       </div>
 
