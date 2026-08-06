@@ -205,6 +205,36 @@ wasn't verified (no real camera subject available in this sandboxed session, sam
 original build) - the state-machine algorithm itself was already proven via the batch path's synthetic
 unit tests, and this is a parameterization of the same logic.
 
+**False-positive guardrails** (added after live use surfaced camera-repositioning triggering bogus rep
+counts): three independent fixes.
+1. **Landmark confidence** raised from 0.5 to 0.75 for every keypoint the active exercise actually reads -
+   not just the 3-point angle triplet but also whatever `checkForm` needs (e.g. squat's shoulder for its
+   back-angle check), via a per-config `extraVisibility` list. A camera nudge tends to produce
+   low-confidence jitter rather than a clean drop to near-zero, so the old looser threshold let unreliable
+   frames through as if they were trustworthy.
+2. **Camera-shift detection**: if more than 80% of *all 33* landmarks (not just the exercise's own joints)
+   move more than a small normalized distance between consecutive frames, that's the whole frame shifting
+   - a real rep only displaces the joints actually involved, while a nudged camera displaces everything
+   at once, including landmarks with no reason to move (e.g. the opposite shoulder during a bicep curl).
+   When detected, rep processing pauses entirely (not just paused counting - the state machine doesn't
+   advance at all that frame) and the skeleton overlay turns amber with a "Camera shifting, please hold
+   still" cue, taking priority over the green/red form-correctness color.
+3. **Strict state machine with dwell time**: renamed states to `START_POSITION` -> `IN_MOTION` ->
+   `PEAK_DEPTH` -> `RETURN_POSITION`, and `PEAK_DEPTH` now requires 400ms of real wall-clock time before
+   it's allowed to advance to `RETURN_POSITION`. A brief dip below the flexed-angle threshold that bounces
+   back up before that 400ms elapses (camera flicker, an incomplete rep) is rejected outright - no rep
+   counted, straight back to `START_POSITION` - rather than being treated as a valid rep just because the
+   angle briefly crossed the boundary.
+
+Verified via a standalone replica of the exact algorithm (same logic, run outside the browser so it could
+be exercised with synthetic timestamps): a normal rep with a genuine 500ms dwell at the bottom counts
+correctly; an identical-looking rep that bounces back up after only 50ms is correctly rejected; landmark
+sets at 0.74 visibility are correctly blocked while 0.76 passes; and simulated camera shake (all 33
+landmarks shifting together) is correctly flagged while normal single-joint exercise motion is not. Live
+browser smoke-tested (fake camera) for crash-safety and correct initial HUD state after the refactor - this
+also caught and fixed a leftover hardcoded `setPhase('UP')` in `start()` that would have shown the old
+phase label on an otherwise-renamed state machine.
+
 **Claude Vision meal-photo analysis** (`/nutrition/analyze`, `POST /vision/analyze-meal`): separate code path from
 the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
 schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded

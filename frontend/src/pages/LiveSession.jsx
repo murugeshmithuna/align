@@ -28,8 +28,47 @@ const LM = {
   RIGHT_ANKLE: 28,
 }
 
+// Required-keypoint confidence gate: below this, don't trust the angle
+// enough to count reps or process form at all (raised from an earlier 0.5 -
+// camera repositioning or a laptop nudge tends to produce low-confidence
+// landmark jitter rather than a clean drop to near-zero, so a loose
+// threshold let those frames through as if they were reliable).
+const MIN_LANDMARK_VISIBILITY = 0.75
+
+// Camera-shift guard: if a large fraction of ALL landmarks (not just the
+// exercise's own joints) move more than this normalized distance between
+// consecutive frames, that's the whole frame shifting - i.e. the camera
+// moved - not the person. A real rep only displaces the joints actually
+// involved in the movement; a nudged laptop/camera displaces everything at
+// once, including landmarks (ears, opposite-side shoulder, etc.) that have
+// no reason to move during, say, a bicep curl.
+const CAMERA_SHIFT_DISTANCE = 0.04
+const CAMERA_SHIFT_FRACTION = 0.8
+
+// Minimum time the joint angle must stay at/past the flexed threshold
+// before the rep is allowed to count - filters out a brief, jittery dip
+// below the threshold (a camera flicker, a partial/incomplete rep) that
+// crosses the angle boundary for a single frame without a real controlled
+// rep happening.
+const PEAK_DWELL_MS = 400
+
 function clamp(x, lo, hi) {
   return Math.max(lo, Math.min(hi, x))
+}
+
+function landmarkDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y)
+}
+
+// Returns the fraction of landmarks that moved more than CAMERA_SHIFT_DISTANCE
+// since the previous frame - a high fraction means the whole frame shifted.
+function computeShiftFraction(landmarks, prevLandmarks) {
+  if (!prevLandmarks) return 0
+  let shifted = 0
+  for (let i = 0; i < landmarks.length; i++) {
+    if (landmarkDistance(landmarks[i], prevLandmarks[i]) > CAMERA_SHIFT_DISTANCE) shifted++
+  }
+  return shifted / landmarks.length
 }
 
 function angleDeg(a, b, c) {
@@ -54,6 +93,9 @@ const EXERCISE_CONFIGS = {
     label: 'Squat',
     left: [LM.LEFT_HIP, LM.LEFT_KNEE, LM.LEFT_ANKLE],
     right: [LM.RIGHT_HIP, LM.RIGHT_KNEE, LM.RIGHT_ANKLE],
+    // checkForm also reads the shoulder (back angle) - gate its confidence too,
+    // not just the hip/knee/ankle triplet used for the rep-counting angle.
+    extraVisibility: { left: [LM.LEFT_SHOULDER], right: [LM.RIGHT_SHOULDER] },
     extendedAngle: 160,
     flexedAngle: 110,
     goodRepMaxAngle: 100, // depth: min angle reached must be at/below this
@@ -83,6 +125,8 @@ const EXERCISE_CONFIGS = {
     label: 'Bicep Curl',
     left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
     right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    // checkForm also reads the hip (torso reference for elbow drift).
+    extraVisibility: { left: [LM.LEFT_HIP], right: [LM.RIGHT_HIP] },
     extendedAngle: 155,
     flexedAngle: 55,
     goodRepMaxAngle: 70,
@@ -105,6 +149,8 @@ const EXERCISE_CONFIGS = {
     label: 'Push-up',
     left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
     right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    // checkForm also reads the hip + ankle (hip-sag alignment check).
+    extraVisibility: { left: [LM.LEFT_HIP, LM.LEFT_ANKLE], right: [LM.RIGHT_HIP, LM.RIGHT_ANKLE] },
     extendedAngle: 160,
     flexedAngle: 90,
     goodRepMaxAngle: 100,
@@ -136,10 +182,14 @@ function matchExerciseConfig(name) {
 
 function frameAngleAndSide(landmarks, config) {
   const side = avgVisibility(landmarks, config.left) >= avgVisibility(landmarks, config.right) ? 'left' : 'right'
-  const [aIdx, bIdx, cIdx] = side === 'left' ? config.left : config.right
-  if (Math.min(landmarks[aIdx].visibility, landmarks[bIdx].visibility, landmarks[cIdx].visibility) < 0.5) {
-    return null
-  }
+  const triplet = side === 'left' ? config.left : config.right
+  const extra = (side === 'left' ? config.extraVisibility?.left : config.extraVisibility?.right) || []
+  const requiredIndices = [...triplet, ...extra]
+
+  const minVisibility = Math.min(...requiredIndices.map((i) => landmarks[i].visibility))
+  if (minVisibility < MIN_LANDMARK_VISIBILITY) return null
+
+  const [aIdx, bIdx, cIdx] = triplet
   const angle = angleDeg(landmarks[aIdx], landmarks[bIdx], landmarks[cIdx])
   return { angle, side }
 }
@@ -229,8 +279,16 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const streamRef = useRef(null)
   const rafRef = useRef(null)
   const lastVideoTimeRef = useRef(-1)
-  const repStateRef = useRef({ state: 'up', current: null, reachedFlexed: false, prevAngle: null })
+  const repStateRef = useRef({
+    state: 'START_POSITION',
+    current: null,
+    reachedFlexed: false,
+    peakReachedAt: null,
+    prevAngle: null,
+  })
   const formOkRef = useRef(true)
+  const prevLandmarksRef = useRef(null)
+  const cameraShiftingRef = useRef(false)
 
   // `renderLoop` recurses via requestAnimationFrame(renderLoop) using the
   // closure captured when `start()` first scheduled it - it never picks up a
@@ -256,9 +314,10 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
 
   const [status, setStatus] = useState('idle') // idle | loading | running | error
   const [error, setError] = useState('')
-  const [phase, setPhase] = useState('UP')
+  const [phase, setPhase] = useState('START')
   const [cue, setCue] = useState('Start the session, then step into frame')
   const [formOk, setFormOk] = useState(true)
+  const [cameraShifting, setCameraShifting] = useState(false)
 
   function setManualExercise(value) {
     sessionRef.current.manualExercise = value
@@ -286,7 +345,14 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const targetSets = getTargetSets()
 
   function resetRepState() {
-    repStateRef.current = { state: 'up', current: null, reachedFlexed: false, prevAngle: null }
+    repStateRef.current = {
+      state: 'START_POSITION',
+      current: null,
+      reachedFlexed: false,
+      peakReachedAt: null,
+      prevAngle: null,
+    }
+    setPhase('START')
   }
 
   async function logCompletedExercise(item) {
@@ -362,6 +428,13 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     }
   }
 
+  // START_POSITION -> IN_MOTION -> PEAK_DEPTH -> RETURN_POSITION -> (rep
+  // counts) -> START_POSITION. PEAK_DEPTH requires PEAK_DWELL_MS of real
+  // wall-clock time before it's allowed to advance to RETURN_POSITION - a
+  // brief, jittery dip below the flexed threshold (camera flicker, an
+  // incomplete rep) that recovers before the dwell is satisfied gets
+  // rejected as noise (back to START_POSITION, no rep counted) rather than
+  // registering.
   function processFrame(landmarks) {
     const activeConfig = getCurrentConfig()
     const result = frameAngleAndSide(landmarks, activeConfig)
@@ -374,38 +447,56 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
 
     const rs = repStateRef.current
 
-    if (rs.state === 'up') {
+    if (rs.state === 'START_POSITION') {
       if (angle < activeConfig.extendedAngle) {
-        rs.state = 'descending'
+        rs.state = 'IN_MOTION'
         rs.current = { minAngle: angle }
-        rs.reachedFlexed = angle <= activeConfig.flexedAngle
-        setPhase('DOWN')
+        rs.reachedFlexed = false
+        setPhase('MOTION')
         setCue(formCheck.cue || activeConfig.downCue)
       }
-    } else if (rs.state === 'descending') {
+    } else if (rs.state === 'IN_MOTION') {
       if (angle < rs.current.minAngle) rs.current = { minAngle: angle }
-      if (angle <= activeConfig.flexedAngle) rs.reachedFlexed = true
-
-      const turnedUpward = rs.reachedFlexed && rs.prevAngle != null && angle > rs.prevAngle
-      if (turnedUpward) {
-        rs.state = 'ascending'
-        setPhase('UP')
-        setCue(formCheck.cue || activeConfig.upCue)
+      if (angle <= activeConfig.flexedAngle) {
+        rs.state = 'PEAK_DEPTH'
+        rs.reachedFlexed = true
+        rs.peakReachedAt = Date.now()
+        setPhase('PEAK')
       } else if (angle >= activeConfig.extendedAngle) {
-        completeRep(rs.current)
-        rs.state = 'up'
+        // Came back up without ever reaching depth - shallow, doesn't count.
+        rs.state = 'START_POSITION'
         rs.current = null
-        rs.reachedFlexed = false
+        setPhase('START')
       } else if (formCheck.cue) {
         setCue(formCheck.cue)
       }
-    } else if (rs.state === 'ascending') {
+    } else if (rs.state === 'PEAK_DEPTH') {
+      if (angle < rs.current.minAngle) rs.current = { minAngle: angle }
+
+      const dwellSatisfied = Date.now() - rs.peakReachedAt >= PEAK_DWELL_MS
+      const turnedUpward = rs.prevAngle != null && angle > rs.prevAngle
+
+      if (turnedUpward && dwellSatisfied) {
+        rs.state = 'RETURN_POSITION'
+        setPhase('RETURN')
+        setCue(formCheck.cue || activeConfig.upCue)
+      } else if (angle >= activeConfig.extendedAngle) {
+        // Shot back up before satisfying the minimum dwell at depth - reject
+        // as a false positive rather than count a rep.
+        rs.state = 'START_POSITION'
+        rs.current = null
+        setPhase('START')
+        setCue('Hold the bottom position a bit longer')
+      } else if (formCheck.cue) {
+        setCue(formCheck.cue)
+      }
+    } else if (rs.state === 'RETURN_POSITION') {
       if (angle >= activeConfig.extendedAngle) {
         completeRep(rs.current)
-        rs.state = 'up'
+        rs.state = 'START_POSITION'
         rs.current = null
         rs.reachedFlexed = false
-        setPhase('UP')
+        setPhase('START')
       } else if (formCheck.cue) {
         setCue(formCheck.cue)
       }
@@ -424,7 +515,10 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     }
     const ctx = canvas.getContext('2d')
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    const color = formOkRef.current ? '#34d399' : '#f87171' // emerald-400 : red-400
+    // Amber while the camera itself is shifting takes priority over the
+    // form-correctness color - it's a different, more urgent signal ("hold
+    // still", not "fix your form").
+    const color = cameraShiftingRef.current ? '#fbbf24' : formOkRef.current ? '#34d399' : '#f87171'
     drawingUtilsRef.current.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
       color,
       lineWidth: 3,
@@ -438,14 +532,23 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       lastVideoTimeRef.current = video.currentTime
       const result = landmarkerRef.current.detectForVideo(video, performance.now())
       if (result.landmarks && result.landmarks[0]) {
-        drawSkeleton(result.landmarks[0])
+        const landmarks = result.landmarks[0]
+        const shiftFraction = computeShiftFraction(landmarks, prevLandmarksRef.current)
+        prevLandmarksRef.current = landmarks
+        const isShifting = shiftFraction > CAMERA_SHIFT_FRACTION
+        cameraShiftingRef.current = isShifting
+        setCameraShifting(isShifting)
+
+        drawSkeleton(landmarks)
         const s = sessionRef.current
         if (s.restUntil && Date.now() >= s.restUntil) {
           s.restUntil = null
           setResting(false)
         }
-        if (!s.restUntil) {
-          processFrame(result.landmarks[0])
+        if (isShifting) {
+          setCue('Camera shifting, please hold still')
+        } else if (!s.restUntil) {
+          processFrame(landmarks)
         }
       }
     }
@@ -483,6 +586,9 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       drawingUtilsRef.current = new DrawingUtils(canvasRef.current.getContext('2d'))
       resetRepState()
       lastVideoTimeRef.current = -1
+      prevLandmarksRef.current = null
+      cameraShiftingRef.current = false
+      setCameraShifting(false)
       sessionRef.current.queueIndex = 0
       sessionRef.current.currentSet = 1
       sessionRef.current.repCount = 0
@@ -491,7 +597,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       setCurrentSetState(1)
       setRepCountState(0)
       setResting(false)
-      setPhase('UP')
+      setPhase('START')
       setCue('Stand tall / get set, then begin when ready')
       setStatus('running')
       rafRef.current = requestAnimationFrame(renderLoop)
@@ -581,15 +687,17 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
               </p>
             </div>
             <div className="absolute top-4 right-4 bg-forest-950/80 rounded-xl px-3 py-2 text-xs font-heading font-bold">
-              <span className={formOk ? 'text-emerald-400' : 'text-red-400'}>{phase}</span>
+              <span className={cameraShifting ? 'text-amber-400' : formOk ? 'text-emerald-400' : 'text-red-400'}>
+                {cameraShifting ? 'HOLD STILL' : phase}
+              </span>
             </div>
             <div className="absolute bottom-4 left-4 right-4 text-center">
               <span
                 className={`inline-block bg-forest-950/80 rounded-xl px-4 py-2 text-sm font-heading font-semibold ${
-                  formOk ? 'text-slate-100' : 'text-red-400'
+                  cameraShifting ? 'text-amber-400' : formOk ? 'text-slate-100' : 'text-red-400'
                 }`}
               >
-                {resting ? `Resting… ${restRemaining}s` : cue}
+                {cameraShifting ? 'Camera shifting, please hold still' : resting ? `Resting… ${restRemaining}s` : cue}
               </span>
             </div>
           </>
