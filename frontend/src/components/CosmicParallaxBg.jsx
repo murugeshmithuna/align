@@ -9,7 +9,11 @@ export default function CosmicParallaxBg({ head, text, loop = true, className = 
   const [mediumStars, setMediumStars] = useState('')
   const [bigStars, setBigStars] = useState('')
 
-  const textParts = text.split(',').map((part) => part.trim())
+  // Both optional - the giant low-opacity duplicate of the real foreground
+  // heading read as a fake-looking "shadow" behind it rather than a subtle
+  // watermark, so callers that don't want that (e.g. Landing.jsx, which
+  // already renders its own crisp heading on top) can just omit these.
+  const textParts = text ? text.split(',').map((part) => part.trim()) : []
 
   function generateStarBoxShadow(count) {
     const shadows = []
@@ -38,17 +42,21 @@ export default function CosmicParallaxBg({ head, text, loop = true, className = 
         <div className="glow"></div>
       </div>
       <div id="earth"></div>
-      <div id="title" className="text-white font-bold opacity-10 text-center select-none">
-        {head.toUpperCase()}
-      </div>
-      <div id="subtitle" className="text-emerald-400 opacity-20 text-center select-none">
-        {textParts.map((part, index) => (
-          <Fragment key={index}>
-            <span className={`subtitle-part-${index + 1}`}>{part.toUpperCase()}</span>
-            {index < textParts.length - 1 && ' '}
-          </Fragment>
-        ))}
-      </div>
+      {head && (
+        <div id="title" className="text-white font-bold opacity-10 text-center select-none">
+          {head.toUpperCase()}
+        </div>
+      )}
+      {textParts.length > 0 && (
+        <div id="subtitle" className="text-emerald-400 opacity-20 text-center select-none">
+          {textParts.map((part, index) => (
+            <Fragment key={index}>
+              <span className={`subtitle-part-${index + 1}`}>{part.toUpperCase()}</span>
+              {index < textParts.length - 1 && ' '}
+            </Fragment>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

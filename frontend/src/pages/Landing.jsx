@@ -40,9 +40,13 @@ export default function Landing() {
           hero) via `relative` + `absolute inset-0` on the child, not the
           whole scrollable page - the feature/footer sections below keep the
           app's normal dark forest/coral surface, unified by sharing the same
-          color tokens rather than by repeating the starfield everywhere. */}
+          color tokens rather than by repeating the starfield everywhere.
+          No head/text passed - the giant faded duplicate of the heading
+          read as a fake-looking shadow behind the real crisp text rather
+          than a subtle watermark, so this only renders the ambient
+          stars/horizon/planet, not a second copy of the title. */}
       <div className="relative overflow-hidden">
-        <CosmicParallaxBg head="AI Fitness Agent" text="Watches, Listens, Adapts" />
+        <CosmicParallaxBg />
 
         <header className="relative z-10 flex items-center justify-between px-6 md:px-12 py-6">
           <div className="flex items-center gap-2">
