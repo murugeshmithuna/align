@@ -46,6 +46,9 @@ export default function Profile() {
   const [weightDisplay, setWeightDisplay] = useState('')
   const [preferredUnits, setPreferredUnits] = useState('metric')
   const [calorieTarget, setCalorieTarget] = useState('')
+  const [proteinTarget, setProteinTarget] = useState('')
+  const [carbsTarget, setCarbsTarget] = useState('')
+  const [fatTarget, setFatTarget] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [hasSaved, setHasSaved] = useState(false)
@@ -64,6 +67,9 @@ export default function Profile() {
         setHeightDisplay(metricToDisplay(data.height_cm, units, CM_PER_IN))
         setWeightDisplay(metricToDisplay(data.weight_kg, units, KG_PER_LB))
         setCalorieTarget(data.daily_calorie_target ?? '')
+        setProteinTarget(data.daily_protein_target ?? '')
+        setCarbsTarget(data.daily_carbs_target ?? '')
+        setFatTarget(data.daily_fat_target ?? '')
         setHasSaved(Boolean(data.experience_level))
       })
       .catch(() => {
@@ -106,6 +112,9 @@ export default function Profile() {
         weight_kg: displayToMetric(weightDisplay, preferredUnits, KG_PER_LB),
         preferred_units: preferredUnits,
         daily_calorie_target: calorieTarget === '' ? null : Number(calorieTarget),
+        daily_protein_target: proteinTarget === '' ? null : Number(proteinTarget),
+        daily_carbs_target: carbsTarget === '' ? null : Number(carbsTarget),
+        daily_fat_target: fatTarget === '' ? null : Number(fatTarget),
       })
       showToast(isFirstSave ? 'Profile saved - your baseline plan is ready!' : 'Profile saved.')
       setHasSaved(true)
@@ -247,22 +256,72 @@ export default function Profile() {
         </div>
 
         <div>
-          <label className="block text-sm mb-1" htmlFor="calorie-target">
-            Daily calorie target (optional)
-          </label>
-          <input
-            id="calorie-target"
-            type="number"
-            min="0"
-            step="10"
-            placeholder="e.g. 2400"
-            value={calorieTarget}
-            onChange={(e) => setCalorieTarget(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-          />
-          <p className="text-xs text-slate-500 mt-1">
-            Powers the calorie progress bar on your dashboard - leave blank if you'd rather not set one.
+          <span className="block text-sm mb-1">Daily macro targets (optional)</span>
+          <p className="text-xs text-slate-500 mb-2">
+            Power the macro progress bars on your dashboard - leave any blank if you'd rather not set one.
           </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="calorie-target">
+                Calories
+              </label>
+              <input
+                id="calorie-target"
+                type="number"
+                min="0"
+                step="10"
+                placeholder="2400"
+                value={calorieTarget}
+                onChange={(e) => setCalorieTarget(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="protein-target">
+                Protein (g)
+              </label>
+              <input
+                id="protein-target"
+                type="number"
+                min="0"
+                step="5"
+                placeholder="160"
+                value={proteinTarget}
+                onChange={(e) => setProteinTarget(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="carbs-target">
+                Carbs (g)
+              </label>
+              <input
+                id="carbs-target"
+                type="number"
+                min="0"
+                step="5"
+                placeholder="250"
+                value={carbsTarget}
+                onChange={(e) => setCarbsTarget(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="fat-target">
+                Fat (g)
+              </label>
+              <input
+                id="fat-target"
+                type="number"
+                min="0"
+                step="5"
+                placeholder="70"
+                value={fatTarget}
+                onChange={(e) => setFatTarget(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            </div>
+          </div>
         </div>
 
         <div>

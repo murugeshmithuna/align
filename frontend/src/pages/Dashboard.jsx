@@ -23,6 +23,32 @@ function isWithinLastDays(dateInput, days) {
   return new Date(dateInput).getTime() >= cutoff
 }
 
+// No target set falls back to "filled if anything's logged, empty
+// otherwise" (same fallback the workouts-this-week bar above already uses)
+// rather than a fabricated percentage against a number that doesn't exist.
+function MacroBar({ label, value, target, unit, color }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-xs text-slate-500">{label}</span>
+        <span className="text-xs font-semibold tabular-nums">
+          {Math.round(value).toLocaleString()}
+          {unit}
+          {target ? ` / ${Math.round(target).toLocaleString()}${unit}` : ''}
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-forest-900 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all ${color}`}
+          style={{
+            width: target ? `${Math.min(100, (value / target) * 100)}%` : value > 0 ? '100%' : '0%',
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard() {
   const { userId } = useSession()
   const { showToast } = useToast()
@@ -124,6 +150,8 @@ export default function Dashboard() {
       count: todaysMeals.length,
       calories: todaysMeals.reduce((sum, m) => sum + m.estimated_calories, 0),
       protein: todaysMeals.reduce((sum, m) => sum + m.protein_g, 0),
+      carbs: todaysMeals.reduce((sum, m) => sum + m.carbs_g, 0),
+      fat: todaysMeals.reduce((sum, m) => sum + m.fat_g, 0),
     }
   }, [meals])
 
@@ -266,51 +294,60 @@ export default function Dashboard() {
             </div>
           </div>
           <div>
-            <div className="flex items-baseline justify-between mb-1">
-              <span className="text-xs text-slate-500">Today's calories</span>
-              {profile?.daily_calorie_target && (
-                <span className="text-sm font-semibold tabular-nums">
-                  {todaysNutrition.calories.toLocaleString()} / {profile.daily_calorie_target.toLocaleString()} kcal
-                </span>
-              )}
-            </div>
+            <span className="text-xs text-slate-500">Today's macros</span>
             {activityLoading ? (
               <p className="text-sm text-slate-500 mt-1">Loading…</p>
             ) : todaysNutrition.count === 0 ? (
               <p className="text-sm text-slate-500 mt-1">
                 None yet -{' '}
                 <Link to="/nutrition" className="text-coral-400 hover:text-coral-300">
-                  snap a meal photo
+                  log a meal
                 </Link>
                 .
               </p>
-            ) : profile?.daily_calorie_target ? (
-              <>
-                <div className="h-2 rounded-full bg-forest-900 overflow-hidden">
-                  <div
-                    className="h-full bg-coral-500 rounded-full transition-all"
-                    style={{
-                      width: `${Math.min(100, (todaysNutrition.calories / profile.daily_calorie_target) * 100)}%`,
-                    }}
-                  />
-                </div>
-                <p className="text-xs text-slate-500 mt-1.5">
-                  {Math.round(todaysNutrition.protein)}g protein · {todaysNutrition.count} meal
-                  {todaysNutrition.count === 1 ? '' : 's'} logged
-                </p>
-              </>
             ) : (
-              <p className="text-sm font-semibold mt-1 tabular-nums">
-                {todaysNutrition.calories.toLocaleString()} kcal · {Math.round(todaysNutrition.protein)}g protein
-                <span className="text-xs text-slate-500 font-normal">
-                  {' '}
-                  ({todaysNutrition.count} meal{todaysNutrition.count === 1 ? '' : 's'} logged -{' '}
-                  <Link to="/profile" className="text-coral-400 hover:text-coral-300">
-                    set a daily target
-                  </Link>
-                  )
-                </span>
-              </p>
+              <div className="space-y-2.5 mt-2">
+                <MacroBar
+                  label="Calories"
+                  value={todaysNutrition.calories}
+                  target={profile?.daily_calorie_target}
+                  unit=" kcal"
+                  color="bg-coral-500"
+                />
+                <MacroBar
+                  label="Protein"
+                  value={todaysNutrition.protein}
+                  target={profile?.daily_protein_target}
+                  unit="g"
+                  color="bg-emerald-500"
+                />
+                <MacroBar
+                  label="Carbs"
+                  value={todaysNutrition.carbs}
+                  target={profile?.daily_carbs_target}
+                  unit="g"
+                  color="bg-sky-500"
+                />
+                <MacroBar
+                  label="Fat"
+                  value={todaysNutrition.fat}
+                  target={profile?.daily_fat_target}
+                  unit="g"
+                  color="bg-amber-500"
+                />
+                {!profile?.daily_calorie_target &&
+                  !profile?.daily_protein_target &&
+                  !profile?.daily_carbs_target &&
+                  !profile?.daily_fat_target && (
+                    <p className="text-xs text-slate-500">
+                      No daily targets set -{' '}
+                      <Link to="/profile" className="text-coral-400 hover:text-coral-300">
+                        add some
+                      </Link>
+                      .
+                    </p>
+                  )}
+              </div>
             )}
           </div>
         </div>

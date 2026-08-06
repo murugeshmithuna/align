@@ -76,6 +76,10 @@ export const api = {
     }
     return data
   },
+
+  analyzeMealText: (payload) =>
+    request('/vision/analyze-meal-text', { method: 'POST', body: JSON.stringify(payload) }),
+  saveMeal: (payload) => request('/vision/save-meal', { method: 'POST', body: JSON.stringify(payload) }),
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every
