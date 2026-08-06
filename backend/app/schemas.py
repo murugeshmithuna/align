@@ -291,16 +291,35 @@ class NutritionReviewOut(BaseModel):
     recommendation: str
 
 
-class DebateRequest(BaseModel):
+class CoachResolutionRequest(BaseModel):
     user_id: int
     question: str | None = None
 
 
-class DebateOut(BaseModel):
+class PlanAdjustmentItem(BaseModel):
+    plan_exercise_id: int
+    sets: int | None = None
+    reps: int | None = None
+    target_weight: float | None = None
+
+
+class CoachResolutionOut(BaseModel):
     question: str
-    strength_position: str
-    recovery_position: str
+    factors_evaluated: list[str]
     resolution: str
+    plan_adjustments: list[PlanAdjustmentItem]
+    plan_id: int | None
+
+
+class ApplyResolutionRequest(BaseModel):
+    user_id: int
+    plan_id: int
+    updates: list[PlanAdjustmentItem]
+
+
+class ApplyResolutionOut(BaseModel):
+    plan_id: int
+    updated_plan_exercise_ids: list[int]
 
 
 # ---------- Fatigue modeling & asymmetry ----------

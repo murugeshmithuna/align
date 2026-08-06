@@ -7,7 +7,7 @@ const LINKS = [
   { to: '/workout/log', label: 'Log Workout' },
   { to: '/nutrition', label: 'Meal Photo' },
   { to: '/analytics', label: 'Analytics' },
-  { to: '/debate', label: 'Coach Debate' },
+  { to: '/coach-resolution', label: 'Coach Resolution' },
   { to: '/profile', label: 'Profile Settings' },
 ]
 

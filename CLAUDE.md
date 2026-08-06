@@ -21,8 +21,9 @@ the dashboard) → `/dashboard` (active plan summary + today's readiness + a qui
 feature route - no feature's actual tool renders inline here) → `/checkin` (also auto-shown as a modal on
 the dashboard once/day). Every feature lives on its own dedicated route: `/plans` + `/plan/:planId` (plan
 browsing/detail/activation), `/workout/live` (MediaPipe live session) + `/workout/log` (manual set
-logging), `/nutrition` (meal photo), `/analytics` (progress charts + fatigue model), `/debate` (multi-agent
-coach debate). Routes were renamed from their original flatter paths (`/live-session`, `/meal-photo`,
+logging), `/nutrition` (meal photo), `/analytics` (progress charts + fatigue model), `/coach-resolution`
+(unified coach decision, formerly the adversarial "Coach Debate" - see below). Routes were renamed from
+their original flatter paths (`/live-session`, `/meal-photo`,
 `/progress`, `/plans/:planId`, `/nutrition/analyze`) into this `/workout/*`, `/nutrition` grouping at the
 user's request. A shared `AppLayout` + `Navbar` gate the authenticated routes, provide navigation between
 them, and mount the global `AIMessageBar` floating assistant (see below) available from any of them.
@@ -232,16 +233,39 @@ the orchestrator LLM compose a grounded answer (e.g. "when did I last train legs
 Registered in `TOOL_SCHEMAS`/`TOOL_EXECUTORS`/`ROUTING_TOOL` - the three places any new tool needs to be
 added for the fast-model router to be able to select it.
 
-**Multi-agent debate** (`/debate` page, `POST /agent/debate`): a separate code path from the main
-orchestrator, not a tool - `backend/app/agent/debate.py`'s `run_coach_debate()` makes three independent
-`claude-opus-4-8` calls with no shared history: a Strength Coach prompt scoped to recent logs/PRs, a
-Recovery Coach prompt scoped to soreness notes/check-in scores, then a Head Coach resolver call given
-both prior positions as context and told to pick a side rather than hedge. Frontend renders three
-chat-bubble cards (coral Strength, sky-blue Recovery, highlighted bordered Head Coach resolution).
-Verified live with a deliberately tense scenario (RPE 9.5 squat session yesterday + severity-4 soreness +
-readiness 2/5): Strength Coach argued to push, Recovery Coach argued to back off, and the Head Coach
-resolved decisively toward recovery, explicitly re-reasoning about the Strength Coach's own data point
-rather than just averaging the two positions.
+**Coach Resolution** (`/coach-resolution` page, `POST /agent/coach-resolution` + `POST /agent/coach-
+resolution/apply`) - replaced the earlier "Coach Debate": the adversarial two-coach framing (Strength
+Coach vs. Recovery Coach, resolved by a Head Coach) read as unconfident, so it's now a single unified
+master-strategist call. `backend/app/agent/resolution.py`'s `generate_coach_resolution()` makes ONE
+`claude-opus-4-8` call (down from three) with a forced strict `report_coach_resolution` tool_choice,
+gathering the same recent-logs/soreness/check-in context the old debate used *plus* the active plan's
+exercises with their real `plan_exercise_id` values, so the model can propose concrete, appliable changes
+- not just describe what it would do. Returns `factors_evaluated` (2-4 short phrases), `resolution` (one
+authoritative decision, no hedging), and `plan_adjustments` (a list of `{plan_exercise_id, sets, reps,
+target_weight}` deltas, empty if the resolution is purely informational). Frontend renders one executive-
+summary card (🧠 Factors Evaluated / 🎯 The Unified Resolution / ⚡ Action Item) - no chat bubbles, no
+per-speaker avatars or colors. The Action Item is a real "Apply This Plan Adjustment" button, not
+decorative: it POSTs `plan_adjustments` to `/agent/coach-resolution/apply`, which reuses `tools.py`'s
+existing `execute_adjust_plan()` (the same executor the orchestrator's `adjust_plan` tool calls) rather
+than duplicating that logic.
+
+**Real bug caught and fixed while wiring the apply endpoint**: `execute_adjust_plan()`'s update loop used
+`if field in upd:` to decide whether to overwrite a plan_exercise field - but the Apply flow round-trips a
+Pydantic model that serializes *every* field, including ones the model left unset, as explicit `null`. A
+resolution that only meant to change one exercise's weight would still include `"target_weight": null` for
+the *other* adjusted exercises, and the old `in` check would treat that null as "yes, overwrite" and blank
+out a real, already-set target weight the model never touched. Fixed by changing the check to
+`upd.get(field) is not None`. Verified live: manually set one plan_exercise's `target_weight` to 185, then
+applied a resolution whose payload included `target_weight: null` for that same exercise (it only meant to
+change sets/reps) - confirmed the 185 survived the apply call untouched, while the exercise the resolution
+actually meant to reweight updated correctly.
+
+Verified live end-to-end with the same deliberately tense scenario used for the old debate feature (RPE 9.5
+squat session + severity-4 soreness + readiness 2/5, real active plan with real plan_exercise IDs): the
+resolution decisively called for scaling back (not hedging between two positions), cited the actual RPE/
+soreness/readiness numbers by name, proposed a specific reduced Back Squat load (3x5 @ ~180 lb, down from
+5x5 @ 225), and clicking "Apply This Plan Adjustment" in the browser produced a real, confirmed database
+update to that exact plan_exercise row.
 
 **Banister fatigue model + asymmetry checker** (`/analytics`, `GET /fatigue/user/{user_id}`,
 `POST /fatigue/asymmetry`): `backend/app/agent/fatigue.py` is pure computation, no LLM call - like
@@ -360,8 +384,8 @@ also caught and fixed a leftover hardcoded `setPhase('UP')` in `start()` that wo
 phase label on an otherwise-renamed state machine.
 
 **Claude Vision meal-photo analysis** (`/nutrition`): separate code path from the orchestrator's tool loop -
-like `debate.py` - since sending an image doesn't fit a JSON tool-input schema (Claude's tool-use inputs
-are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded photo (or, for the text path, a plain
+like `resolution.py` - since sending an image doesn't fit a JSON tool-input schema (Claude's tool-use
+inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded photo (or, for the text path, a plain
 description string) as content in a single `claude-opus-4-8` call, forcing a **strict** `report_meal_analysis`
 tool call (`"strict": true` + `"additionalProperties": false` on the schema, nested `ingredients` array
 items included - verified against the API reference before use, not guessed) via `tool_choice`, so the
@@ -517,6 +541,25 @@ streams a real reply into the drawer end-to-end. (One test run briefly returned 
 a transient Manifest proxy OAuth error, `M102: anthropic subscription credentials could not be refreshed`,
 not a bug in this component; a retry a minute later worked normally.)
 
+**FAB relabeled to a visible "Ask Coach" pill** (revision of the above): the original FAB was an icon-only
+circle with no text, which made it easy to miss as an interactive element rather than decoration. Now a
+labeled pill (`px-4/py-3 rounded-full`, sparkle icon + "Ask Coach" text, white text on coral rather than
+the near-black text the old circular version used - matches every other coral CTA in the app, which rely
+on the app's default light text color rather than overriding it dark) with a hover scale+shadow lift.
+Still `fixed bottom-6 right-6`, still mounted once in `AppLayout` so it's present on every authenticated
+route. Verified live present (and correctly labeled) on Dashboard, Nutrition, Analytics, and Profile.
+
+**Analytics page: tabbed grid layout** (`/analytics`) - the 7 cards that used to stack in one long vertical
+list (forcing scrolling/zooming to see everything) are now grouped into 3 tabs, each a CSS grid instead of
+a single column: "AI Insights & Audits" (default - Weekly AI Recap / Weekly AI Insights / Weekly Nutrition
+Audit side by side, `grid-cols-1 md:grid-cols-2 lg:grid-cols-3`), "Performance & Metrics" (Training Volume
++ Exercise Progression charts side by side, `md:grid-cols-2`), and "Advanced Biometrics & Recovery"
+(Fatigue/injury-risk model + Limb Asymmetry Check side by side). Card padding tightened (`py-3 px-4`
+instead of `p-6`), headings shrunk to `text-sm`, and title+action-button pairs stay inline
+(`flex justify-between items-center`) - none of the underlying functionality changed, purely a container/
+layout reorganization. Chart height trimmed from `h-64` to `h-56` in the two chart-heavy tabs to help the
+side-by-side pairs fit without a full window scroll on a standard 1080p viewport.
+
 **Voice cue upgrade** (`/workout/live`): `speak()` moved from a module-level helper into `LiveWebcamSession`
 itself so it can close over a `voiceEnabledRef` - a mute toggle button (speaker icon, top of the controls
 row) now gates every cue, and `window.speechSynthesis.cancel()` on mute stops whatever's mid-sentence.
@@ -611,8 +654,8 @@ dashboard.
 - **Data viz:** gradient-filled progress charts (volume, PRs, fatigue trend) with clear trend lines
 - **Live session view:** minimal/glanceable — large rep counter, single current-cue text, nothing else
   competing for attention mid-set
-- **Multi-agent debate view:** chat-bubble exchange (Strength Coach vs. Recovery Coach), distinct
-  avatar/color per agent, ending in a highlighted resolved recommendation
+- **Coach Resolution view:** one unified executive-summary card (Factors Evaluated / Resolution / Action
+  Item) - no chat bubbles, no per-agent avatars or colors; a single confident voice, not a debate
 
 ## Database schema (current)
 
@@ -655,7 +698,8 @@ fitness-agent/
         checkin.py         POST /user/checkin, GET /user/checkin/today/{user_id}
         agent.py          POST /agent/chat, POST /agent/chat/stream (SSE), GET /agent/weekly-recap/{user_id},
                            GET /agent/weekly-digest/{user_id}, GET /agent/nutrition-review/daily/{user_id},
-                           GET /agent/nutrition-review/weekly/{user_id}, POST /agent/debate
+                           GET /agent/nutrition-review/weekly/{user_id}, POST /agent/coach-resolution,
+                           POST /agent/coach-resolution/apply
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
         fatigue.py         GET /fatigue/user/{user_id}, POST /fatigue/asymmetry
         vision.py          POST /vision/analyze-squat, GET /vision/form-analyses/user/{user_id},
@@ -669,7 +713,8 @@ fitness-agent/
         orchestrator.py    Manual Claude tool-use loop, profile/plan/check-in context injection,
                            present_choice widget tool, generate_weekly_recap()/generate_weekly_digest(),
                            generate_daily_nutrition_review()/generate_weekly_nutrition_review()
-        debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
+        resolution.py       generate_coach_resolution() - 1 forced-tool-call Opus call, replaces the
+                           earlier 3-call debate.py (Strength/Recovery/Head Coach)
         fatigue.py         Banister fitness/fatigue/form model + limb-asymmetry checker (pure computation, no LLM)
         meal_vision.py     analyze_meal_photo() + analyze_meal_text() - single Claude call each (vision or
                            text), forced tool_choice for structured ingredient-level output, _sum_ingredients(),
@@ -703,7 +748,7 @@ fitness-agent/
       pages/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
-        Debate.jsx (Strength/Recovery/Head Coach bubble cards),
+        CoachResolution.jsx (unified executive-summary card, Apply This Plan Adjustment button),
         LiveSession.jsx (plan-driven multi-exercise pose tracking, skeleton overlay, auto-log/advance,
           squat video upload), PlanDetail.jsx, PlanList.jsx,
         WorkoutLog.jsx (manual set logging - exercise picker w/ inline "+ new", sets/reps/weight/rpe,
@@ -728,7 +773,8 @@ cd frontend && npm install && npm run dev
 2. ~~Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite~~ — done
 3. ~~MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)~~ — done (`/workout/live`)
 4. ~~Claude Vision meal photo analysis~~ — done (`/nutrition`)
-5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
+5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done, later replaced by a
+   unified Coach Resolution (`/coach-resolution`)
 6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/analytics`)
 7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/analytics`)
 8. Optional: Google Calendar read-only integration

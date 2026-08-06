@@ -45,22 +45,18 @@ function resolveShortReply(raw, widget) {
   return raw
 }
 
-function ChatBubbleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth="2">
-      <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.487 0-2.89-.322-4.126-.89L3 20l1.06-3.18C3.39 15.68 3 14.38 3 13c0-4.418 4.03-8 9-8s9 3.582 9 8Z"
-      />
-    </svg>
-  )
-}
-
 function CloseIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6" stroke="currentColor" strokeWidth="2">
       <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+    </svg>
+  )
+}
+
+function SparkleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+      <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2ZM5 16l.9 2.6L8.5 19.5 5.9 20.4 5 23l-.9-2.6L1.5 19.5l2.6-.9L5 16ZM18 14l1.1 3.2 3.2 1.1-3.2 1.1L18 22.6l-1.1-3.2-3.2-1.1 3.2-1.1L18 14Z" />
     </svg>
   )
 }
@@ -275,9 +271,10 @@ export default function AIMessageBar() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close AI coach' : 'Open AI coach'}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-coral-500 hover:bg-coral-600 text-forest-950 shadow-lg shadow-coral-500/30 flex items-center justify-center transition-colors"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 pl-4 pr-5 py-3 rounded-full bg-coral-500 hover:bg-coral-600 text-white shadow-lg shadow-coral-500/30 hover:shadow-xl hover:scale-105 transition-all duration-200 font-heading font-semibold"
       >
-        {open ? <CloseIcon /> : <ChatBubbleIcon />}
+        <SparkleIcon />
+        <span>Ask Coach</span>
       </button>
 
       {/* Backdrop - click to close, doesn't block the rest of the page when closed */}

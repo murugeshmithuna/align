@@ -1,6 +1,6 @@
 """Claude Vision/text meal analysis.
 
-Separate code path from the main orchestrator tool loop - like debate.py -
+Separate code path from the main orchestrator tool loop - like resolution.py -
 since the vision call sends an image content block rather than filling in a
 tool-callable JSON schema (Claude's tool-use inputs are JSON only; there's no
 way for the model to hand back image bytes as a "tool call"). Both the photo

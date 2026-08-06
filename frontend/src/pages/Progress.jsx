@@ -35,6 +35,19 @@ const RISK_STYLES = {
   unknown: 'text-slate-500',
 }
 
+// Same tab-pill pattern used elsewhere in the app (MealPhoto.jsx, LiveSession.jsx).
+const TABS = [
+  { id: 'insights', label: 'AI Insights & Audits' },
+  { id: 'performance', label: 'Performance & Metrics' },
+  { id: 'biometrics', label: 'Advanced Biometrics & Recovery' },
+]
+
+function tabClass(active) {
+  return `px-4 py-2 rounded-lg text-sm font-heading font-semibold transition-colors whitespace-nowrap ${
+    active ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
+  }`
+}
+
 function buildVolumeChartData(volumeByDate) {
   return {
     labels: volumeByDate.map((p) => p.date),
@@ -171,6 +184,7 @@ const fatigueChartOptions = {
 
 export default function Progress() {
   const { userId } = useSession()
+  const [activeTab, setActiveTab] = useState('insights')
   const [progress, setProgress] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedExerciseId, setSelectedExerciseId] = useState(null)
@@ -290,309 +304,330 @@ export default function Progress() {
   const hasExercises = progress.exercises.length > 0
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10 font-body space-y-6">
+    <div className="max-w-6xl mx-auto px-6 py-8 font-body space-y-4">
       <h1 className="font-heading font-bold text-2xl">Progress</h1>
 
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-heading font-semibold">Weekly AI recap</h2>
-          <button
-            onClick={loadRecap}
-            disabled={recapLoading}
-            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
-          >
-            {recapLoading ? 'Generating…' : recap ? 'Regenerate' : 'Generate'}
+      <div className="flex gap-2 flex-wrap">
+        {TABS.map((tab) => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={tabClass(activeTab === tab.id)}>
+            {tab.label}
           </button>
-        </div>
-        {recapError && <p className="text-sm text-red-400">{recapError}</p>}
-        {recap ? (
-          <p className="text-sm text-slate-300 leading-relaxed">{recap}</p>
-        ) : (
-          !recapLoading && (
-            <p className="text-sm text-slate-500">Generate a summary of your last 7 days.</p>
-          )
-        )}
+        ))}
       </div>
 
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-heading font-semibold">Weekly AI Insights</h2>
-          <button
-            onClick={loadDigest}
-            disabled={digestLoading}
-            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
-          >
-            {digestLoading ? 'Synthesizing…' : digest ? 'Regenerate' : 'Generate'}
-          </button>
-        </div>
-        {digestError && <p className="text-sm text-red-400">{digestError}</p>}
-        {digestLoading ? (
-          <p className="text-sm text-slate-500 flex items-center gap-2">
-            <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
-            Synthesizing weekly performance…
-          </p>
-        ) : digest ? (
-          <ul className="space-y-2 text-sm text-slate-200">
-            <li className="flex gap-2">
-              <span>🚀</span>
-              <span>
-                <span className="font-semibold">Biggest Win:</span> {digest.biggest_win}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>⚠️</span>
-              <span>
-                <span className="font-semibold">Recovery/Form Note:</span> {digest.recovery_note}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>🎯</span>
-              <span>
-                <span className="font-semibold">Next Week Focus:</span> {digest.next_week_focus}
-              </span>
-            </li>
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-500">
-            Aggregates your last 7 days of workouts, readiness, and meal photos into three bullets.
-          </p>
-        )}
-      </div>
-
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-heading font-semibold">Weekly nutrition audit</h2>
-          <button
-            onClick={loadNutritionReview}
-            disabled={nutritionReviewLoading}
-            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
-          >
-            {nutritionReviewLoading ? 'Auditing…' : nutritionReview ? 'Regenerate' : 'Generate'}
-          </button>
-        </div>
-        {nutritionReviewError && <p className="text-sm text-red-400">{nutritionReviewError}</p>}
-        {nutritionReviewLoading ? (
-          <p className="text-sm text-slate-500 flex items-center gap-2">
-            <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
-            Auditing this week's nutrition…
-          </p>
-        ) : nutritionReview ? (
-          <ul className="space-y-2 text-sm text-slate-200">
-            <li className="flex gap-2">
-              <span>📊</span>
-              <span>
-                <span className="font-semibold">Macro Status:</span> {nutritionReview.macro_status}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>💡</span>
-              <span>
-                <span className="font-semibold">Key Pattern:</span> {nutritionReview.key_pattern}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>🎯</span>
-              <span>
-                <span className="font-semibold">Recommendation:</span> {nutritionReview.recommendation}
-              </span>
-            </li>
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-500">
-            Aggregates the last 7 days of meal logs into a consistency, protein-target, and calorie-trend
-            audit.
-          </p>
-        )}
-      </div>
-
-      <div className="card p-6">
-        <h2 className="font-heading font-semibold mb-1">Training volume</h2>
-        <p className="text-xs text-slate-500 mb-4">Total sets × reps × weight, per day.</p>
-        {hasVolume ? (
-          <>
-            <div className="h-64">
-              <Line data={buildVolumeChartData(progress.volume_by_date)} options={baseChartOptions} />
+      {activeTab === 'insights' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="card py-3 px-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="font-heading font-semibold text-sm">Weekly AI Recap</h2>
+              <button
+                onClick={loadRecap}
+                disabled={recapLoading}
+                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold shrink-0"
+              >
+                {recapLoading ? 'Generating…' : recap ? 'Regenerate' : 'Generate'}
+              </button>
             </div>
-            <button
-              onClick={() => setShowVolumeTable((v) => !v)}
-              className="text-xs text-slate-500 hover:text-slate-300 mt-3"
-            >
-              {showVolumeTable ? 'Hide' : 'View'} as table
-            </button>
-            {showVolumeTable && (
-              <table className="w-full text-xs mt-2 text-slate-400">
-                <thead>
-                  <tr className="text-left border-b border-forest-700">
-                    <th className="py-1">Date</th>
-                    <th className="py-1">Total volume</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {progress.volume_by_date.map((p) => (
-                    <tr key={p.date} className="border-b border-forest-800">
-                      <td className="py-1">{p.date}</td>
-                      <td className="py-1 tabular-nums">{p.total_volume.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {recapError && <p className="text-sm text-red-400">{recapError}</p>}
+            {recap ? (
+              <p className="text-sm text-slate-300 leading-relaxed">{recap}</p>
+            ) : (
+              !recapLoading && <p className="text-sm text-slate-500">Summary of your last 7 days.</p>
             )}
-          </>
-        ) : (
-          <p className="text-sm text-slate-500">
-            No workouts logged yet - once you log a few sessions, your volume trend shows up here.
-          </p>
-        )}
-      </div>
-
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="font-heading font-semibold">Exercise progression</h2>
-          {hasExercises && (
-            <select
-              value={selectedExerciseId ?? ''}
-              onChange={(e) => setSelectedExerciseId(Number(e.target.value))}
-              className="px-2 py-1 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-            >
-              {progress.exercises.map((ex) => (
-                <option key={ex.exercise_id} value={ex.exercise_id}>
-                  {ex.exercise_name}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 mb-4">Weight over time - larger points mark a PR.</p>
-        {hasExercises && selectedExercise ? (
-          <>
-            <div className="h-64">
-              <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
-            </div>
-            <button
-              onClick={() => setShowExerciseTable((v) => !v)}
-              className="text-xs text-slate-500 hover:text-slate-300 mt-3"
-            >
-              {showExerciseTable ? 'Hide' : 'View'} as table
-            </button>
-            {showExerciseTable && (
-              <table className="w-full text-xs mt-2 text-slate-400">
-                <thead>
-                  <tr className="text-left border-b border-forest-700">
-                    <th className="py-1">Date</th>
-                    <th className="py-1">Weight</th>
-                    <th className="py-1">Sets × Reps</th>
-                    <th className="py-1">PR</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedExercise.history.map((p, i) => (
-                    <tr key={i} className="border-b border-forest-800">
-                      <td className="py-1">{new Date(p.performed_at).toLocaleDateString()}</td>
-                      <td className="py-1 tabular-nums">{p.weight ?? 'bodyweight'}</td>
-                      <td className="py-1 tabular-nums">
-                        {p.sets}×{p.reps}
-                      </td>
-                      <td className="py-1">{p.is_pr ? '🏆' : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </>
-        ) : (
-          <p className="text-sm text-slate-500">
-            No exercises logged yet - log a workout to start tracking progression.
-          </p>
-        )}
-      </div>
-
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="font-heading font-semibold">Fatigue &amp; injury-risk model</h2>
-          {fatigue?.risk && fatigue.risk.risk_level !== 'unknown' && (
-            <span className={`text-xs font-semibold uppercase tracking-wide ${RISK_STYLES[fatigue.risk.risk_level]}`}>
-              {fatigue.risk.risk_level} risk
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-slate-500 mb-4">
-          Banister impulse-response model - Fitness and Fatigue accumulate from your logged training load
-          (volume × RPE), Form is the balance between them.
-        </p>
-        {fatigue && fatigue.series.length > 0 ? (
-          <>
-            <div className="h-64">
-              <Line data={buildFatigueChartData(fatigue.series)} options={fatigueChartOptions} />
-            </div>
-            {fatigue.risk && (
-              <p className="text-sm text-slate-300 mt-3">{fatigue.risk.message}</p>
-            )}
-          </>
-        ) : (
-          <p className="text-sm text-slate-500">
-            No workouts logged yet - once you log a few sessions, your fitness/fatigue trend shows up here.
-          </p>
-        )}
-      </div>
-
-      <div className="card p-6">
-        <h2 className="font-heading font-semibold mb-1">Limb asymmetry check</h2>
-        <p className="text-xs text-slate-500 mb-4">
-          Compare left vs. right side measurements - per-rep knee angle, rep tempo, or peak load. Enter
-          comma-separated numbers for each side; a live webcam feed will fill these in automatically once
-          pose tracking ships.
-        </p>
-        <form onSubmit={handleAsymmetrySubmit} className="space-y-3">
-          <input
-            type="text"
-            value={asymmetryForm.metricName}
-            onChange={(e) => setAsymmetryForm((f) => ({ ...f, metricName: e.target.value }))}
-            placeholder="Metric name (e.g. knee angle, rep tempo)"
-            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input
-              type="text"
-              value={asymmetryForm.left}
-              onChange={(e) => setAsymmetryForm((f) => ({ ...f, left: e.target.value }))}
-              placeholder="Left side values, e.g. 92, 94, 91"
-              className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-            />
-            <input
-              type="text"
-              value={asymmetryForm.right}
-              onChange={(e) => setAsymmetryForm((f) => ({ ...f, right: e.target.value }))}
-              placeholder="Right side values, e.g. 80, 82, 79"
-              className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-            />
           </div>
-          <button
-            type="submit"
-            disabled={asymmetryLoading}
-            className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
-          >
-            {asymmetryLoading ? 'Checking…' : 'Check asymmetry'}
-          </button>
-        </form>
-        {asymmetryError && <p className="text-sm text-red-400 mt-3">{asymmetryError}</p>}
-        {asymmetryResult && (
-          <div
-            className={`mt-4 p-4 rounded-xl border ${
-              asymmetryResult.flagged ? 'border-red-500/60 bg-red-500/10' : 'border-forest-700 bg-forest-900/40'
-            }`}
-          >
-            <p className="text-sm text-slate-200">
-              <span className="font-semibold">{asymmetryResult.diff_pct}%</span>{' '}
-              {asymmetryResult.stronger_side === 'even' ? 'difference' : `${asymmetryResult.stronger_side}-side dominance`} on{' '}
-              {asymmetryResult.metric_name} (left avg {asymmetryResult.left_avg}, right avg{' '}
-              {asymmetryResult.right_avg}).
-            </p>
-            <p className={`text-xs mt-1 ${asymmetryResult.flagged ? 'text-red-400' : 'text-slate-500'}`}>
-              {asymmetryResult.message}
-            </p>
+
+          <div className="card py-3 px-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="font-heading font-semibold text-sm">Weekly AI Insights</h2>
+              <button
+                onClick={loadDigest}
+                disabled={digestLoading}
+                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold shrink-0"
+              >
+                {digestLoading ? 'Synthesizing…' : digest ? 'Regenerate' : 'Generate'}
+              </button>
+            </div>
+            {digestError && <p className="text-sm text-red-400">{digestError}</p>}
+            {digestLoading ? (
+              <p className="text-sm text-slate-500 flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                Synthesizing…
+              </p>
+            ) : digest ? (
+              <ul className="space-y-1.5 text-sm text-slate-200">
+                <li className="flex gap-2">
+                  <span>🚀</span>
+                  <span>
+                    <span className="font-semibold">Win:</span> {digest.biggest_win}
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span>⚠️</span>
+                  <span>
+                    <span className="font-semibold">Recovery:</span> {digest.recovery_note}
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span>🎯</span>
+                  <span>
+                    <span className="font-semibold">Focus:</span> {digest.next_week_focus}
+                  </span>
+                </li>
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Workouts, readiness, and meals from the last 7 days into three bullets.
+              </p>
+            )}
           </div>
-        )}
-      </div>
+
+          <div className="card py-3 px-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="font-heading font-semibold text-sm">Weekly Nutrition Audit</h2>
+              <button
+                onClick={loadNutritionReview}
+                disabled={nutritionReviewLoading}
+                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold shrink-0"
+              >
+                {nutritionReviewLoading ? 'Auditing…' : nutritionReview ? 'Regenerate' : 'Generate'}
+              </button>
+            </div>
+            {nutritionReviewError && <p className="text-sm text-red-400">{nutritionReviewError}</p>}
+            {nutritionReviewLoading ? (
+              <p className="text-sm text-slate-500 flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                Auditing…
+              </p>
+            ) : nutritionReview ? (
+              <ul className="space-y-1.5 text-sm text-slate-200">
+                <li className="flex gap-2">
+                  <span>📊</span>
+                  <span>
+                    <span className="font-semibold">Macros:</span> {nutritionReview.macro_status}
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span>💡</span>
+                  <span>
+                    <span className="font-semibold">Pattern:</span> {nutritionReview.key_pattern}
+                  </span>
+                </li>
+                <li className="flex gap-2">
+                  <span>🎯</span>
+                  <span>
+                    <span className="font-semibold">Rec:</span> {nutritionReview.recommendation}
+                  </span>
+                </li>
+              </ul>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Macro consistency, protein-target, and calorie-trend audit for the last 7 days.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'performance' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="card py-3 px-4">
+            <h2 className="font-heading font-semibold text-sm mb-1">Training Volume</h2>
+            <p className="text-xs text-slate-500 mb-3">Total sets × reps × weight, per day.</p>
+            {hasVolume ? (
+              <>
+                <div className="h-56">
+                  <Line data={buildVolumeChartData(progress.volume_by_date)} options={baseChartOptions} />
+                </div>
+                <button
+                  onClick={() => setShowVolumeTable((v) => !v)}
+                  className="text-xs text-slate-500 hover:text-slate-300 mt-3"
+                >
+                  {showVolumeTable ? 'Hide' : 'View'} as table
+                </button>
+                {showVolumeTable && (
+                  <table className="w-full text-xs mt-2 text-slate-400">
+                    <thead>
+                      <tr className="text-left border-b border-forest-700">
+                        <th className="py-1">Date</th>
+                        <th className="py-1">Total volume</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {progress.volume_by_date.map((p) => (
+                        <tr key={p.date} className="border-b border-forest-800">
+                          <td className="py-1">{p.date}</td>
+                          <td className="py-1 tabular-nums">{p.total_volume.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No workouts logged yet - once you log a few sessions, your volume trend shows up here.
+              </p>
+            )}
+          </div>
+
+          <div className="card py-3 px-4">
+            <div className="flex justify-between items-center mb-1">
+              <h2 className="font-heading font-semibold text-sm">Exercise Progression</h2>
+              {hasExercises && (
+                <select
+                  value={selectedExerciseId ?? ''}
+                  onChange={(e) => setSelectedExerciseId(Number(e.target.value))}
+                  className="px-2 py-1 rounded-lg bg-forest-950 border border-forest-700 text-xs shrink-0"
+                >
+                  {progress.exercises.map((ex) => (
+                    <option key={ex.exercise_id} value={ex.exercise_id}>
+                      {ex.exercise_name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mb-3">Weight over time - larger points mark a PR.</p>
+            {hasExercises && selectedExercise ? (
+              <>
+                <div className="h-56">
+                  <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
+                </div>
+                <button
+                  onClick={() => setShowExerciseTable((v) => !v)}
+                  className="text-xs text-slate-500 hover:text-slate-300 mt-3"
+                >
+                  {showExerciseTable ? 'Hide' : 'View'} as table
+                </button>
+                {showExerciseTable && (
+                  <table className="w-full text-xs mt-2 text-slate-400">
+                    <thead>
+                      <tr className="text-left border-b border-forest-700">
+                        <th className="py-1">Date</th>
+                        <th className="py-1">Weight</th>
+                        <th className="py-1">Sets × Reps</th>
+                        <th className="py-1">PR</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedExercise.history.map((p, i) => (
+                        <tr key={i} className="border-b border-forest-800">
+                          <td className="py-1">{new Date(p.performed_at).toLocaleDateString()}</td>
+                          <td className="py-1 tabular-nums">{p.weight ?? 'bodyweight'}</td>
+                          <td className="py-1 tabular-nums">
+                            {p.sets}×{p.reps}
+                          </td>
+                          <td className="py-1">{p.is_pr ? '🏆' : ''}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No exercises logged yet - log a workout to start tracking progression.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'biometrics' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="card py-3 px-4">
+            <div className="flex justify-between items-center mb-1">
+              <h2 className="font-heading font-semibold text-sm">Fatigue &amp; Injury-Risk Model</h2>
+              {fatigue?.risk && fatigue.risk.risk_level !== 'unknown' && (
+                <span
+                  className={`text-xs font-semibold uppercase tracking-wide shrink-0 ${RISK_STYLES[fatigue.risk.risk_level]}`}
+                >
+                  {fatigue.risk.risk_level} risk
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mb-3">
+              Banister impulse-response model - Fitness/Fatigue accumulate from training load, Form is the
+              balance between them.
+            </p>
+            {fatigue && fatigue.series.length > 0 ? (
+              <>
+                <div className="h-56">
+                  <Line data={buildFatigueChartData(fatigue.series)} options={fatigueChartOptions} />
+                </div>
+                {fatigue.risk && <p className="text-sm text-slate-300 mt-3">{fatigue.risk.message}</p>}
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No workouts logged yet - once you log a few sessions, your fitness/fatigue trend shows up
+                here.
+              </p>
+            )}
+          </div>
+
+          <div className="card py-3 px-4">
+            <h2 className="font-heading font-semibold text-sm mb-1">Limb Asymmetry Check</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Compare left vs. right side measurements - per-rep knee angle, rep tempo, or peak load.
+              Comma-separated numbers per side.
+            </p>
+            <form onSubmit={handleAsymmetrySubmit} className="space-y-3">
+              <input
+                type="text"
+                value={asymmetryForm.metricName}
+                onChange={(e) => setAsymmetryForm((f) => ({ ...f, metricName: e.target.value }))}
+                placeholder="Metric name (e.g. knee angle, rep tempo)"
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  value={asymmetryForm.left}
+                  onChange={(e) => setAsymmetryForm((f) => ({ ...f, left: e.target.value }))}
+                  placeholder="Left side values, e.g. 92, 94, 91"
+                  className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+                />
+                <input
+                  type="text"
+                  value={asymmetryForm.right}
+                  onChange={(e) => setAsymmetryForm((f) => ({ ...f, right: e.target.value }))}
+                  placeholder="Right side values, e.g. 80, 82, 79"
+                  className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={asymmetryLoading}
+                className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+              >
+                {asymmetryLoading ? 'Checking…' : 'Check asymmetry'}
+              </button>
+            </form>
+            {asymmetryError && <p className="text-sm text-red-400 mt-3">{asymmetryError}</p>}
+            {asymmetryResult && (
+              <div
+                className={`mt-4 p-4 rounded-xl border ${
+                  asymmetryResult.flagged
+                    ? 'border-red-500/60 bg-red-500/10'
+                    : 'border-forest-700 bg-forest-900/40'
+                }`}
+              >
+                <p className="text-sm text-slate-200">
+                  <span className="font-semibold">{asymmetryResult.diff_pct}%</span>{' '}
+                  {asymmetryResult.stronger_side === 'even'
+                    ? 'difference'
+                    : `${asymmetryResult.stronger_side}-side dominance`}{' '}
+                  on {asymmetryResult.metric_name} (left avg {asymmetryResult.left_avg}, right avg{' '}
+                  {asymmetryResult.right_avg}).
+                </p>
+                <p className={`text-xs mt-1 ${asymmetryResult.flagged ? 'text-red-400' : 'text-slate-500'}`}>
+                  {asymmetryResult.message}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
