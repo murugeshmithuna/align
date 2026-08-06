@@ -32,13 +32,42 @@ Landing's header has exactly one link (Sign In / Dashboard, nothing else), its h
 feature-overview section is now plain marketing prose - no cards, no "Open →" links, nothing that launches
 a tool from that page (it previously rendered a `FeatureCard` grid with real links into every feature; that
 grid was removed entirely, not just restyled). Dashboard dropped its embedded `ChatPanel` (a full chat UI
-rendered inline) in favor of the floating `AIMessageBar` plus a "Quick links" grid of plain navigation
-links to each feature route - `ChatPanel.jsx` became fully unused once nothing imported it and was deleted
-outright rather than left as dead code. One explicit deviation from the literal request worth flagging: the
-request asked for `/plan/active` as the Active Plan card's target; `/plan/:planId` (already built, already
-correct) was kept instead, since "active" isn't a real plan identifier in this data model - the card
-already links to whichever plan's real ID is currently active, which is the same UX outcome without a
-redundant second route resolving a magic string to that same ID.
+rendered inline) in favor of the floating `AIMessageBar`. One explicit deviation from the literal request
+worth flagging: the request asked for `/plan/active` as the Active Plan card's target; `/plan/:planId`
+(already built, already correct) was kept instead, since "active" isn't a real plan identifier in this
+data model - the card already links to whichever plan's real ID is currently active, which is the same UX
+outcome without a redundant second route resolving a magic string to that same ID.
+
+**Dashboard widgets replaced a redundant "Quick links" grid** (the grid above just repeated the Navbar's
+own links one scroll down - removed, not restyled) **with three real data-driven cards**, still with zero
+inline feature tools per the strict-separation rule above - every card here still only links out, or in one
+case pre-loads and *navigates* to `/workout/live` rather than rendering it inline:
+- **Today's workout**: filters the active plan's `plan_exercises` by today's `day_of_week`, shows the day
+  name + exercise count/names, and a "Start today's live workout" button that calls `navigate('/workout/
+  live', { state: { planExercises, planId } })` - the exact same router-state contract `PlanDetail.jsx`'s
+  "Start today's session" button already used, so `LiveSession.jsx`'s `buildQueueFromPlan` needed zero
+  changes to accept it from a second entry point. Disabled (not hidden) when there's nothing scheduled
+  today, with a "Log manually" link to `/workout/log` alongside it either way.
+- **This week**: workouts-this-week count (distinct calendar days with a log in the last 7 days) against
+  `target_frequency` from the profile, rendered as a progress bar; today's logged meal calories/protein
+  from `meal_analyses`. Deliberate scoping decision, not an oversight: there's no `daily_calorie_target`
+  field anywhere in this data model, so rather than fabricate one to match the request's example
+  ("1,850 / 2,400 kcal"), this shows the real logged number with an explicit "no daily target set" label -
+  consistent with this project's running rule of not inventing numbers just to fill a UI slot.
+- **Recent activity**: whichever of the most recent workout log or most recent meal analysis is actually
+  newer (real timestamp comparison, not "always show logs first"), plus a genuine AI Coach insight -
+  fetched via the same non-streaming `api.chat()` used by the PDF export's end-of-workout note, given a
+  one-line summary of that most-recent activity and asked for exactly one sentence back. Fetched in the
+  background on mount (a small inline spinner just for that one line, not a page-level blocker) since nothing
+  else on the dashboard should wait on a model call to render.
+
+Verified live with a realistic seeded scenario (2 of 4 target workouts this week, one meal logged today,
+today's plan carrying two exercises): all three cards rendered the correct real numbers, the recent-activity
+card correctly picked the meal over the workout logs (genuinely more recent), the AI tip came back
+specific and grounded ("fuel that next session with another 200-300 calories..."), and clicking "Start
+today's live workout" landed on `/workout/live` with both of today's exercises already populated in the
+picker - confirming the cross-page router-state hookup works from this second entry point, not just from
+`PlanDetail.jsx`.
 
 **Daily readiness check-in:** `POST /user/checkin` (upsert, one row per user per UTC day) /
 `GET /user/checkin/today/{user_id}`. Score 1-5 (Sick/Exhausted → Sore → Normal → Good → Pumped Up) is

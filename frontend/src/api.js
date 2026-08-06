@@ -38,6 +38,7 @@ export const api = {
 
   createLog: (payload) => request('/logs', { method: 'POST', body: JSON.stringify(payload) }),
   listLogs: (userId) => request(`/logs/user/${userId}`),
+  listMealAnalyses: (userId) => request(`/vision/meal-analyses/user/${userId}`),
 
   getProgress: (userId) => request(`/logs/user/${userId}/progress`),
   getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),
