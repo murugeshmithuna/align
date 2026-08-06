@@ -41,23 +41,25 @@ export default function Login() {
     }
   }
 
-  // GoogleAuthOut already includes the full user record (experience_level
-  // included), so this can decide the redirect directly - no need for the
-  // second /user/profile round-trip enterAs() does for the plain-login path.
-  async function handleGoogleSuccess(credentialResponse) {
-    setBusy(true)
-    setError('')
-    try {
-      const { user, is_new_user } = await api.googleSignIn(credentialResponse.credential)
-      setUserId(user.id)
-      showToast(is_new_user ? `Welcome, ${user.name}!` : `Welcome back, ${user.name}!`)
-      navigate(user.experience_level ? '/dashboard' : '/profile')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
+  // Google's redirect flow (see below) lands back here with ?uid=.../
+  // ?is_new=... (set by frontend/api/google-redirect.js after it verifies
+  // the credential server-side) or ?google_error=... on failure - not a
+  // popup callback. Reuses the exact same enterAs() bridge the plain-login
+  // path uses, so there's no second session mechanism to maintain.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const uid = params.get('uid')
+    const googleError = params.get('google_error')
+    if (uid) {
+      showToast(params.get('is_new') === 'true' ? 'Welcome!' : 'Welcome back!')
+      enterAs(Number(uid))
+    } else if (googleError) {
+      setError(`Google sign-in failed: ${googleError}`)
     }
-  }
+    // Only ever needs to run once, against whatever query string the page
+    // loaded with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleCreate(event) {
     event.preventDefault()
@@ -86,8 +88,15 @@ export default function Login() {
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         <div className="mb-6 flex justify-center">
+          {/* Redirect flow (full-page navigation), not the default popup +
+              postMessage flow - Safari's Intelligent Tracking Prevention
+              blocks that handshake by default, confirmed live (sign-in got
+              stuck on the account picker until third-party tracking
+              protection was manually disabled). A redirect isn't subject to
+              that restriction at all, and works the same for every browser. */}
           <GoogleLogin
-            onSuccess={handleGoogleSuccess}
+            ux_mode="redirect"
+            login_uri={`${window.location.origin}/api/google-redirect`}
             onError={() => setError('Google sign-in failed - please try again.')}
           />
         </div>
