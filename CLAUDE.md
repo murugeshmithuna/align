@@ -564,25 +564,39 @@ ever arrived) after the button click reported as successful. Fixed by setting th
 separate JS-only value - confirmed live afterward: auto-calculate, a stepper nudge (+10 via two clicks),
 Save Goals, and a full page reload all round-tripped the exact edited numbers correctly.
 
-**Left hamburger sidebar drawer, replacing the horizontal Navbar** (`Sidebar.jsx` + `Header.jsx`, wired into
-`AppLayout.jsx`): the old always-visible top `Navbar.jsx` (7+ text links crammed into one row) is deleted
-entirely. `Header.jsx` is now a minimal bar - a `☰` hamburger + logo on the left, a real user
-avatar/name/logout on the right (fetches the profile for `name`/`photo_url`; falls back to a coral circle
-with the first letter of the name if there's no `photo_url`, e.g. non-Google accounts - never a fabricated
-image). Clicking the hamburger opens `Sidebar.jsx`, a slide-in left drawer (`-translate-x-full` ->
-`translate-x-0`, backdrop click or its own close button to dismiss) listing exactly 8 core routes with an
-emoji icon each: Home/Dashboard, Live Session, Log Workout, Meal Tracker & Vision AI, Nutritional & Macro
-Calculator, Analytics & AI Audits, Coach Resolution & Strategy, Profile & Goal Settings. `/plans`,
-`/plan/:planId`, and `/checkin` are deliberately not in this list - they already have their own in-app
-entry points (Dashboard's Active Plan card, the daily check-in modal) and didn't need global nav presence
-on top of that. Each item is a real `NavLink` (not a parallel non-URL view-state machine) - clicking one
-still updates the actual URL and closes the drawer, so deep-linking, browser back/forward, and every
-route-state-passing pattern already in use elsewhere (e.g. Dashboard's "Start today's live workout"
-handing `planExercises` to `/workout/live` via router state) keeps working unmodified. The "single dynamic
-view, no reload" requirement this was built to satisfy was already true of client-side route navigation
-before this change - what was actually broken was the *presentation* (a cramped horizontal link row), not
-the navigation mechanism, so the fix targets that directly rather than replacing a working router with a
-custom state machine that would have broken deep-linking for no real benefit.
+**Navigation: horizontal header links (reverted from a hamburger + left drawer)**. The original horizontal
+`Navbar.jsx` (7 links in one row) was replaced with a hamburger icon + slide-in left drawer (`Sidebar.jsx`
++ `Header.jsx`) to fix that cramped presentation - then explicitly reverted back to horizontal header links
+per direct follow-up instruction after trying it live, so `Sidebar.jsx`/`Header.jsx` are deleted again and
+`Navbar.jsx` is back. The current `Navbar.jsx` folds in what was worth keeping from the drawer experiment:
+a real user avatar/name/logout on the right (fetches the profile for `name`/`photo_url`; falls back to a
+coral circle with the first letter of the name if there's no `photo_url` - never a fabricated image,
+same as before) and the extra nav entries added since the original 7-link version (Macro Calculator,
+Coach Resolution), for 8 links total now, each a real `NavLink` with `flex-wrap` + compact padding so 8
+labels stay usable in one header rather than overflowing. `/plans`, `/plan/:planId`, and `/checkin` are
+still deliberately absent - they already have their own in-app entry points (Dashboard's Active Plan
+card, the daily check-in modal) and don't need a global nav slot too. Worth remembering for next time: the
+hamburger/drawer version wasn't a functional regression (it preserved real `NavLink`s, deep-linking, and
+existing router-state passing exactly like this version does) - it was purely a presentation preference
+the user tried live and decided against, not a bug that forced the reversion.
+
+**"Saved" confirmation state on every save-type button** (`utils/useSavedFlash.js`): after a request
+requested this explicitly ("the button has to change from save goals - saved... applicable to any button
+on the website"), extracted the pattern `CoachResolution.jsx`'s "Apply This Plan Adjustment" button already
+used ad hoc into a shared hook - `flashSaved()` flips the button to a disabled "Saved ✓"/"Submitted ✓"
+state for ~2.2s after a successful save, then reverts, rather than either doing nothing visible or
+snapping back to the idle label instantly. Applied to `Profile.jsx` ("Save profile"), `NutritionCalculator
+.jsx` ("Save Goals"), `MealPhoto.jsx`'s Review & Edit modal ("Save meal"), and `CheckinForm.jsx` ("Submit
+check-in"). Two of those (meal save, check-in submit) close their modal/navigate away immediately on
+success, which would make the flash invisible in the same tick it appears - both now `await` a short
+~500ms delay showing the confirmed state before calling the parent's close/navigate callback, so it's
+actually seen. Deliberately **not** applied to `CoachResolution.jsx`'s existing "Applied ✓": that state is
+intentionally permanent until a new resolution request resets it, not a timed flash - re-enabling the
+button after 2.2s would let the same plan adjustment be applied twice, a real bug the other four buttons
+don't have since re-saving the same profile/goals/meal/check-in is harmless. Verified live for both
+patterns: the timed-revert buttons correctly cycle idle -> "Saved ✓" (disabled) -> idle again after the
+flash window, and the close-on-save modals correctly stay open long enough to show the confirmation before
+disappearing.
 
 **Global AI assistant** (`AIMessageBar.jsx`, mounted in `AppLayout`): a floating action button + slide-over
 drawer available from every authenticated page, not just the Dashboard - requested as a shadcn
@@ -796,10 +810,11 @@ fitness-agent/
                              no side effects, no backend involvement in the math itself
         units.js             CM_PER_IN/KG_PER_LB + metricToDisplay()/displayToMetric() - shared between
                              Profile.jsx and NutritionCalculator.jsx's separate height/weight inputs
+        useSavedFlash.js      shared "Saved ✓" timed-revert button-state hook, used by every save-type
+                             button except CoachResolution.jsx's intentionally-permanent "Applied ✓"
       components/
-        Header.jsx (minimal top bar - hamburger + logo left, avatar/name/logout right),
-        Sidebar.jsx (slide-in left drawer, 8 core routes w/ emoji icons - replaces the deleted
-          horizontal Navbar.jsx), AppLayout.jsx (auth gate + mounts Header/Sidebar/AIMessageBar),
+        Navbar.jsx (horizontal header links, 8 routes, real avatar/name/logout on the right),
+        AppLayout.jsx (auth gate + mounts Navbar/AIMessageBar),
         CosmicParallaxBg.jsx (deep-space parallax hero backdrop), CheckinForm.jsx, CheckinModal.jsx,
         AIMessageBar.jsx (floating FAB + slide-over drawer, available on every authenticated page - the
           only chat surface in the app now; replaced the deleted ChatPanel.jsx that used to live inline

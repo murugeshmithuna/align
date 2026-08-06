@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 const MAX_DIMENSION_PX = 800
 const JPEG_QUALITY = 0.7
@@ -95,6 +96,7 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
   const [ingredients, setIngredients] = useState(preview.ingredients)
   const [estimatingIndex, setEstimatingIndex] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [justSaved, flashSaved] = useSavedFlash()
   const totals = useMemo(() => sumIngredients(ingredients), [ingredients])
 
   function updateIngredient(index, field, value) {
@@ -150,6 +152,11 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
         timing_note: preview.timing_note,
       })
       showToast('Meal saved.')
+      flashSaved()
+      // Briefly show the "Saved ✓" state before the modal closes - otherwise
+      // it'd be set and immediately unmounted in the same tick, never
+      // actually visible to the user.
+      await new Promise((resolve) => setTimeout(resolve, 500))
       onSaved(saved)
     } catch (err) {
       showToast(err.message, 'error')
@@ -277,10 +284,10 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
           </button>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || justSaved}
             className="px-5 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
           >
-            {saving ? 'Saving…' : 'Save meal'}
+            {saving ? 'Saving…' : justSaved ? 'Saved ✓' : 'Save meal'}
           </button>
         </div>
       </div>

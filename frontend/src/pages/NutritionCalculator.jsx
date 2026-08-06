@@ -4,6 +4,7 @@ import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { ACTIVITY_LABELS, GOAL_LABELS, calculateBaselineGoals } from '../utils/nutritionGoals.js'
 import { CM_PER_IN, KG_PER_LB, displayToMetric, metricToDisplay } from '../utils/units.js'
+import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 // +/- stepper wrapping a plain number input - lets the user nudge an
 // auto-calculated goal up/down without retyping the whole number.
@@ -87,6 +88,7 @@ export default function NutritionCalculator() {
   const [fiberTarget, setFiberTarget] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saved, flashSaved] = useSavedFlash()
 
   useEffect(() => {
     api
@@ -161,6 +163,7 @@ export default function NutritionCalculator() {
         daily_fiber_target: fiberTarget === '' ? null : Number(fiberTarget),
       })
       showToast('Nutrition goals saved.')
+      flashSaved()
     } catch (err) {
       showToast(err.message, 'error')
     } finally {
@@ -354,10 +357,10 @@ export default function NutritionCalculator() {
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || saved}
           className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
         >
-          {saving ? 'Saving…' : 'Save Goals'}
+          {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Goals'}
         </button>
       </form>
     </div>
