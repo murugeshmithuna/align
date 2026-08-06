@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
@@ -85,16 +85,17 @@ function sumIngredients(ingredients) {
 
 // The Review & Edit step - AI vision/text parsing sometimes misidentifies an
 // ingredient or overestimates a portion, so nothing gets saved until the
-// user confirms it here. "Update Macros" recomputes the totals from whatever
-// the ingredient rows currently say, rather than the totals updating live on
-// every keystroke - a deliberate choice so partially-edited numbers (e.g.
-// typing "150" one digit at a time) don't flash through intermediate totals.
+// user confirms it here. Calories/P/C/F are read-only per row - editing the
+// ingredient name or quantity triggers a fresh macro lookup for that row on
+// blur, and the bottom total is a derived useMemo, so it's always in sync
+// with the ingredient rows automatically (no separate "recalculate" step).
 function ReviewModal({ preview, onCancel, onSaved, userId }) {
   const { showToast } = useToast()
   const [description, setDescription] = useState(preview.description)
   const [ingredients, setIngredients] = useState(preview.ingredients)
-  const [totals, setTotals] = useState(sumIngredients(preview.ingredients))
+  const [estimatingIndex, setEstimatingIndex] = useState(null)
   const [saving, setSaving] = useState(false)
+  const totals = useMemo(() => sumIngredients(ingredients), [ingredients])
 
   function updateIngredient(index, field, value) {
     setIngredients((prev) => prev.map((ing, i) => (i === index ? { ...ing, [field]: value } : ing)))
@@ -108,14 +109,35 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
     setIngredients((prev) => [...prev, { name: '', quantity: '', calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }])
   }
 
-  function handleUpdateMacros() {
-    setTotals(sumIngredients(ingredients))
+  // Fires on blur of either the name or quantity field - re-estimates that
+  // row's macros so the (read-only) numbers and the total stay accurate
+  // without a manual step. On failure, the row's last-known macros are left
+  // untouched (better than zeroing a row the user didn't ask to blank out)
+  // and a toast surfaces the failure rather than hiding it.
+  async function handleIngredientBlur(index) {
+    const ing = ingredients[index]
+    if (!ing.name?.trim() || !ing.quantity?.trim()) return
+    setEstimatingIndex(index)
+    try {
+      const est = await api.estimateIngredient({ name: ing.name.trim(), quantity: ing.quantity.trim() })
+      setIngredients((prev) =>
+        prev.map((row, i) =>
+          i === index
+            ? { ...row, calories: est.calories, protein_g: est.protein_g, carbs_g: est.carbs_g, fat_g: est.fat_g }
+            : row,
+        ),
+      )
+    } catch (err) {
+      showToast(`Couldn't recalculate "${ing.name}": ${err.message}`, 'error')
+    } finally {
+      setEstimatingIndex(null)
+    }
   }
 
   async function handleSave() {
     setSaving(true)
     try {
-      const finalTotals = sumIngredients(ingredients)
+      const finalTotals = totals
       const saved = await api.saveMeal({
         user_id: userId,
         description,
@@ -168,60 +190,62 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
             <span className="w-14">C</span>
             <span className="w-14">F</span>
           </div>
-          {ingredients.map((ing, i) => (
-            <div key={i} className="grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-2 items-center">
-              <input
-                type="text"
-                value={ing.name}
-                onChange={(e) => updateIngredient(i, 'name', e.target.value)}
-                className="px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm min-w-0"
-              />
-              <input
-                type="text"
-                value={ing.quantity}
-                onChange={(e) => updateIngredient(i, 'quantity', e.target.value)}
-                className="w-20 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-              />
-              <input
-                type="number"
-                value={ing.calories}
-                onChange={(e) => updateIngredient(i, 'calories', e.target.value)}
-                className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-              />
-              <input
-                type="number"
-                value={ing.protein_g}
-                onChange={(e) => updateIngredient(i, 'protein_g', e.target.value)}
-                className="w-14 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-              />
-              <input
-                type="number"
-                value={ing.carbs_g}
-                onChange={(e) => updateIngredient(i, 'carbs_g', e.target.value)}
-                className="w-14 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-              />
-              <input
-                type="number"
-                value={ing.fat_g}
-                onChange={(e) => updateIngredient(i, 'fat_g', e.target.value)}
-                className="w-14 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-              />
-              <button
-                onClick={() => removeIngredient(i)}
-                aria-label="Remove ingredient"
-                className="text-slate-500 hover:text-red-400 text-sm px-1"
+          {ingredients.map((ing, i) => {
+            const isEstimating = estimatingIndex === i
+            return (
+              <div
+                key={i}
+                className={`grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-2 items-center transition-opacity ${
+                  isEstimating ? 'opacity-60' : ''
+                }`}
               >
-                ✕
-              </button>
-            </div>
-          ))}
+                <input
+                  type="text"
+                  value={ing.name}
+                  onChange={(e) => updateIngredient(i, 'name', e.target.value)}
+                  onBlur={() => handleIngredientBlur(i)}
+                  className="px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm min-w-0"
+                />
+                <input
+                  type="text"
+                  value={ing.quantity}
+                  onChange={(e) => updateIngredient(i, 'quantity', e.target.value)}
+                  onBlur={() => handleIngredientBlur(i)}
+                  className="w-20 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
+                />
+                <span className="w-16 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                  {isEstimating ? '…' : ing.calories}
+                </span>
+                <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                  {isEstimating ? '…' : ing.protein_g}
+                </span>
+                <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                  {isEstimating ? '…' : ing.carbs_g}
+                </span>
+                <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                  {isEstimating ? '…' : ing.fat_g}
+                </span>
+                <button
+                  onClick={() => removeIngredient(i)}
+                  aria-label="Remove ingredient"
+                  className="text-slate-500 hover:text-red-400 text-sm px-1"
+                >
+                  ✕
+                </button>
+              </div>
+            )
+          })}
           <button onClick={addIngredient} className="text-xs text-coral-400 hover:text-coral-300 font-semibold">
             + Add ingredient
           </button>
+          <p className="text-xs text-slate-500">
+            Editing the ingredient or quantity automatically recalculates its macros - Cal/P/C/F are
+            read-only.
+          </p>
         </div>
 
-        <div className="flex items-center justify-between bg-forest-900/60 rounded-xl p-4">
-          <div className="grid grid-cols-4 gap-4 flex-1 text-center">
+        <div className="bg-forest-900/60 rounded-xl p-4">
+          <div className="grid grid-cols-4 gap-4 text-center">
             <div>
               <div className="text-lg font-heading font-bold text-coral-400 tabular-nums">
                 {totals.estimated_calories}
@@ -241,12 +265,6 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
               <div className="text-xs text-slate-500">fat</div>
             </div>
           </div>
-          <button
-            onClick={handleUpdateMacros}
-            className="ml-4 px-3 py-2 rounded-lg border border-forest-600 hover:border-coral-400 transition-colors text-xs font-semibold whitespace-nowrap"
-          >
-            Update Macros
-          </button>
         </div>
 
         <div className="flex justify-end gap-3">
@@ -378,6 +396,9 @@ export default function MealPhoto() {
   const [reviewData, setReviewData] = useState(null)
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [dailyReview, setDailyReview] = useState(null)
+  const [dailyReviewLoading, setDailyReviewLoading] = useState(false)
+  const [dailyReviewError, setDailyReviewError] = useState('')
 
   function loadHistory() {
     api
@@ -392,6 +413,21 @@ export default function MealPhoto() {
   function handleSaved() {
     setReviewData(null)
     loadHistory()
+  }
+
+  // Button-triggered rather than auto-fetched on load - a review only makes
+  // sense once the day's meals are actually in, and re-running it on every
+  // page visit would just re-synthesize the same (or stale) data.
+  async function generateDailyReview() {
+    setDailyReviewLoading(true)
+    setDailyReviewError('')
+    try {
+      setDailyReview(await api.getDailyNutritionReview(userId))
+    } catch (err) {
+      setDailyReviewError(err.message)
+    } finally {
+      setDailyReviewLoading(false)
+    }
   }
 
   return (
@@ -417,6 +453,49 @@ export default function MealPhoto() {
       ) : (
         <TextTab onAnalyzed={setReviewData} userId={userId} />
       )}
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-heading font-semibold">Daily review</h2>
+          <button
+            onClick={generateDailyReview}
+            disabled={dailyReviewLoading}
+            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
+          >
+            {dailyReviewLoading ? 'Reviewing…' : dailyReview ? 'Regenerate' : 'Generate End-of-Day Review'}
+          </button>
+        </div>
+        {dailyReviewError && <p className="text-sm text-red-400">{dailyReviewError}</p>}
+        {dailyReviewLoading ? (
+          <p className="text-sm text-slate-500 flex items-center gap-2">
+            <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+            Reviewing today's meals…
+          </p>
+        ) : dailyReview ? (
+          <ul className="space-y-2 text-sm text-slate-200">
+            <li className="flex gap-2">
+              <span>📊</span>
+              <span>
+                <span className="font-semibold">Macro Status:</span> {dailyReview.macro_status}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span>💡</span>
+              <span>
+                <span className="font-semibold">Key Pattern:</span> {dailyReview.key_pattern}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span>🎯</span>
+              <span>
+                <span className="font-semibold">Adjustment for Tomorrow:</span> {dailyReview.recommendation}
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">Aggregates all of today's logged meals into a 3-line review.</p>
+        )}
+      </div>
 
       <div className="card p-6">
         <h2 className="font-heading font-semibold mb-3">Recent meals</h2>

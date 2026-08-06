@@ -180,6 +180,9 @@ export default function Progress() {
   const [digest, setDigest] = useState(null)
   const [digestLoading, setDigestLoading] = useState(false)
   const [digestError, setDigestError] = useState('')
+  const [nutritionReview, setNutritionReview] = useState(null)
+  const [nutritionReviewLoading, setNutritionReviewLoading] = useState(false)
+  const [nutritionReviewError, setNutritionReviewError] = useState('')
   const [showVolumeTable, setShowVolumeTable] = useState(false)
   const [showExerciseTable, setShowExerciseTable] = useState(false)
   const [fatigue, setFatigue] = useState(null)
@@ -232,6 +235,18 @@ export default function Progress() {
       setDigestError(err.message)
     } finally {
       setDigestLoading(false)
+    }
+  }
+
+  async function loadNutritionReview() {
+    setNutritionReviewLoading(true)
+    setNutritionReviewError('')
+    try {
+      setNutritionReview(await api.getWeeklyNutritionReview(userId))
+    } catch (err) {
+      setNutritionReviewError(err.message)
+    } finally {
+      setNutritionReviewLoading(false)
     }
   }
 
@@ -340,6 +355,52 @@ export default function Progress() {
         ) : (
           <p className="text-sm text-slate-500">
             Aggregates your last 7 days of workouts, readiness, and meal photos into three bullets.
+          </p>
+        )}
+      </div>
+
+      <div className="card p-6">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="font-heading font-semibold">Weekly nutrition audit</h2>
+          <button
+            onClick={loadNutritionReview}
+            disabled={nutritionReviewLoading}
+            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
+          >
+            {nutritionReviewLoading ? 'Auditing…' : nutritionReview ? 'Regenerate' : 'Generate'}
+          </button>
+        </div>
+        {nutritionReviewError && <p className="text-sm text-red-400">{nutritionReviewError}</p>}
+        {nutritionReviewLoading ? (
+          <p className="text-sm text-slate-500 flex items-center gap-2">
+            <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+            Auditing this week's nutrition…
+          </p>
+        ) : nutritionReview ? (
+          <ul className="space-y-2 text-sm text-slate-200">
+            <li className="flex gap-2">
+              <span>📊</span>
+              <span>
+                <span className="font-semibold">Macro Status:</span> {nutritionReview.macro_status}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span>💡</span>
+              <span>
+                <span className="font-semibold">Key Pattern:</span> {nutritionReview.key_pattern}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <span>🎯</span>
+              <span>
+                <span className="font-semibold">Recommendation:</span> {nutritionReview.recommendation}
+              </span>
+            </li>
+          </ul>
+        ) : (
+          <p className="text-sm text-slate-500">
+            Aggregates the last 7 days of meal logs into a consistency, protein-target, and calorie-trend
+            audit.
           </p>
         )}
       </div>

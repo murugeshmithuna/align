@@ -387,11 +387,23 @@ natural-language description like "2 grilled chicken breasts, 1 cup white rice, 
 run the analysis and return an unsaved `MealAnalysisPreviewOut` - neither writes to `meal_analyses`. A
 separate `POST /vision/save-meal` persists whatever the user confirmed after editing. `MealPhoto.jsx` has
 two tabs ("Photo Upload" / "Quick Log" text box) that both funnel into the same `ReviewModal`: editable
-description, one row per ingredient (name/quantity/calories/protein/carbs/fat, each editable, plus a
-remove button and an "+ Add ingredient" button), an "Update Macros" button that recomputes the aggregate
-totals from the current ingredient rows (not live/reactive on every keystroke - only on click, so
-in-progress typing doesn't produce jittery intermediate totals), and a final "Save meal" button that calls
-`POST /vision/save-meal` with the edited values.
+description, one row per ingredient with editable Name/Qty and **read-only** Cal/P/C/F badges, a remove
+button, and an "+ Add ingredient" button, followed by just two actions: "Cancel" and "Save meal".
+
+**Read-only macros + auto-recalculate on edit** (revision of the above - the ingredient macro cells were
+originally plain editable number inputs with a manual "Update Macros" button): forcing manual math per
+ingredient defeated the point of an AI estimate. Now Cal/P/C/F are plain read-only `<span>`s, and editing
+either the ingredient Name or Qty field triggers `POST /vision/estimate-ingredient` on blur -
+`meal_vision.py`'s `estimate_ingredient_macros()`, a small `FAST_MODEL` strict-tool-call lookup scoped to
+one ingredient at a time (no DB access, no user_id - purely `{name, quantity} -> {calories, protein_g,
+carbs_g, fat_g}`). The row shows a brief "…" placeholder and dims while its lookup is in flight; on
+failure the row's last-known macros are left untouched (not zeroed) and a toast surfaces the failure
+rather than hiding it, since read-only cells give the user no manual fallback if the lookup errors. The
+aggregate total is now a plain `useMemo(() => sumIngredients(ingredients), [ingredients])` instead of
+separate manually-synced state, so it's always in sync automatically - the old "Update Macros" button was
+removed entirely since there's nothing left for it to do. Verified live: swapping a meal's "Banana, medium"
+ingredient for "a large avocado" and blurring the field correctly re-estimated that row (192 kcal, 17.5g
+fat vs. the banana's much lower fat) and the total updated automatically with no button click.
 
 Frontend compresses the photo client-side before upload (canvas resize to fit 800px on the long edge,
 re-encoded as JPEG at 0.7 quality - a typical phone photo is several MB at 3000px+, more than a macro
@@ -438,6 +450,59 @@ entry reflecting the edit, not the model's first-pass estimate. `ask_nutrition` 
 `analyze_form`/`ask_schedule`) lets chat answer follow-ups like "how's my protein been?" from recent
 analyses - unchanged by this upgrade since `meal_analyses`' persisted shape didn't change, only what
 happens before persistence did.
+
+**Removed the per-activity AI insight; added aggregated Daily/Weekly nutrition reviews**: the Dashboard's
+"Recent activity" card used to fetch a one-off coaching sentence via a plain `POST /agent/chat` call
+whenever the most recent activity was a meal. Root cause of a real bug this caused (raw text like "I'd
+need to call `ask_nutrition`..." leaking into the UI): that call shared the orchestrator's `SYSTEM_PROMPT`,
+which lists real tool names in prose ("ask_nutrition for meal/nutrition questions...") - the fast router
+model, when it decided no tool call was actually needed, would sometimes still parrot a tool name it had
+just read in its own system prompt. Fixed by deleting that fetch entirely (Dashboard's "Recent activity"
+is now purely a clean log: meal name/date/calories + P/C/F badges, no AI text at all) and replacing
+per-item micro-insights with two aggregated, **tool-free** reviews modeled on `generate_weekly_digest`'s
+existing pattern (a forced strict tool call, no `system` prompt, no other tools in scope - there's nothing
+for the model to call or narrate about since the one tool it's forced into is the entire output schema):
+- `generate_daily_nutrition_review()` (`GET /agent/nutrition-review/daily/{user_id}`) - gathers *today's*
+  `meal_analyses` and the user's targets from the DB before ever calling the LLM, then forces
+  `report_nutrition_review` (`macro_status`/`key_pattern`/`recommendation`). `/nutrition` has a
+  button-triggered "Generate End-of-Day Review" card (not auto-fetched - re-running it on every page visit
+  would just re-synthesize the same or stale data) rendering the fixed 📊/💡/🎯 three-line format.
+- `generate_weekly_nutrition_review()` (`GET /agent/nutrition-review/weekly/{user_id}`) - same shape, scoped
+  to the last 7 days, with days-logged/day-count and daily-average calorie/macro numbers computed in Python
+  and handed to the model so it can reason about *consistency* (how many of the 7 days actually have a
+  logged meal) rather than just the raw meal list. Rendered as a "Weekly nutrition audit" card on
+  `/analytics`, alongside (not replacing) the existing blended workout+nutrition `generate_weekly_digest`.
+- Both empty-state cases (no meals at all) return a canned response with no LLM call, same philosophy as
+  every other digest/recap in this app.
+
+Verified live: seeded a day with two real meals (a balanced chicken/rice meal and a high-carb "Milo
+milkshake and a chocolate bar" snack) and confirmed the daily review correctly cited the actual logged
+numbers, named the specific milkshake pattern, and gave a concrete protein-gap recommendation - not generic
+advice. Separately verified the empty/sparse case: with only one meal logged across the whole week, the
+weekly audit correctly flagged "6 of 7 days have no recorded food data" as the key pattern rather than
+trying to draw a trend conclusion from insufficient data.
+
+**Baseline macro/fiber goal calculator** (Mifflin-St Jeor BMR -> TDEE -> goal-adjusted macros): a pure-JS
+utility, `frontend/src/utils/nutritionGoals.js` (`calculateBMR`/`calculateTDEE`/`calculateBaselineGoals`),
+computed entirely client-side - no backend involvement in the math itself, only in persisting whatever the
+user confirms. `User` gained `age`/`sex`/`activity_level` (calculator inputs) and `daily_fiber_target`
+(a calculated output, alongside the existing calorie/protein/carbs/fat targets). Protein targets scale
+1.8-2.2 g/kg bodyweight by goal (higher for muscle gain/fat loss, to preserve lean mass); fat is fixed at
+25% of calories; carbs absorb the remaining calorie budget; fiber is `14g per 1,000 kcal`, clamped to the
+requested 25-38g baseline range. `/profile` gained a separate "Nutrition goals" form (its own `Save Goals`
+button, independent of the main "Save profile" submit) with Age/Sex/Activity Level/Primary Goal inputs, an
+"Auto-Calculate Baseline Goals" button that fills the five target fields, and a `Stepper` (+/- buttons
+around a number input) for manually nudging any of them afterward.
+
+**Real bug caught and fixed during live testing**: the `Stepper`'s native `<input type="number" step={5}>`
+looked fine on screen, but an auto-calculated value like `176` (protein) isn't a multiple of `5` - HTML5
+constraint validation silently rejects the whole form's submit event on a step mismatch, with **no console
+error and no network request**, so "Save Goals" appeared to do nothing at all. Root-caused by comparing
+Playwright's request-listener output (empty) against the backend's access log (no `POST /user/profile`
+ever arrived) after the button click reported as successful. Fixed by setting the actual input's
+`step="any"` (disables native step validation) while keeping the +/- buttons' fixed increment as a
+separate JS-only value - confirmed live afterward: auto-calculate, a stepper nudge (+10 via two clicks),
+Save Goals, and a full page reload all round-tripped the exact edited numbers correctly.
 
 **Global AI assistant** (`AIMessageBar.jsx`, mounted in `AppLayout`): a floating action button + slide-over
 drawer available from every authenticated page, not just the Dashboard - requested as a shadcn
@@ -553,8 +618,9 @@ dashboard.
 
 - `users` — id, name, email, google_sub (nullable, set on Google sign-in - not built yet, deferred),
   photo_url, experience_level, target_frequency, available_equipment (CSV), primary_goals (CSV),
-  physical_limitations, height_cm, weight_kg, preferred_units (metric/imperial), daily_calorie_target,
-  daily_protein_target, daily_carbs_target, daily_fat_target (all nullable, optional), created_at
+  physical_limitations, height_cm, weight_kg, preferred_units (metric/imperial), age, sex, activity_level
+  (baseline-calculator inputs), daily_calorie_target, daily_protein_target, daily_carbs_target,
+  daily_fat_target, daily_fiber_target (all nullable, optional), created_at
 - `exercises` — id, name, muscle_group, equipment (catalog table)
 - `plans` — id, user_id, name, is_active, notes, created_at
 - `plan_exercises` — id, plan_id, exercise_id, day_of_week, sets, reps, target_weight, rest_seconds,
@@ -588,21 +654,26 @@ fitness-agent/
         user_profile.py    POST /user/profile, GET /user/profile/{user_id}
         checkin.py         POST /user/checkin, GET /user/checkin/today/{user_id}
         agent.py          POST /agent/chat, POST /agent/chat/stream (SSE), GET /agent/weekly-recap/{user_id},
-                           POST /agent/debate
+                           GET /agent/weekly-digest/{user_id}, GET /agent/nutrition-review/daily/{user_id},
+                           GET /agent/nutrition-review/weekly/{user_id}, POST /agent/debate
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
         fatigue.py         GET /fatigue/user/{user_id}, POST /fatigue/asymmetry
         vision.py          POST /vision/analyze-squat, GET /vision/form-analyses/user/{user_id},
                            POST /vision/analyze-meal (photo, preview only), POST /vision/analyze-meal-text
-                           (text, preview only), POST /vision/save-meal (persists after Review & Edit),
-                           GET /vision/meal-analyses/user/{user_id}
+                           (text, preview only), POST /vision/estimate-ingredient (single-row macro
+                           lookup for Review & Edit auto-recalc), POST /vision/save-meal (persists after
+                           Review & Edit), GET /vision/meal-analyses/user/{user_id}
       agent/
         tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements,
                            ask_schedule, analyze_form, ask_nutrition)
-        orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
+        orchestrator.py    Manual Claude tool-use loop, profile/plan/check-in context injection,
+                           present_choice widget tool, generate_weekly_recap()/generate_weekly_digest(),
+                           generate_daily_nutrition_review()/generate_weekly_nutrition_review()
         debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
         fatigue.py         Banister fitness/fatigue/form model + limb-asymmetry checker (pure computation, no LLM)
         meal_vision.py     analyze_meal_photo() + analyze_meal_text() - single Claude call each (vision or
-                           text), forced tool_choice for structured ingredient-level output, _sum_ingredients()
+                           text), forced tool_choice for structured ingredient-level output, _sum_ingredients(),
+                           estimate_ingredient_macros() - small FAST_MODEL single-ingredient lookup
       vision/
         pose_analysis.py   MediaPipe Tasks Python API - analyze_squat_video() + unit-tested segment_reps()
         models/pose_landmarker_lite.task   Committed model bundle (~5.7MB, official Google-hosted BlazePose)
@@ -619,6 +690,9 @@ fitness-agent/
       context/
         SessionContext.jsx   Active user_id in localStorage
         ToastContext.jsx      useToast() + toast rendering
+      utils/
+        nutritionGoals.js    calculateBMR()/calculateTDEE()/calculateBaselineGoals() - pure functions,
+                             no side effects, no backend involvement in the math itself
       components/
         Navbar.jsx, AppLayout.jsx (auth gate + navbar + mounts AIMessageBar), HeroScene.jsx (three.js),
         CheckinForm.jsx, CheckinModal.jsx,
@@ -634,8 +708,8 @@ fitness-agent/
           squat video upload), PlanDetail.jsx, PlanList.jsx,
         WorkoutLog.jsx (manual set logging - exercise picker w/ inline "+ new", sets/reps/weight/rpe,
           recent-logs list),
-        MealPhoto.jsx (dual photo/text input tabs, editable Review & Edit modal w/ per-ingredient
-          overrides + "Update Macros" recompute, logged-meal history w/ P/C/F badges)
+        MealPhoto.jsx (dual photo/text input tabs, editable Review & Edit modal w/ read-only auto-
+          recalculating macros, button-triggered Daily Review card, logged-meal history w/ P/C/F badges)
 ```
 
 ## Running locally

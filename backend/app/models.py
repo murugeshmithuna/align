@@ -52,10 +52,17 @@ class User(Base):
     height_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     weight_kg: Mapped[float | None] = mapped_column(Float, nullable=True)
     preferred_units: Mapped[str] = mapped_column(String(10), default="metric")  # "metric" | "imperial"
+    # Inputs to the client-side BMR/TDEE baseline-goal calculator (Profile.jsx's
+    # "Auto-Calculate Baseline Goals") - not used anywhere else, so nullable/
+    # optional like the rest of the profile.
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sex: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "male" | "female"
+    activity_level: Mapped[str | None] = mapped_column(String(30), nullable=True)
     daily_calorie_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
     daily_protein_target: Mapped[float | None] = mapped_column(Float, nullable=True)
     daily_carbs_target: Mapped[float | None] = mapped_column(Float, nullable=True)
     daily_fat_target: Mapped[float | None] = mapped_column(Float, nullable=True)
+    daily_fiber_target: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 

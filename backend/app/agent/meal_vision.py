@@ -27,7 +27,7 @@ import base64
 from sqlalchemy.orm import Session
 
 from app.agent.orchestrator import _get_client, _get_user_or_raise
-from app.config import CLAUDE_MODEL
+from app.config import CLAUDE_MODEL, FAST_MODEL
 
 MEAL_ANALYSIS_TOOL = {
     "name": "report_meal_analysis",
@@ -146,3 +146,40 @@ def analyze_meal_text(db: Session, user_id: int, text: str) -> dict:
 
     content = f"Analyze this meal, described in the user's own words: \"{text.strip()}\""
     return _run_analysis(client, f"{SYSTEM_PROMPT}\n\n{_build_goal_context(user)}", content)
+
+
+INGREDIENT_MACRO_TOOL = {
+    "name": "report_ingredient_macros",
+    "description": "Report estimated calories and macros for one food ingredient at the given quantity.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "calories": {"type": "integer"},
+            "protein_g": {"type": "number"},
+            "carbs_g": {"type": "number"},
+            "fat_g": {"type": "number"},
+        },
+        "required": ["calories", "protein_g", "carbs_g", "fat_g"],
+        "additionalProperties": False,
+    },
+}
+
+
+def estimate_ingredient_macros(name: str, quantity: str) -> dict:
+    """Single-ingredient macro lookup backing the Review & Edit modal's
+    auto-recalculate-on-edit behavior - a deliberately small, separate call
+    from analyze_meal_photo/analyze_meal_text (no DB access, no user_id) since
+    this only ever estimates one row at a time as the user edits its name or
+    quantity. Uses FAST_MODEL since this is a quick lookup, not the fuller
+    goal-aware analysis the two functions above do."""
+    client = _get_client()
+    response = client.messages.create(
+        model=FAST_MODEL,
+        max_tokens=200,
+        tools=[INGREDIENT_MACRO_TOOL],
+        tool_choice={"type": "tool", "name": "report_ingredient_macros"},
+        messages=[{"role": "user", "content": f'Estimate calories and macros for: "{quantity} {name}".'}],
+    )
+    tool_block = next(block for block in response.content if block.type == "tool_use")
+    return tool_block.input

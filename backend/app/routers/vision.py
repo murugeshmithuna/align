@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.agent.meal_vision import analyze_meal_photo, analyze_meal_text
+from app.agent.meal_vision import analyze_meal_photo, analyze_meal_text, estimate_ingredient_macros
 from app.database import get_db
 from app.vision.pose_analysis import analyze_squat_video
 
@@ -110,6 +110,21 @@ def analyze_meal_text_endpoint(payload: schemas.MealTextRequest, db: Session = D
         return analyze_meal_text(db, payload.user_id, payload.text)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/estimate-ingredient", response_model=schemas.IngredientEstimateOut)
+def estimate_ingredient(payload: schemas.IngredientEstimateRequest):
+    """Backs the Review & Edit modal's auto-recalculate-on-edit behavior -
+    called on blur when the user changes an ingredient's name or quantity, so
+    the row's (read-only) macro values and the total stay accurate without a
+    manual 'Update Macros' step. No user_id - this is a stateless lookup, not
+    tied to a saved meal."""
+    if not payload.name.strip() or not payload.quantity.strip():
+        raise HTTPException(status_code=400, detail="Ingredient name and quantity are required")
+    try:
+        return estimate_ingredient_macros(payload.name, payload.quantity)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
