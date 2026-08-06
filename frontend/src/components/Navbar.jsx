@@ -5,7 +5,7 @@ const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/workout/live', label: 'Live Session' },
   { to: '/workout/log', label: 'Log Workout' },
-  { to: '/nutrition/analyze', label: 'Meal Photo' },
+  { to: '/nutrition', label: 'Meal Photo' },
   { to: '/analytics', label: 'Analytics' },
   { to: '/debate', label: 'Coach Debate' },
   { to: '/profile', label: 'Profile Settings' },

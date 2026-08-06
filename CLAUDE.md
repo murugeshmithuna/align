@@ -13,16 +13,32 @@ FastAPI backend with CRUD endpoints, SQLite schema (users, exercises, plans, pla
 soreness_notes, checkins), and a health-check endpoint.
 
 **Frontend is a real React SPA** (Vite + React Router + Tailwind v4), replacing the earlier static
-single-page shell. Multi-page flow: `/` (Landing, public) → `/login` (user picker/create - no real auth,
-just a session established client-side via localStorage) → `/profile` (baseline onboarding form, gates
-first-timers before they reach the dashboard) → `/dashboard` (active plan summary, today's readiness,
-streaming chat) → `/checkin` (also auto-shown as a modal on the dashboard once/day). Feature routes live
-under their own paths rather than crowding the dashboard: `/plans` + `/plan/:planId` (plan browsing/detail/
-activation), `/workout/live` (MediaPipe live session) + `/workout/log` (manual set logging), `/nutrition/
-analyze` (meal photo), `/analytics` (progress charts + fatigue model), `/debate` (multi-agent coach debate).
-Routes were renamed from their original flatter paths (`/live-session`, `/meal-photo`, `/progress`,
-`/plans/:planId`) into this `/workout/*`, `/nutrition/*` grouping at the user's request. A shared
-`AppLayout` + `Navbar` gate the authenticated routes and provide navigation between them.
+single-page shell, and follows a strict one-feature-per-route rule enforced twice this session (once as a
+general "unclutter" pass, once as an explicit "STRICT REFACTORING REQUIRED" pass that tightened it
+further): `/` (Landing, public) → `/login` (user picker/create - no real auth, just a session established
+client-side via localStorage) → `/profile` (baseline onboarding form, gates first-timers before they reach
+the dashboard) → `/dashboard` (active plan summary + today's readiness + a quick-links grid to every
+feature route - no feature's actual tool renders inline here) → `/checkin` (also auto-shown as a modal on
+the dashboard once/day). Every feature lives on its own dedicated route: `/plans` + `/plan/:planId` (plan
+browsing/detail/activation), `/workout/live` (MediaPipe live session) + `/workout/log` (manual set
+logging), `/nutrition` (meal photo), `/analytics` (progress charts + fatigue model), `/debate` (multi-agent
+coach debate). Routes were renamed from their original flatter paths (`/live-session`, `/meal-photo`,
+`/progress`, `/plans/:planId`, `/nutrition/analyze`) into this `/workout/*`, `/nutrition` grouping at the
+user's request. A shared `AppLayout` + `Navbar` gate the authenticated routes, provide navigation between
+them, and mount the global `AIMessageBar` floating assistant (see below) available from any of them.
+
+**Landing page and Dashboard are strictly non-interactive shells** (per the "STRICT REFACTORING" request):
+Landing's header has exactly one link (Sign In / Dashboard, nothing else), its hero has one CTA, and its
+feature-overview section is now plain marketing prose - no cards, no "Open →" links, nothing that launches
+a tool from that page (it previously rendered a `FeatureCard` grid with real links into every feature; that
+grid was removed entirely, not just restyled). Dashboard dropped its embedded `ChatPanel` (a full chat UI
+rendered inline) in favor of the floating `AIMessageBar` plus a "Quick links" grid of plain navigation
+links to each feature route - `ChatPanel.jsx` became fully unused once nothing imported it and was deleted
+outright rather than left as dead code. One explicit deviation from the literal request worth flagging: the
+request asked for `/plan/active` as the Active Plan card's target; `/plan/:planId` (already built, already
+correct) was kept instead, since "active" isn't a real plan identifier in this data model - the card
+already links to whichever plan's real ID is currently active, which is the same UX outcome without a
+redundant second route resolving a magic string to that same ID.
 
 **Daily readiness check-in:** `POST /user/checkin` (upsert, one row per user per UTC day) /
 `GET /user/checkin/today/{user_id}`. Score 1-5 (Sick/Exhausted → Sore → Normal → Good → Pumped Up) is
@@ -180,7 +196,7 @@ returns - squat (hip-knee-ankle), bicep curl (shoulder-elbow-wrist), push-up (sh
 different thresholds + a hip-sag form check) all share one state machine, just different joint triplets/
 angle thresholds/form checks. Plan exercise names are keyword-matched to a config (`matchExerciseConfig`);
 unmatched ones are skipped with a note rather than blocking the session. Launching "Start today's session"
-from `/plans/:planId` passes today's exercises via router state, building a queue the session works
+from `/plan/:planId` passes today's exercises via router state, building a queue the session works
 through automatically (rep target reached -> rest countdown -> next set; all sets done -> `POST /logs` the
 completed exercise -> auto-advance to the next queue item -> "Workout complete!" on the last one) - an
 exercise picker still lets the user jump to any queued exercise manually. No plan exercises passed (direct
@@ -235,7 +251,7 @@ browser smoke-tested (fake camera) for crash-safety and correct initial HUD stat
 also caught and fixed a leftover hardcoded `setPhase('UP')` in `start()` that would have shown the old
 phase label on an otherwise-renamed state machine.
 
-**Claude Vision meal-photo analysis** (`/nutrition/analyze`, `POST /vision/analyze-meal`): separate code path from
+**Claude Vision meal-photo analysis** (`/nutrition`, `POST /vision/analyze-meal`): separate code path from
 the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
 schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded
 photo as an image content block in a single `claude-opus-4-8` call, forcing a **strict** `report_meal_analysis`
@@ -279,8 +295,9 @@ drawer available from every authenticated page, not just the Dashboard - request
 `/components/ui` TypeScript component with `lucide-react` icons, none of which exist in this project (no
 TypeScript anywhere, no shadcn setup, no lucide-react dependency - confirmed by searching before building
 anything). Built in plain JSX matching the app's existing conventions instead: inline SVG icons, Tailwind
-classes matching the rest of the design system, reuses the exact same `streamAgentChat` SSE logic already
-used by the Dashboard's `ChatPanel` rather than a second chat implementation. Verified live: FAB toggles the
+classes matching the rest of the design system, reuses the exact same `streamAgentChat` SSE logic the
+Dashboard's old embedded `ChatPanel` used (since removed - see below) rather than a second chat
+implementation. Verified live: FAB toggles the
 drawer, persists across route changes (mounted once in `AppLayout`, not per-page), and a real message
 streams a real reply into the drawer end-to-end. (One test run briefly returned an empty reply - traced to
 a transient Manifest proxy OAuth error, `M102: anthropic subscription credentials could not be refreshed`,
@@ -420,10 +437,11 @@ fitness-agent/
         ToastContext.jsx      useToast() + toast rendering
       components/
         Navbar.jsx, AppLayout.jsx (auth gate + navbar + mounts AIMessageBar), HeroScene.jsx (three.js),
-        ChatPanel.jsx (SSE streaming chat, Dashboard-only), CheckinForm.jsx, CheckinModal.jsx,
-        AIMessageBar.jsx (floating FAB + slide-over drawer, available on every authenticated page -
-          reuses the same streamAgentChat SSE logic as ChatPanel, plain JSX + inline SVG icons, no
-          TypeScript/shadcn/lucide-react - this project doesn't use any of those)
+        CheckinForm.jsx, CheckinModal.jsx,
+        AIMessageBar.jsx (floating FAB + slide-over drawer, available on every authenticated page - the
+          only chat surface in the app now; replaced the deleted ChatPanel.jsx that used to live inline
+          on the Dashboard. Plain JSX + inline SVG icons, no TypeScript/shadcn/lucide-react - this
+          project doesn't use any of those)
       pages/
         Landing.jsx, Login.jsx, Profile.jsx, Checkin.jsx, Dashboard.jsx,
         Progress.jsx (volume + per-exercise PR charts, weekly recap - Chart.js),
@@ -450,7 +468,7 @@ cd frontend && npm install && npm run dev
 1. ~~Orchestrator agent + Claude tool-use wiring~~ — done (`backend/app/agent/`)
 2. ~~Schedule Agent (`ask_schedule`) with RAG-lite context injection from SQLite~~ — done
 3. ~~MediaPipe Pose integration (batch squat analysis, then live webcam rep counting)~~ — done (`/workout/live`)
-4. ~~Claude Vision meal photo analysis~~ — done (`/nutrition/analyze`)
+4. ~~Claude Vision meal photo analysis~~ — done (`/nutrition`)
 5. ~~Strength Coach / Recovery Coach / Head Coach multi-agent debate flow~~ — done (`/debate`)
 6. ~~Banister impulse-response fatigue model + asymmetry checker~~ — done (`/analytics`)
 7. ~~Progress charts (Chart.js) + weekly AI recap~~ — done (`/analytics`)
