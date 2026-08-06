@@ -242,10 +242,24 @@ team `mithuna2` - re-imported fresh; the old `fitness-agent-topaz.vercel.app` pr
 its `vercel.json` SPA rewrite would not take effect no matter what was tried, including on a from-scratch
 reimport with identical settings - the actual fix was the rewrite's `destination` value itself, see below),
 backend on Render (`https://fitness-agent-wuvh.onrender.com`, service `fitness-agent`, **Free plan**).
-`VITE_API_BASE_URL` set directly to the Render URL. Two real caveats living in production right now:
-(1) Render's Free plan has **no persistent disk** - SQLite data resets on redeploys/restarts, upgrade to
-Starter (~$7/mo) + attach a Disk to fix; (2) Render Free spins down on inactivity, so the first request
-after idle time has a real cold-start delay (30s+).
+`VITE_API_BASE_URL` set directly to the Render URL. Render Free still spins down on inactivity, so the
+first request after idle time has a real cold-start delay (30s+) - that caveat remains.
+
+**SQLite -> Postgres migration** (`backend/app/database.py`): the previously-documented "Render Free has
+no persistent disk" caveat stopped being a theoretical footnote and started actually biting - every
+redeploy (including ones that only touched frontend files, since Render was watching the same repo and
+redeploying the backend too) wiped the SQLite file living in the container's own ephemeral filesystem,
+silently deleting every user/profile/plan. `database.py` now reads `DATABASE_URL` from `config.py` when
+set (production - a real managed Postgres instance, decoupled from the web service container entirely) and
+falls back to the exact same local SQLite file as before when it's unset (so local dev is unchanged).
+Handles the `postgres://` vs. `postgresql://` scheme-name mismatch some providers (Render included) hand
+out, which SQLAlchemy 2.0 + `psycopg2` don't accept as-is. Verified locally against a real Postgres
+instance (not just reasoning about SQLAlchemy dialect compatibility): created a user, saved a profile
+(triggering a real baseline-plan-generation LLM call), saved a meal, and hit the progress/fatigue
+endpoints - all identical behavior to SQLite. Then killed and restarted the server process entirely
+(simulating exactly what a Render redeploy does) and confirmed the user/profile/plan data was still there
+afterward - the actual property that was broken before. `psycopg2-binary` added to `requirements.txt`
+(the binary wheel avoids needing system `libpq` build tooling in Render's build environment).
 
 **Vercel SPA routing fix:** direct loads of client-side routes (`/login`, `/dashboard`, etc.) 404'd on
 Vercel because its static server looks for a literal file at that path unless told to fall back to

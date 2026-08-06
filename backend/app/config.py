@@ -7,6 +7,13 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
+# When set (production - a managed Postgres instance), overrides the local
+# SQLite file database.py otherwise falls back to. Render's free web-service
+# tier has no persistent disk, so a SQLite file living in the container's own
+# filesystem gets wiped on every redeploy/restart/spin-down - a real,
+# independent database is what actually survives that.
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 # Google Sign-In - GOOGLE_CLIENT_ID is the expected `aud` claim when verifying
 # a Google Identity Services id_token server-side (see routers/auth.py).
 # GOOGLE_CLIENT_SECRET isn't needed for that verification flow (only for a
