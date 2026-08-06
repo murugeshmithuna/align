@@ -2,139 +2,31 @@ import { Link } from 'react-router-dom'
 import HeroScene from '../components/HeroScene.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
-// Every feature from the system spec, grouped into the categories a visitor
-// actually thinks in. `to: null` means the feature isn't built yet - it still
-// gets its own card (so nothing is hidden), just an honest "Coming soon"
-// badge instead of a dead or fake link.
-const FEATURE_CATEGORIES = [
+// Marketing summary only - no cards, no links, nothing that renders a tool
+// or navigates anywhere on its own. Every feature has its own dedicated
+// route; the landing page's job is to describe them, not launch them.
+const HIGHLIGHTS = [
   {
     name: 'Core Coaching',
-    description: 'Talk to your coach - it reads your profile and readiness automatically.',
-    features: [
-      {
-        title: 'AI Workout Plan Generation',
-        description: 'Describe your goals in plain language and get a structured training plan.',
-        to: '/dashboard',
-      },
-      {
-        title: 'Adaptive Plan Adjustment',
-        description: "Volume and intensity adjust to your logged performance and today's readiness.",
-        to: '/dashboard',
-      },
-      {
-        title: 'Supplement Guidance',
-        description: 'Recommendations grounded in your actual goals and training history.',
-        to: '/dashboard',
-      },
-      {
-        title: 'Grounded Schedule Q&A',
-        description: '"When should I train legs again?" - answered from your real logs, not guesses.',
-        to: null,
-      },
-      {
-        title: 'Manual Workout Logging',
-        description: 'Log a completed set by hand when you\'re not running a live-tracked session.',
-        to: '/workout/log',
-      },
-    ],
+    description:
+      'An AI coach that reads your profile and daily readiness automatically - generating, adjusting, and explaining your training plan, and recommending supplements grounded in your actual goals and history.',
   },
   {
     name: 'Vision & Live Coaching',
-    description: 'Real-time form feedback while you train.',
-    features: [
-      {
-        title: 'Live Rep Counting & Voice Coaching',
-        description: 'Webcam pose tracking counts reps and calls out cues mid-set.',
-        to: '/workout/live',
-      },
-      {
-        title: 'Squat Form Check',
-        description: 'Upload a video for joint-angle analysis - depth, knee tracking, back angle.',
-        to: '/workout/live',
-      },
-    ],
+    description:
+      'Real-time webcam pose tracking counts reps and calls out form cues mid-set, or upload a video for joint-angle analysis - depth, knee tracking, back angle.',
   },
   {
     name: 'Multimodal & Multi-Agent',
-    description: 'Beyond chat: vision on your meals, debate between specialist coaches.',
-    features: [
-      {
-        title: 'Food Photo Analysis',
-        description: 'Snap a meal photo for a calorie/macro estimate and goal-aware swaps.',
-        to: '/nutrition/analyze',
-      },
-      {
-        title: 'Multi-Agent Debate',
-        description: 'A Strength Coach and a Recovery Coach argue it out; a Head Coach resolves it.',
-        to: '/debate',
-      },
-    ],
+    description:
+      'Snap a meal photo for a calorie/macro estimate and goal-aware feedback, or get a second opinion from a Strength Coach and a Recovery Coach who argue it out until a Head Coach resolves it.',
   },
   {
     name: 'Analytics & Modeling',
-    description: 'Trends and physiology, not vibes.',
-    features: [
-      {
-        title: 'Progress Charts & Weekly Recap',
-        description: 'Volume and PR trends over time, plus an auto-generated weekly summary.',
-        to: '/analytics',
-      },
-      {
-        title: 'Fatigue & Injury-Risk Modeling',
-        description: 'A real Banister impulse-response model projects fitness and fatigue trends.',
-        to: '/analytics',
-      },
-      {
-        title: 'Limb Asymmetry Check',
-        description: 'Left/right measurement comparison, ready for pose-estimation landmark data.',
-        to: '/analytics',
-      },
-    ],
-  },
-  {
-    name: 'Account & Daily Management',
-    description: 'The baseline the coach builds everything else from.',
-    features: [
-      {
-        title: 'Onboarding & Baseline Profile',
-        description: 'Set experience level, frequency, equipment, and goals once.',
-        to: '/profile',
-      },
-      {
-        title: 'Daily Readiness Check-In',
-        description: "Log how you feel today and today's plan adjusts automatically.",
-        to: '/checkin',
-      },
-      {
-        title: 'Calendar-Aware Scheduling',
-        description: 'Optional read-only Google Calendar sync factors busy days into scheduling.',
-        to: null,
-      },
-    ],
+    description:
+      'Volume and PR trends over time, an auto-generated weekly recap, and a real Banister impulse-response model projecting fitness and fatigue - trends and physiology, not vibes.',
   },
 ]
-
-function FeatureCard({ feature }) {
-  const isBuilt = Boolean(feature.to)
-  return (
-    <div className="card p-5 flex flex-col h-full">
-      <h3 className="font-heading font-semibold">{feature.title}</h3>
-      <p className="text-sm text-slate-400 mt-1.5 flex-1">{feature.description}</p>
-      {isBuilt ? (
-        <Link
-          to={feature.to}
-          className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-coral-400 hover:text-coral-300 transition-colors"
-        >
-          Open →
-        </Link>
-      ) : (
-        <span className="mt-4 inline-block text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Coming soon
-        </span>
-      )}
-    </div>
-  )
-}
 
 export default function Landing() {
   const { isAuthenticated } = useSession()
@@ -182,34 +74,25 @@ export default function Landing() {
         </div>
       </main>
 
-      {/* Features: one section per category, generous spacing between them */}
-      <section className="px-6 md:px-12 pb-8">
-        <div className="max-w-5xl mx-auto text-center mb-4">
+      {/* Feature overview: marketing summary text only - no cards, no links,
+          nothing interactive. Every feature lives on its own dedicated route
+          once you're signed in; this section describes, it doesn't launch. */}
+      <section className="px-6 md:px-12 py-16 border-t border-forest-800">
+        <div className="max-w-3xl mx-auto text-center mb-10">
           <p className="uppercase tracking-[0.2em] text-coral-400 text-xs font-semibold">
             Everything in one coach
           </p>
-          <h2 className="font-heading font-bold text-2xl md:text-3xl mt-2">
-            Every feature, one tap away
-          </h2>
+          <h2 className="font-heading font-bold text-2xl md:text-3xl mt-2">What you get</h2>
+        </div>
+        <div className="max-w-3xl mx-auto space-y-8">
+          {HIGHLIGHTS.map((item) => (
+            <div key={item.name}>
+              <h3 className="font-heading font-bold text-lg">{item.name}</h3>
+              <p className="text-sm text-slate-400 mt-1.5">{item.description}</p>
+            </div>
+          ))}
         </div>
       </section>
-
-      {FEATURE_CATEGORIES.map((category, i) => (
-        <section
-          key={category.name}
-          className={`px-6 md:px-12 py-10 ${i % 2 === 1 ? 'bg-forest-900/40' : ''}`}
-        >
-          <div className="max-w-5xl mx-auto">
-            <h3 className="font-heading font-bold text-lg">{category.name}</h3>
-            <p className="text-sm text-slate-400 mt-1 mb-6">{category.description}</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {category.features.map((feature) => (
-                <FeatureCard key={feature.title} feature={feature} />
-              ))}
-            </div>
-          </div>
-        </section>
-      ))}
 
       <footer className="px-6 md:px-12 py-10 border-t border-forest-800 text-center">
         <p className="text-sm text-slate-500">AI Fitness Agent - a coach that watches, listens, and adapts.</p>

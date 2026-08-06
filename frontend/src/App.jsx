@@ -27,7 +27,7 @@ function App() {
         <Route path="/workout/log" element={<WorkoutLog />} />
         <Route path="/analytics" element={<Progress />} />
         <Route path="/debate" element={<Debate />} />
-        <Route path="/nutrition/analyze" element={<MealPhoto />} />
+        <Route path="/nutrition" element={<MealPhoto />} />
         <Route path="/plans" element={<PlanList />} />
         <Route path="/plan/:planId" element={<PlanDetail />} />
       </Route>
