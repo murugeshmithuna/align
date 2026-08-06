@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import HeroScene from '../components/HeroScene.jsx'
+import CosmicParallaxBg from '../components/CosmicParallaxBg.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
 // Marketing summary only - no cards, no links, nothing that renders a tool
@@ -36,43 +36,50 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen font-body">
-      <HeroScene />
+      {/* Cosmic parallax backdrop is scoped to just this wrapper (header +
+          hero) via `relative` + `absolute inset-0` on the child, not the
+          whole scrollable page - the feature/footer sections below keep the
+          app's normal dark forest/coral surface, unified by sharing the same
+          color tokens rather than by repeating the starfield everywhere. */}
+      <div className="relative overflow-hidden">
+        <CosmicParallaxBg head="AI Fitness Agent" text="Watches, Listens, Adapts" />
 
-      <header className="flex items-center justify-between px-6 md:px-12 py-6">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-coral-500 pulse-dot" />
-          <span className="font-heading font-bold text-lg tracking-tight">AI Fitness Agent</span>
-        </div>
-        <Link
-          to={primaryCta.to}
-          className="px-4 py-2 rounded-full border border-forest-600 hover:border-coral-400 transition-colors text-sm font-heading font-semibold"
-        >
-          {isAuthenticated ? 'Dashboard' : 'Sign In'}
-        </Link>
-      </header>
-
-      {/* Hero: website title first, tagline right under it, one clear CTA */}
-      <main className="flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
-        <h1 className="font-heading font-extrabold text-5xl md:text-7xl leading-tight">
-          AI Fitness Agent
-        </h1>
-        <p className="mt-4 max-w-2xl text-coral-400 text-lg md:text-xl font-heading font-semibold">
-          A coach that watches, listens, and adapts.
-        </p>
-        <p className="mt-5 max-w-xl text-slate-300 text-base md:text-lg">
-          Onboard once, then let a multi-agent coach generate, adjust, and explain your training -
-          grounded in your real logs, recovery, and daily readiness.
-        </p>
-
-        <div className="mt-10">
+        <header className="relative z-10 flex items-center justify-between px-6 md:px-12 py-6">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-coral-500 pulse-dot" />
+            <span className="font-heading font-bold text-lg tracking-tight">AI Fitness Agent</span>
+          </div>
           <Link
             to={primaryCta.to}
-            className="px-8 py-3.5 rounded-full bg-coral-500 hover:bg-coral-600 transition-colors font-heading font-semibold shadow-lg shadow-coral-500/20 inline-block"
+            className="px-4 py-2 rounded-full border border-forest-600 hover:border-coral-400 transition-colors text-sm font-heading font-semibold"
           >
-            {primaryCta.label}
+            {isAuthenticated ? 'Dashboard' : 'Sign In'}
           </Link>
-        </div>
-      </main>
+        </header>
+
+        {/* Hero: website title first, tagline right under it, one clear CTA */}
+        <main className="relative z-10 flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
+          <h1 className="font-heading font-extrabold text-5xl md:text-7xl leading-tight">
+            AI Fitness Agent
+          </h1>
+          <p className="mt-4 max-w-2xl text-coral-400 text-lg md:text-xl font-heading font-semibold">
+            A coach that watches, listens, and adapts.
+          </p>
+          <p className="mt-5 max-w-xl text-slate-300 text-base md:text-lg">
+            Onboard once, then let a multi-agent coach generate, adjust, and explain your training -
+            grounded in your real logs, recovery, and daily readiness.
+          </p>
+
+          <div className="mt-10">
+            <Link
+              to={primaryCta.to}
+              className="px-8 py-3.5 rounded-full bg-coral-500 hover:bg-coral-600 transition-colors font-heading font-semibold shadow-lg shadow-coral-500/20 inline-block"
+            >
+              {primaryCta.label}
+            </Link>
+          </div>
+        </main>
+      </div>
 
       {/* Feature overview: marketing summary text only - no cards, no links,
           nothing interactive. Every feature lives on its own dedicated route
