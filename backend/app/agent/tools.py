@@ -165,8 +165,13 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
         plan_exercise = db.get(models.PlanExercise, upd["plan_exercise_id"])
         if not plan_exercise or plan_exercise.plan_id != plan.id:
             continue
+        # Skip explicit nulls, not just absent keys - a client that echoes
+        # back a full adjustment object (e.g. the Coach Resolution "Apply"
+        # flow, which round-trips a Pydantic model serializing every field
+        # including unset ones as null) would otherwise silently blank out
+        # sets/reps/target_weight it never actually meant to change.
         for field in ("sets", "reps", "target_weight", "day_of_week"):
-            if field in upd:
+            if upd.get(field) is not None:
                 setattr(plan_exercise, field, upd[field])
         updated_ids.append(plan_exercise.id)
 

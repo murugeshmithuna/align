@@ -2,7 +2,7 @@
 
 Both are pure numerical calculations - no LLM calls - consistent with how
 progress charts (`GET /logs/user/{id}/progress`) are plain aggregation rather
-than agent-routed. Kept in `app/agent/` alongside `tools.py`/`debate.py` since
+than agent-routed. Kept in `app/agent/` alongside `tools.py`/`resolution.py` since
 conceptually it's still part of the coaching-intelligence layer, just the
 purely-computational corner of it.
 """

@@ -3,7 +3,6 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.agent.debate import run_coach_debate
 from app.agent.orchestrator import (
     generate_daily_nutrition_review,
     generate_weekly_digest,
@@ -12,6 +11,8 @@ from app.agent.orchestrator import (
     run_agent_turn,
     stream_agent_turn,
 )
+from app.agent.resolution import generate_coach_resolution
+from app.agent.tools import execute_adjust_plan
 from app.database import get_db
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -78,11 +79,25 @@ def nutrition_review_weekly(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail=str(exc))
 
 
-@router.post("/debate", response_model=schemas.DebateOut)
-def coach_debate(payload: schemas.DebateRequest, db: Session = Depends(get_db)):
+@router.post("/coach-resolution", response_model=schemas.CoachResolutionOut)
+def coach_resolution(payload: schemas.CoachResolutionRequest, db: Session = Depends(get_db)):
     if not db.get(models.User, payload.user_id):
         raise HTTPException(status_code=404, detail="User not found")
     try:
-        return run_coach_debate(db, payload.user_id, payload.question)
+        return generate_coach_resolution(db, payload.user_id, payload.question)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
+
+
+@router.post("/coach-resolution/apply", response_model=schemas.ApplyResolutionOut)
+def apply_coach_resolution(payload: schemas.ApplyResolutionRequest, db: Session = Depends(get_db)):
+    if not db.get(models.User, payload.user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    result = execute_adjust_plan(
+        db,
+        payload.user_id,
+        {"plan_id": payload.plan_id, "updates": [u.model_dump(exclude_unset=True) for u in payload.updates]},
+    )
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    return result

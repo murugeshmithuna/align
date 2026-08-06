@@ -43,7 +43,10 @@ export const api = {
   getProgress: (userId) => request(`/logs/user/${userId}/progress`),
   getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),
   getWeeklyDigest: (userId) => request(`/agent/weekly-digest/${userId}`),
-  runDebate: (payload) => request('/agent/debate', { method: 'POST', body: JSON.stringify(payload) }),
+  getCoachResolution: (payload) =>
+    request('/agent/coach-resolution', { method: 'POST', body: JSON.stringify(payload) }),
+  applyCoachResolution: (payload) =>
+    request('/agent/coach-resolution/apply', { method: 'POST', body: JSON.stringify(payload) }),
 
   getFatigue: (userId) => request(`/fatigue/user/${userId}`),
   checkAsymmetry: (payload) => request('/fatigue/asymmetry', { method: 'POST', body: JSON.stringify(payload) }),

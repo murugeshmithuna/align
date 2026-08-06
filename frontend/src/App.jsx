@@ -7,7 +7,7 @@ import Checkin from './pages/Checkin.jsx'
 import Dashboard from './pages/Dashboard.jsx'
 import LiveSession from './pages/LiveSession.jsx'
 import Progress from './pages/Progress.jsx'
-import Debate from './pages/Debate.jsx'
+import CoachResolution from './pages/CoachResolution.jsx'
 import MealPhoto from './pages/MealPhoto.jsx'
 import PlanList from './pages/PlanList.jsx'
 import PlanDetail from './pages/PlanDetail.jsx'
@@ -26,7 +26,7 @@ function App() {
         <Route path="/workout/live" element={<LiveSession />} />
         <Route path="/workout/log" element={<WorkoutLog />} />
         <Route path="/analytics" element={<Progress />} />
-        <Route path="/debate" element={<Debate />} />
+        <Route path="/coach-resolution" element={<CoachResolution />} />
         <Route path="/nutrition" element={<MealPhoto />} />
         <Route path="/plans" element={<PlanList />} />
         <Route path="/plan/:planId" element={<PlanDetail />} />
