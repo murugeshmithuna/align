@@ -11,6 +11,7 @@ import Debate from './pages/Debate.jsx'
 import MealPhoto from './pages/MealPhoto.jsx'
 import PlanList from './pages/PlanList.jsx'
 import PlanDetail from './pages/PlanDetail.jsx'
+import WorkoutLog from './pages/WorkoutLog.jsx'
 
 function App() {
   return (
@@ -22,12 +23,13 @@ function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/checkin" element={<Checkin />} />
-        <Route path="/live-session" element={<LiveSession />} />
-        <Route path="/progress" element={<Progress />} />
+        <Route path="/workout/live" element={<LiveSession />} />
+        <Route path="/workout/log" element={<WorkoutLog />} />
+        <Route path="/analytics" element={<Progress />} />
         <Route path="/debate" element={<Debate />} />
-        <Route path="/meal-photo" element={<MealPhoto />} />
+        <Route path="/nutrition/analyze" element={<MealPhoto />} />
         <Route path="/plans" element={<PlanList />} />
-        <Route path="/plans/:planId" element={<PlanDetail />} />
+        <Route path="/plan/:planId" element={<PlanDetail />} />
       </Route>
     </Routes>
   )

@@ -146,6 +146,7 @@ class LogOut(BaseModel):
     id: int
     user_id: int
     exercise_id: int
+    exercise: ExerciseOut
     plan_id: int | None
     performed_at: datetime
     sets: int | None

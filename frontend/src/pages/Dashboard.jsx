@@ -49,7 +49,7 @@ export default function Dashboard() {
           {planLoading ? (
             <p className="text-sm text-slate-500">Loading…</p>
           ) : plan ? (
-            <Link to={`/plans/${plan.id}`} className="block hover:opacity-90 transition-opacity">
+            <Link to={`/plan/${plan.id}`} className="block hover:opacity-90 transition-opacity">
               <p className="font-semibold text-coral-400">{plan.name} →</p>
               <p className="text-sm text-slate-400 mt-1">{plan.plan_exercises.length} exercises</p>
               {plan.notes && <p className="text-sm text-slate-500 mt-2 line-clamp-3">{plan.notes}</p>}

@@ -31,6 +31,11 @@ const FEATURE_CATEGORIES = [
         description: '"When should I train legs again?" - answered from your real logs, not guesses.',
         to: null,
       },
+      {
+        title: 'Manual Workout Logging',
+        description: 'Log a completed set by hand when you\'re not running a live-tracked session.',
+        to: '/workout/log',
+      },
     ],
   },
   {
@@ -40,12 +45,12 @@ const FEATURE_CATEGORIES = [
       {
         title: 'Live Rep Counting & Voice Coaching',
         description: 'Webcam pose tracking counts reps and calls out cues mid-set.',
-        to: '/live-session',
+        to: '/workout/live',
       },
       {
         title: 'Squat Form Check',
         description: 'Upload a video for joint-angle analysis - depth, knee tracking, back angle.',
-        to: '/live-session',
+        to: '/workout/live',
       },
     ],
   },
@@ -56,7 +61,7 @@ const FEATURE_CATEGORIES = [
       {
         title: 'Food Photo Analysis',
         description: 'Snap a meal photo for a calorie/macro estimate and goal-aware swaps.',
-        to: '/meal-photo',
+        to: '/nutrition/analyze',
       },
       {
         title: 'Multi-Agent Debate',
@@ -72,17 +77,17 @@ const FEATURE_CATEGORIES = [
       {
         title: 'Progress Charts & Weekly Recap',
         description: 'Volume and PR trends over time, plus an auto-generated weekly summary.',
-        to: '/progress',
+        to: '/analytics',
       },
       {
         title: 'Fatigue & Injury-Risk Modeling',
         description: 'A real Banister impulse-response model projects fitness and fatigue trends.',
-        to: '/progress',
+        to: '/analytics',
       },
       {
         title: 'Limb Asymmetry Check',
         description: 'Left/right measurement comparison, ready for pose-estimation landmark data.',
-        to: '/progress',
+        to: '/analytics',
       },
     ],
   },
