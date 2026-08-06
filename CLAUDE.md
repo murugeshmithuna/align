@@ -298,20 +298,39 @@ browser smoke-tested (fake camera) for crash-safety and correct initial HUD stat
 also caught and fixed a leftover hardcoded `setPhase('UP')` in `start()` that would have shown the old
 phase label on an otherwise-renamed state machine.
 
-**Claude Vision meal-photo analysis** (`/nutrition`, `POST /vision/analyze-meal`): separate code path from
-the orchestrator's tool loop - like `debate.py` - since sending an image doesn't fit a JSON tool-input
-schema (Claude's tool-use inputs are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded
-photo as an image content block in a single `claude-opus-4-8` call, forcing a **strict** `report_meal_analysis`
-tool call (`"strict": true` + `"additionalProperties": false` on the schema - verified against the API
-reference before use, not guessed) via `tool_choice`, so the response comes back as directly-parseable
-structured numbers instead of prose to parse. Coach feedback is three separate short fields
+**Claude Vision meal-photo analysis** (`/nutrition`): separate code path from the orchestrator's tool loop -
+like `debate.py` - since sending an image doesn't fit a JSON tool-input schema (Claude's tool-use inputs
+are JSON only). `backend/app/agent/meal_vision.py` sends the uploaded photo (or, for the text path, a plain
+description string) as content in a single `claude-opus-4-8` call, forcing a **strict** `report_meal_analysis`
+tool call (`"strict": true` + `"additionalProperties": false` on the schema, nested `ingredients` array
+items included - verified against the API reference before use, not guessed) via `tool_choice`, so the
+response comes back as directly-parseable structured numbers instead of prose to parse.
+
+**Full macro tracking + ingredient-level breakdown** (upgrade from calories-only): the model no longer
+reports one aggregate number - `MEAL_ANALYSIS_TOOL` requires an `ingredients` array (name/quantity/
+calories/protein_g/carbs_g/fat_g per item), and `_sum_ingredients()` computes the top-level
+calories/protein/carbs/fat totals by *summing* that array server-side rather than trusting a second
+model-reported aggregate that could numerically disagree with the breakdown. `sumIngredients()` on the
+frontend (`MealPhoto.jsx`) mirrors this exact computation, so the Review & Edit modal's "Update Macros"
+button reproduces the same math the backend will apply on save - editing one ingredient's calories and
+recomputing is a real, traceable number, not a guess. Coach feedback stays three separate short fields
 (`macro_summary`/`quick_tip`/`timing_note`, each schema-constrained to "under 15 words, no preamble")
-rather than one free-text blob the model has to self-format into bullets - the length/shape constraint is
-enforced by the schema, not by hoping a prose instruction is followed. `max_tokens` dropped from 1024 to
-400 to match (generous headroom for three short sentences + five numbers, not a real latency lever - see
-below). Results are stored in `meal_analyses`; `ask_nutrition` (RAG-lite, same pattern as
-`analyze_form`/`ask_schedule`) lets chat answer follow-ups like "how's my protein been?" from recent
-analyses.
+carried through unchanged from the original analysis even if the user edits macros afterward - no second
+LLM call on every correction (cost/latency), a deliberate scoping decision.
+
+**Split analyze/save + dual input (photo or text) + Review & Edit before persisting**: analysis and
+persistence used to be atomic in one call; that's incompatible with letting the user correct a
+misidentified ingredient (e.g. the model reads cooked chicken as mutton) before it's saved. Now
+`POST /vision/analyze-meal` (photo, multipart) and `POST /vision/analyze-meal-text` (`{user_id, text}`,
+natural-language description like "2 grilled chicken breasts, 1 cup white rice, and broccoli") both only
+run the analysis and return an unsaved `MealAnalysisPreviewOut` - neither writes to `meal_analyses`. A
+separate `POST /vision/save-meal` persists whatever the user confirmed after editing. `MealPhoto.jsx` has
+two tabs ("Photo Upload" / "Quick Log" text box) that both funnel into the same `ReviewModal`: editable
+description, one row per ingredient (name/quantity/calories/protein/carbs/fat, each editable, plus a
+remove button and an "+ Add ingredient" button), an "Update Macros" button that recomputes the aggregate
+totals from the current ingredient rows (not live/reactive on every keystroke - only on click, so
+in-progress typing doesn't produce jittery intermediate totals), and a final "Save meal" button that calls
+`POST /vision/save-meal` with the edited values.
 
 Frontend compresses the photo client-side before upload (canvas resize to fit 800px on the long edge,
 re-encoded as JPEG at 0.7 quality - a typical phone photo is several MB at 3000px+, more than a macro
@@ -319,7 +338,8 @@ estimate needs) and shows a floating modal with a spinner and cycling stage text
 "Calculating macros…" -> "Generating coach insight…") while the request is in flight, since a single opaque
 API call has no real progress events to report - purely to replace a frozen-looking button with something
 that reads as "working," not literal progress. Submit button and file input are both disabled while loading
-to prevent duplicate requests.
+to prevent duplicate requests. The text-input tab has no image step, so it skips straight from submit to
+the same `ReviewModal`.
 
 **Real latency finding, not a target hit**: this was requested with an "under 2-3 seconds" goal. Measured
 live end-to-end: ~28s. That's consistent with - not a regression from - the `claude-opus-4-8` latency
@@ -331,11 +351,32 @@ are still real, valid improvements (less data over the wire, no wasted generatio
 don't add up to an order-of-magnitude win on their own. The loading modal is doing the actual heavy lifting
 for the "app hangs" complaint, independent of how long the call actually takes.
 
-Verified live with a real food photo (grilled chicken, mashed potatoes, salad) and a user profile goal of
-"muscle gain / high protein intake": Claude correctly identified every component, gave a reasonable macro
-estimate, and all three feedback fields came back at 10-12 words each - within the enforced ceiling. The
-`ask_nutrition` chat follow-up correctly surfaced the single logged meal, was upfront that one meal isn't
-enough to judge a weekly trend, and asked a sensible clarifying question rather than overclaiming.
+**Dashboard macro dashboard + Profile macro targets**: `User` gained `daily_protein_target`/
+`daily_carbs_target`/`daily_fat_target` (nullable floats) alongside the pre-existing
+`daily_calorie_target` (nullable int, added in an earlier turn when the Dashboard's single calorie bar was
+first built) - `/profile` now has a 4-input "Daily macro targets (optional)" grid instead of a single
+calorie field. The Dashboard's "This week" card replaced its one calorie-only progress bar with a new
+`MacroBar` component rendered 4x (Calories/coral, Protein/emerald, Carbs/sky, Fat/amber), each showing
+"value / target unit". Continuing this project's "don't fabricate data" rule (first established when the
+calorie target field didn't exist yet and a fake target was flagged instead of invented): a `MacroBar`
+with no target set doesn't compute a fake percentage - it renders filled if any value was logged that
+day, empty otherwise - and a fallback message ("No daily targets set - add some") only appears when *all
+four* targets are unset. Logged meal items in `MealPhoto.jsx`'s history list show colored P/C/F badges
+(emerald/sky/amber) instead of just a calorie number.
+
+Verified live end-to-end with real API calls (no fabricated data): saved a profile with all 4 targets
+(2400 kcal / 160g protein / 250g carbs / 70g fat) via `POST /user/profile`, confirmed `GET /user/profile`
+round-trips all 4 values, confirmed `/profile`'s 4 inputs (`#calorie-target`/`#protein-target`/
+`#carbs-target`/`#fat-target`) load them correctly, saved a real meal via `POST /vision/save-meal`
+(650 kcal / 55g protein / 60g carbs / 15g fat), then confirmed the Dashboard's "This week" card rendered
+all 4 `MacroBar`s with the correct "logged / target" labels for every macro. Separately verified the full
+photo and text-input analyze -> Review & Edit -> save flow in the browser (Playwright): both tabs reach the
+same modal, editing an ingredient's calories and clicking "Update Macros" recomputes the aggregate total
+correctly, and "Save meal" persists the edited (not original) numbers - confirmed by the saved history
+entry reflecting the edit, not the model's first-pass estimate. `ask_nutrition` (RAG-lite, same pattern as
+`analyze_form`/`ask_schedule`) lets chat answer follow-ups like "how's my protein been?" from recent
+analyses - unchanged by this upgrade since `meal_analyses`' persisted shape didn't change, only what
+happens before persistence did.
 
 **Global AI assistant** (`AIMessageBar.jsx`, mounted in `AppLayout`): a floating action button + slide-over
 drawer available from every authenticated page, not just the Dashboard - requested as a shadcn
@@ -451,7 +492,8 @@ dashboard.
 
 - `users` — id, name, email, google_sub (nullable, set on Google sign-in - not built yet, deferred),
   photo_url, experience_level, target_frequency, available_equipment (CSV), primary_goals (CSV),
-  physical_limitations, height_cm, weight_kg, preferred_units (metric/imperial), created_at
+  physical_limitations, height_cm, weight_kg, preferred_units (metric/imperial), daily_calorie_target,
+  daily_protein_target, daily_carbs_target, daily_fat_target (all nullable, optional), created_at
 - `exercises` — id, name, muscle_group, equipment (catalog table)
 - `plans` — id, user_id, name, is_active, notes, created_at
 - `plan_exercises` — id, plan_id, exercise_id, day_of_week, sets, reps, target_weight, rest_seconds,
@@ -459,7 +501,7 @@ dashboard.
 - `form_analyses` — id, user_id, analyzed_at, exercise_name, rep_count, reps_with_good_depth/
   knee_tracking/back_angle, raw_json (per-rep detail)
 - `meal_analyses` — id, user_id, analyzed_at, description, estimated_calories, protein_g, carbs_g,
-  fat_g, assessment
+  fat_g, macro_summary, quick_tip, timing_note
 - `logs` — id, user_id, exercise_id, plan_id (nullable), performed_at, sets, reps, weight, rpe, notes
 - `soreness_notes` — id, user_id, noted_at, muscle_group, severity (1-5), notes
 - `checkins` — id, user_id, checkin_date (unique per user/day), score (1-5),
@@ -489,14 +531,17 @@ fitness-agent/
         logs.py            POST /logs, GET /logs/user/{user_id}, GET /logs/user/{user_id}/progress
         fatigue.py         GET /fatigue/user/{user_id}, POST /fatigue/asymmetry
         vision.py          POST /vision/analyze-squat, GET /vision/form-analyses/user/{user_id},
-                           POST /vision/analyze-meal, GET /vision/meal-analyses/user/{user_id}
+                           POST /vision/analyze-meal (photo, preview only), POST /vision/analyze-meal-text
+                           (text, preview only), POST /vision/save-meal (persists after Review & Edit),
+                           GET /vision/meal-analyses/user/{user_id}
       agent/
         tools.py           Tool schemas + DB executors (generate_workout_plan, adjust_plan, suggest_supplements,
                            ask_schedule, analyze_form, ask_nutrition)
         orchestrator.py    Manual Claude tool-use loop, profile + check-in context injection, generate_weekly_recap()
         debate.py          run_coach_debate() - 3 independent Opus calls (Strength/Recovery/Head Coach)
         fatigue.py         Banister fitness/fatigue/form model + limb-asymmetry checker (pure computation, no LLM)
-        meal_vision.py     analyze_meal_photo() - single Claude Vision call, forced tool_choice for structured output
+        meal_vision.py     analyze_meal_photo() + analyze_meal_text() - single Claude call each (vision or
+                           text), forced tool_choice for structured ingredient-level output, _sum_ingredients()
       vision/
         pose_analysis.py   MediaPipe Tasks Python API - analyze_squat_video() + unit-tested segment_reps()
         models/pose_landmarker_lite.task   Committed model bundle (~5.7MB, official Google-hosted BlazePose)
@@ -528,7 +573,8 @@ fitness-agent/
           squat video upload), PlanDetail.jsx, PlanList.jsx,
         WorkoutLog.jsx (manual set logging - exercise picker w/ inline "+ new", sets/reps/weight/rpe,
           recent-logs list),
-        MealPhoto.jsx (photo upload, calorie/macro + goal-aware assessment)
+        MealPhoto.jsx (dual photo/text input tabs, editable Review & Edit modal w/ per-ingredient
+          overrides + "Update Macros" recompute, logged-meal history w/ P/C/F badges)
 ```
 
 ## Running locally

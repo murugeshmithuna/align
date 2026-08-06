@@ -36,6 +36,9 @@ class UserOut(BaseModel):
     weight_kg: float | None
     preferred_units: UnitPreference
     daily_calorie_target: int | None
+    daily_protein_target: float | None
+    daily_carbs_target: float | None
+    daily_fat_target: float | None
     created_at: datetime
 
 
@@ -50,6 +53,9 @@ class UserProfileUpdate(BaseModel):
     weight_kg: float | None = None
     preferred_units: UnitPreference | None = None
     daily_calorie_target: int | None = None
+    daily_protein_target: float | None = None
+    daily_carbs_target: float | None = None
+    daily_fat_target: float | None = None
 
 
 # ---------- Auth (Google Sign-In) ----------
@@ -336,6 +342,48 @@ class MealAnalysisOut(BaseModel):
 
     id: int
     analyzed_at: datetime
+    description: str
+    estimated_calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    macro_summary: str
+    quick_tip: str
+    timing_note: str
+
+
+class MealIngredient(BaseModel):
+    name: str
+    quantity: str
+    calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+
+
+class MealAnalysisPreviewOut(BaseModel):
+    """Unsaved analysis result - the Review & Edit step happens against this
+    shape before anything is persisted. No id/analyzed_at since it isn't a
+    row yet."""
+
+    description: str
+    ingredients: list[MealIngredient]
+    estimated_calories: int
+    protein_g: float
+    carbs_g: float
+    fat_g: float
+    macro_summary: str
+    quick_tip: str
+    timing_note: str
+
+
+class MealTextRequest(BaseModel):
+    user_id: int
+    text: str
+
+
+class MealSaveRequest(BaseModel):
+    user_id: int
     description: str
     estimated_calories: int
     protein_g: float
