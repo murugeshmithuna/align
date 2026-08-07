@@ -422,6 +422,12 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const sessionStartedAtRef = useRef(null)
   const formFrameCountsRef = useRef({ ok: 0, total: 0 })
   const completedExercisesRef = useRef([])
+  // Per-exercise rep-by-rep depth/form pass-fail, keyed by exercise label
+  // ("Squat", "Bicep Curl", "Push-up") - fed from the exact same
+  // repFormCue()/checkForm() results already driving the live voice cues,
+  // just kept around instead of discarded so a real session-over-session
+  // trend can be computed server-side once the workout finishes.
+  const repFormLogRef = useRef({})
 
   // `renderLoop` recurses via requestAnimationFrame(renderLoop) using the
   // closure captured when `start()` first scheduled it - it never picks up a
@@ -454,6 +460,9 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const [voiceEnabled, setVoiceEnabledState] = useState(true)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [exportError, setExportError] = useState('')
+  // null = not yet requested/still loading, [] = requested but nothing to
+  // show (no tracked reps), array = one entry per exercise.
+  const [formFeedback, setFormFeedback] = useState(null)
 
   function toggleVoice() {
     const next = !voiceEnabledRef.current
@@ -569,6 +578,27 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     }
   }
 
+  // Fire-and-forget from handleSetComplete() below - the completion overlay
+  // renders whatever's in `formFeedback` once it resolves, but a slow/failed
+  // request shouldn't block or interrupt the "Workout complete!" screen.
+  async function submitFormFeedback() {
+    const entries = Object.entries(repFormLogRef.current).filter(([, reps]) => reps.length > 0)
+    if (!userId || entries.length === 0) {
+      setFormFeedback([])
+      return
+    }
+    const results = []
+    for (const [exerciseName, reps] of entries) {
+      try {
+        const feedback = await api.submitLiveSessionForm({ user_id: userId, exercise_name: exerciseName, reps })
+        results.push({ exerciseName, ...feedback })
+      } catch {
+        // Best-effort - one exercise's feedback failing shouldn't drop the rest.
+      }
+    }
+    setFormFeedback(results)
+  }
+
   async function handleSetComplete() {
     const item = getCurrentItem()
     const s = sessionRef.current
@@ -590,6 +620,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         speak('Workout complete! Great job.')
         setComplete(true)
         stop()
+        submitFormFeedback()
       }
       return
     }
@@ -631,6 +662,12 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       setCue(`Rep ${repNumber}`)
       speak(repNumberWord(repNumber))
     }
+
+    // Same depth (repFormCue) / form (checkForm, via rep.badForm - see
+    // processFrame) results already computed above, kept per-rep instead of
+    // discarded so submitFormFeedback() has real data once the session ends.
+    const log = repFormLogRef.current[activeConfig.label] || (repFormLogRef.current[activeConfig.label] = [])
+    log.push({ rep_index: log.length, min_angle: rep.minAngle, depth_ok: !formCue, form_ok: !rep.badForm })
   }
 
   // START_POSITION -> IN_MOTION -> PEAK_DEPTH -> RETURN_POSITION -> (rep
@@ -708,6 +745,12 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         setCue(formCheck.cue)
       }
     }
+
+    // Flags the in-progress rep (if any) as having a form issue somewhere
+    // during its motion - checked after the state machine above so a rep
+    // freshly started this same frame (rs.current just created) is covered
+    // too, not just rep already in progress before this frame.
+    if (rs.current && !formCheck.ok) rs.current.badForm = true
 
     rs.prevAngle = angle
   }
@@ -799,6 +842,8 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       sessionStartedAtRef.current = Date.now()
       formFrameCountsRef.current = { ok: 0, total: 0 }
       completedExercisesRef.current = []
+      repFormLogRef.current = {}
+      setFormFeedback(null)
       sessionRef.current.queueIndex = 0
       sessionRef.current.currentSet = 1
       sessionRef.current.repCount = 0
@@ -913,10 +958,46 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
           </>
         )}
         {complete && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6">
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6 py-8 overflow-y-auto">
             <span className="text-3xl">🎉</span>
             <p className="font-heading font-bold text-lg">Workout complete!</p>
             <p className="text-sm text-slate-400">Nice work - logged to your history.</p>
+
+            {formFeedback === null ? (
+              <p className="text-xs text-slate-500 flex items-center gap-2">
+                <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                Checking your form…
+              </p>
+            ) : (
+              formFeedback.length > 0 && (
+                <div className="w-full max-w-sm space-y-2 text-left">
+                  {formFeedback.map((f) => (
+                    <div
+                      key={f.exerciseName}
+                      className="rounded-lg border border-forest-700 bg-forest-900/70 p-3 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-heading font-semibold">{f.exerciseName}</p>
+                        <div className="flex gap-2 text-[11px] font-semibold shrink-0">
+                          <span className="text-emerald-400">{f.good_depth_pct}% depth</span>
+                          <span className="text-sky-400">{f.good_form_pct}% form</span>
+                        </div>
+                      </div>
+                      {f.focus_areas.length > 0 && (
+                        <ul className="text-xs text-slate-300 space-y-0.5 list-disc list-inside">
+                          {f.focus_areas.map((area, i) => (
+                            <li key={i}>{area}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-xs text-slate-400">📈 {f.trend}</p>
+                      <p className="text-xs text-coral-300">🧭 {f.overall_insight}</p>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
             <button
               onClick={handleExportPdf}
               disabled={exportingPdf}

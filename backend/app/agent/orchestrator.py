@@ -795,3 +795,145 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
         daily_fat=daily_fat,
     )
     return result
+
+
+FORM_FEEDBACK_TOOL = {
+    "name": "report_form_feedback",
+    "description": "Report short, structured post-session form feedback for a live-tracked exercise session.",
+    "strict": True,
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "focus_areas": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "1-3 short, specific things to work on next session (each under 12 words, no fluff). "
+                    "Empty array if the session's form was clean - never invent a nitpick."
+                ),
+            },
+            "trend": {
+                "type": "string",
+                "description": (
+                    "One short sentence comparing this session's form to the previous session on this "
+                    "exercise - cite the real numbers given (e.g. '8/10 good reps vs 6/10 last time'). If "
+                    "told there's no previous session, say that plainly instead."
+                ),
+            },
+            "overall_insight": {
+                "type": "string",
+                "description": (
+                    "One short sentence verdict on the form trajectory across sessions - improving, "
+                    "plateauing, or declining - and why, grounded in the numbers given."
+                ),
+            },
+        },
+        "required": ["focus_areas", "trend", "overall_insight"],
+        "additionalProperties": False,
+    },
+}
+
+
+def _run_form_feedback(client, prompt: str) -> dict:
+    response = client.messages.create(
+        model=FAST_MODEL,
+        max_tokens=400,
+        tools=[FORM_FEEDBACK_TOOL],
+        tool_choice={"type": "tool", "name": "report_form_feedback"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+    tool_block = next(block for block in response.content if block.type == "tool_use")
+    return tool_block.input
+
+
+def generate_live_session_form_feedback(
+    db: Session, user_id: int, exercise_name: str, reps: list[dict]
+) -> dict:
+    """Structured, numbers-first feedback for one just-finished live-tracked
+    exercise (LiveSession.jsx) - built the same way as the nutrition reviews
+    above (a forced strict tool call over Python-computed real numbers, never
+    numbers the model invents itself). Compares against the user's most
+    recent PRIOR LiveSessionForm row for the same exercise_name, if any -
+    the only place in this codebase that does a session-over-session form
+    trend rather than looking at just the latest snapshot (contrast
+    execute_analyze_form in tools.py, which only ever reads the single most
+    recent FormAnalysis row)."""
+    client = _get_client()
+    _get_user_or_raise(db, user_id)
+
+    rep_count = len(reps)
+    good_depth = sum(1 for r in reps if r["depth_ok"])
+    good_form = sum(1 for r in reps if r["form_ok"])
+    good_depth_pct = round((good_depth / rep_count) * 100, 1) if rep_count else 0.0
+    good_form_pct = round((good_form / rep_count) * 100, 1) if rep_count else 0.0
+
+    prior_sessions = db.scalars(
+        select(models.LiveSessionForm)
+        .where(
+            models.LiveSessionForm.user_id == user_id,
+            models.LiveSessionForm.exercise_name == exercise_name,
+        )
+        .order_by(models.LiveSessionForm.session_at.desc())
+        .limit(5)
+    ).all()
+
+    current_summary = (
+        f"This session: {rep_count} reps, {good_depth}/{rep_count} good depth ({good_depth_pct}%), "
+        f"{good_form}/{rep_count} good form ({good_form_pct}%)."
+    )
+
+    if not prior_sessions:
+        prompt = (
+            f"The user just finished a live-tracked {exercise_name} session. There is no previous session "
+            f"on this exercise to compare against - say that plainly in `trend`, and use `overall_insight` "
+            f"to note this is their baseline. Each field is ONE specific sentence, no fluff.\n\n"
+            f"{current_summary}"
+        )
+        result = _run_form_feedback(client, prompt)
+        result.update(
+            rep_count=rep_count,
+            good_depth_pct=good_depth_pct,
+            good_form_pct=good_form_pct,
+            previous_rep_count=None,
+            previous_good_depth_pct=None,
+            previous_good_form_pct=None,
+            sessions_compared=0,
+        )
+        return result
+
+    previous = prior_sessions[0]
+    previous_rep_count = previous.rep_count
+    previous_good_depth_pct = (
+        round((previous.reps_with_good_depth / previous_rep_count) * 100, 1) if previous_rep_count else 0.0
+    )
+    previous_good_form_pct = (
+        round((previous.reps_with_good_form / previous_rep_count) * 100, 1) if previous_rep_count else 0.0
+    )
+    history_lines = "\n".join(
+        f"- {s.session_at.strftime('%b %d')}: {s.rep_count} reps, "
+        f"{round((s.reps_with_good_depth / s.rep_count) * 100, 1) if s.rep_count else 0}% good depth, "
+        f"{round((s.reps_with_good_form / s.rep_count) * 100, 1) if s.rep_count else 0}% good form"
+        for s in prior_sessions
+    )
+
+    prompt = (
+        f"The user just finished a live-tracked {exercise_name} session. Compare it against their most "
+        f"recent previous session on this exercise and the short history below. Each field is ONE "
+        f"specific sentence citing real numbers - no fluff, no generic advice.\n\n"
+        f"{current_summary}\n\n"
+        f"Previous session ({previous.session_at.strftime('%b %d')}): {previous_rep_count} reps, "
+        f"{previous.reps_with_good_depth}/{previous_rep_count} good depth ({previous_good_depth_pct}%), "
+        f"{previous.reps_with_good_form}/{previous_rep_count} good form ({previous_good_form_pct}%).\n\n"
+        f"Last {len(prior_sessions)} sessions on this exercise (most recent first):\n{history_lines}"
+    )
+    result = _run_form_feedback(client, prompt)
+    result.update(
+        rep_count=rep_count,
+        good_depth_pct=good_depth_pct,
+        good_form_pct=good_form_pct,
+        previous_rep_count=previous_rep_count,
+        previous_good_depth_pct=previous_good_depth_pct,
+        previous_good_form_pct=previous_good_form_pct,
+        sessions_compared=len(prior_sessions),
+    )
+    return result

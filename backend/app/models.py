@@ -184,6 +184,31 @@ class FormAnalysis(Base):
     user: Mapped["User"] = relationship()
 
 
+class LiveSessionForm(Base):
+    """One completed exercise's worth of rep-by-rep form data from a live,
+    webcam-tracked LiveSession.jsx session - distinct from FormAnalysis
+    (which is a single batch squat-video upload). Generic across every
+    exercise LiveSession.jsx pose-tracks (squat/bicep_curl/pushup), unlike
+    FormAnalysis's squat-specific knee-tracking/back-angle columns: every
+    exercise's live `checkForm()` boils down to the same two pass/fail
+    dimensions - depth (repFormCue, from the rep's minimum joint angle) and
+    form (checkForm, whatever exercise-specific check that config runs, e.g.
+    knee/back for squats, elbow drift for curls, hip sag for push-ups)."""
+
+    __tablename__ = "live_session_forms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    session_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    exercise_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    rep_count: Mapped[int] = mapped_column(Integer, default=0)
+    reps_with_good_depth: Mapped[int] = mapped_column(Integer, default=0)
+    reps_with_good_form: Mapped[int] = mapped_column(Integer, default=0)
+    raw_json: Mapped[str] = mapped_column(Text)  # per-rep [{rep_index, min_angle, depth_ok, form_ok}]
+
+    user: Mapped["User"] = relationship()
+
+
 class MealAnalysis(Base):
     """Summary of one Claude Vision meal-photo analysis. Kept so the
     `ask_nutrition` agent tool can answer follow-up chat questions ("how am I

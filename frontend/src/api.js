@@ -90,6 +90,8 @@ export const api = {
   estimateIngredient: (payload) =>
     request('/vision/estimate-ingredient', { method: 'POST', body: JSON.stringify(payload) }),
 
+  submitLiveSessionForm: (payload) => request('/vision/live-session-form', { method: 'POST', body: JSON.stringify(payload) }),
+
   getDailyNutritionReview: (userId) => request(`/agent/nutrition-review/daily/${userId}`),
   getWeeklyNutritionReview: (userId) => request(`/agent/nutrition-review/weekly/${userId}`),
 
