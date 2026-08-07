@@ -10,7 +10,9 @@ import {
   Tooltip,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
+import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
+import MacroBar from '../components/MacroBar.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Legend, Tooltip)
@@ -33,6 +35,130 @@ const RISK_STYLES = {
   moderate: 'text-amber-400',
   high: 'text-red-400',
   unknown: 'text-slate-500',
+}
+
+// Calories reads as a deficit/surplus against target; the other three macros
+// read as "how much of the target did I hit" - same underlying percentage,
+// different framing, so they're two small helpers rather than one generic one.
+function calorieBadge(value, target) {
+  if (value == null || !target) return null
+  const pct = Math.round((value / target) * 100)
+  if (pct === 100) {
+    return <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400">On target</span>
+  }
+  const label = pct < 100 ? `${100 - pct}% Deficit` : `${pct - 100}% Surplus`
+  const color = pct < 100 ? 'text-sky-400' : 'text-amber-400'
+  return <span className={`text-[10px] font-semibold uppercase tracking-wide whitespace-nowrap ${color}`}>{label}</span>
+}
+
+function macroTargetBadge(value, target) {
+  if (value == null || !target) return null
+  const pct = Math.round((value / target) * 100)
+  return (
+    <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400 whitespace-nowrap">
+      {pct}% Target achieved
+    </span>
+  )
+}
+
+// Same text-based jsPDF approach as LiveSession.jsx's buildWorkoutPdf - real
+// vector text (small, selectable, searchable) rather than rasterizing a DOM
+// snapshot for content that's fundamentally a few labeled numbers and two
+// short paragraphs.
+function buildNutritionAuditPdf(review) {
+  const doc = new jsPDF()
+  const CORAL = [255, 122, 77]
+  const SLATE = [100, 116, 139]
+  const INK = [15, 23, 42]
+  const marginX = 20
+  let y = 22
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(...CORAL)
+  doc.text('AI Fitness Agent', marginX, y)
+  y += 8
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(12)
+  doc.setTextColor(...INK)
+  doc.text('Weekly Nutrition Audit', marginX, y)
+  y += 6
+
+  doc.setFontSize(10)
+  doc.setTextColor(...SLATE)
+  doc.text(new Date().toLocaleDateString(undefined, { dateStyle: 'long' }), marginX, y)
+  y += 4
+  doc.setDrawColor(...SLATE)
+  doc.line(marginX, y, 190, y)
+  y += 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...INK)
+  doc.text('Macro Breakdown', marginX, y)
+  y += 8
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  const rows = [
+    ['Calories', review.avg_calories, review.calorie_target, ' kcal'],
+    ['Protein', review.avg_protein, review.protein_target, 'g'],
+    ['Carbs', review.avg_carbs, review.carbs_target, 'g'],
+    ['Fat', review.avg_fat, review.fat_target, 'g'],
+  ]
+  const numericRows = rows.filter(([, value]) => value != null)
+  if (numericRows.length === 0) {
+    doc.setTextColor(...SLATE)
+    doc.text('No numeric macro data available for this period.', marginX, y)
+    y += 7
+  } else {
+    for (const [label, value, target, unit] of numericRows) {
+      const pct = target ? Math.round((value / target) * 100) : null
+      doc.setTextColor(...SLATE)
+      doc.text(label, marginX, y)
+      doc.setTextColor(...INK)
+      const valueLabel = target
+        ? `${Math.round(value)}${unit} / ${Math.round(target)}${unit}${pct != null ? ` (${pct}%)` : ''}`
+        : `${Math.round(value)}${unit}`
+      doc.text(valueLabel, marginX + 45, y)
+      y += 7
+    }
+  }
+  y += 5
+
+  doc.setDrawColor(...SLATE)
+  doc.line(marginX, y, 190, y)
+  y += 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...INK)
+  doc.text('Pattern', marginX, y)
+  y += 8
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  doc.setTextColor(...INK)
+  const patternLines = doc.splitTextToSize(review.key_pattern || 'n/a', 170)
+  doc.text(patternLines, marginX, y)
+  y += patternLines.length * 6 + 8
+
+  doc.setDrawColor(...SLATE)
+  doc.line(marginX, y, 190, y)
+  y += 10
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...CORAL)
+  doc.text('Recommendation', marginX, y)
+  y += 8
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(11)
+  doc.setTextColor(...INK)
+  const recLines = doc.splitTextToSize(review.recommendation || 'n/a', 170)
+  doc.text(recLines, marginX, y)
+
+  doc.save(`nutrition-audit-${new Date().toISOString().slice(0, 10)}.pdf`)
 }
 
 // Same tab-pill pattern used elsewhere in the app (MealPhoto.jsx, LiveSession.jsx).
@@ -382,15 +508,25 @@ export default function Progress() {
           </div>
 
           <div className="card py-3 px-4">
-            <div className="flex justify-between items-center mb-2">
+            <div className="flex justify-between items-center mb-2 gap-2">
               <h2 className="font-heading font-semibold text-sm">Weekly Nutrition Audit</h2>
-              <button
-                onClick={loadNutritionReview}
-                disabled={nutritionReviewLoading}
-                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold shrink-0"
-              >
-                {nutritionReviewLoading ? 'Auditing…' : nutritionReview ? 'Regenerate' : 'Generate'}
-              </button>
+              <div className="flex gap-2 shrink-0">
+                {nutritionReview && (
+                  <button
+                    onClick={() => buildNutritionAuditPdf(nutritionReview)}
+                    className="px-3 py-1.5 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-xs font-semibold"
+                  >
+                    📄 Export PDF Report
+                  </button>
+                )}
+                <button
+                  onClick={loadNutritionReview}
+                  disabled={nutritionReviewLoading}
+                  className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
+                >
+                  {nutritionReviewLoading ? 'Auditing…' : nutritionReview ? 'Regenerate' : 'Generate'}
+                </button>
+              </div>
             </div>
             {nutritionReviewError && <p className="text-sm text-red-400">{nutritionReviewError}</p>}
             {nutritionReviewLoading ? (
@@ -399,26 +535,62 @@ export default function Progress() {
                 Auditing…
               </p>
             ) : nutritionReview ? (
-              <ul className="space-y-1.5 text-sm text-slate-200">
-                <li className="flex gap-2">
-                  <span>📊</span>
-                  <span>
-                    <span className="font-semibold">Macros:</span> {nutritionReview.macro_status}
-                  </span>
-                </li>
-                <li className="flex gap-2">
-                  <span>💡</span>
-                  <span>
-                    <span className="font-semibold">Pattern:</span> {nutritionReview.key_pattern}
-                  </span>
-                </li>
-                <li className="flex gap-2">
-                  <span>🎯</span>
-                  <span>
-                    <span className="font-semibold">Rec:</span> {nutritionReview.recommendation}
-                  </span>
-                </li>
-              </ul>
+              <div className="space-y-3">
+                {nutritionReview.avg_calories != null ? (
+                  <div className="space-y-2.5">
+                    <MacroBar
+                      label="Calories"
+                      value={nutritionReview.avg_calories}
+                      target={nutritionReview.calorie_target}
+                      unit=" kcal"
+                      color="bg-coral-500"
+                      badge={calorieBadge(nutritionReview.avg_calories, nutritionReview.calorie_target)}
+                    />
+                    <MacroBar
+                      label="Protein"
+                      value={nutritionReview.avg_protein}
+                      target={nutritionReview.protein_target}
+                      unit="g"
+                      color="bg-emerald-500"
+                      badge={macroTargetBadge(nutritionReview.avg_protein, nutritionReview.protein_target)}
+                    />
+                    <MacroBar
+                      label="Carbs"
+                      value={nutritionReview.avg_carbs}
+                      target={nutritionReview.carbs_target}
+                      unit="g"
+                      color="bg-sky-500"
+                      badge={macroTargetBadge(nutritionReview.avg_carbs, nutritionReview.carbs_target)}
+                    />
+                    <MacroBar
+                      label="Fat"
+                      value={nutritionReview.avg_fat}
+                      target={nutritionReview.fat_target}
+                      unit="g"
+                      color="bg-amber-500"
+                      badge={macroTargetBadge(nutritionReview.avg_fat, nutritionReview.fat_target)}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-200 flex gap-2">
+                    <span>📊</span>
+                    <span>{nutritionReview.macro_status}</span>
+                  </p>
+                )}
+
+                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">🔄 Pattern</p>
+                  <p className="text-sm text-slate-200">{nutritionReview.key_pattern}</p>
+                  {nutritionReview.days_logged != null && (
+                    <p className="text-xs text-slate-500 mt-1">Logged {nutritionReview.days_logged} of 7 days</p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-coral-400 mb-1">🎯 Recommendation</p>
+                  <p className="text-sm text-slate-100">{nutritionReview.recommendation}</p>
+                </div>
+              </div>
             ) : (
               <p className="text-sm text-slate-500">
                 Macro consistency, protein-target, and calorie-trend audit for the last 7 days.

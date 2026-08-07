@@ -731,6 +731,11 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
             "macro_status": "No meals logged in the past 7 days.",
             "key_pattern": "Nothing to analyze yet this week.",
             "recommendation": "Log meals throughout the week so next week's audit has real data to work with.",
+            "days_logged": 0,
+            "calorie_target": user.daily_calorie_target,
+            "protein_target": user.daily_protein_target,
+            "carbs_target": user.daily_carbs_target,
+            "fat_target": user.daily_fat_target,
         }
 
     days_logged = len({m.analyzed_at.date() for m in meals})
@@ -754,4 +759,16 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
         f"{avg_calories} kcal, {avg_protein}g protein, {avg_carbs}g carbs, {avg_fat}g fat.\n\n"
         f"All meals logged this week:\n{meal_lines}"
     )
-    return _run_nutrition_review(client, prompt)
+    result = _run_nutrition_review(client, prompt)
+    result.update(
+        days_logged=days_logged,
+        avg_calories=avg_calories,
+        avg_protein=avg_protein,
+        avg_carbs=avg_carbs,
+        avg_fat=avg_fat,
+        calorie_target=user.daily_calorie_target,
+        protein_target=user.daily_protein_target,
+        carbs_target=user.daily_carbs_target,
+        fat_target=user.daily_fat_target,
+    )
+    return result
