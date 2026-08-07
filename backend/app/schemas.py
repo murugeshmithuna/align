@@ -464,3 +464,27 @@ class IngredientEstimateOut(BaseModel):
     protein_g: float
     carbs_g: float
     fat_g: float
+
+
+# ---------- Admin ----------
+
+
+class AdminUserSummary(BaseModel):
+    id: int
+    name: str
+    email: EmailStr
+    created_at: datetime
+    signed_in_with_google: bool
+    plan_count: int
+    log_count: int
+    meal_count: int
+    checkin_count: int
+
+
+class AdminUserDetail(BaseModel):
+    user: UserOut
+    plans: list[PlanOut]
+    recent_logs: list[LogOut]
+    recent_meals: list[MealAnalysisOut]
+    recent_checkins: list[CheckInOut]
+    recent_soreness_notes: list[SorenessNoteOut]

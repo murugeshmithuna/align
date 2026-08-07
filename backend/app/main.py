@@ -3,7 +3,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import models
 from app.database import Base, engine
-from app.routers import agent, auth, checkin, exercises, fatigue, logs, plans, soreness, user_profile, users, vision
+from app.routers import (
+    admin,
+    agent,
+    auth,
+    checkin,
+    exercises,
+    fatigue,
+    logs,
+    plans,
+    soreness,
+    user_profile,
+    users,
+    vision,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -32,6 +45,7 @@ app.include_router(checkin.router)
 app.include_router(agent.router)
 app.include_router(fatigue.router)
 app.include_router(vision.router)
+app.include_router(admin.router)
 
 
 @app.get("/health", tags=["health"])
