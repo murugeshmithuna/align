@@ -12,7 +12,6 @@ import {
 import { Line } from 'react-chartjs-2'
 import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
-import MacroBar from '../components/MacroBar.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Legend, Tooltip)
@@ -58,6 +57,62 @@ function macroTargetBadge(value, target) {
     <span className="text-[10px] font-semibold uppercase tracking-wide text-emerald-400 whitespace-nowrap">
       {pct}% Target achieved
     </span>
+  )
+}
+
+// Icon+number+sparkline stat tiles for the Weekly Nutrition Audit card - one
+// hue per macro, matching the brand colors already used elsewhere (bg-coral-500/
+// bg-emerald-500/bg-sky-500/bg-amber-500), each with its own low-opacity fill.
+const SPARKLINE_COLORS = {
+  calories: { line: '#ff7a4d', fill: 'rgba(255, 122, 77, 0.15)' },
+  protein: { line: '#10b981', fill: 'rgba(16, 185, 129, 0.15)' },
+  carbs: { line: '#0ea5e9', fill: 'rgba(14, 165, 233, 0.15)' },
+  fat: { line: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)' },
+}
+
+const sparklineOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  scales: { x: { display: false }, y: { display: false } },
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+  elements: { point: { radius: 0 } },
+}
+
+function buildSparklineData(dailyData, colors) {
+  return {
+    labels: dailyData.map((_, i) => i),
+    datasets: [
+      {
+        data: dailyData,
+        borderColor: colors.line,
+        backgroundColor: colors.fill,
+        borderWidth: 2,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+      },
+    ],
+  }
+}
+
+function MacroTile({ icon, label, value, unit, badge, dailyData, colors }) {
+  return (
+    <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
+        <span>{icon}</span>
+        <span>{label}</span>
+      </div>
+      <p className="text-lg font-bold tabular-nums">
+        {Math.round(value).toLocaleString()}
+        {unit}
+      </p>
+      {badge && <div className="mt-0.5">{badge}</div>}
+      {Array.isArray(dailyData) && dailyData.length > 0 && (
+        <div className="h-9 mt-1">
+          <Line data={buildSparklineData(dailyData, colors)} options={sparklineOptions} />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -537,38 +592,42 @@ export default function Progress() {
             ) : nutritionReview ? (
               <div className="space-y-3">
                 {nutritionReview.avg_calories != null ? (
-                  <div className="space-y-2.5">
-                    <MacroBar
+                  <div className="grid grid-cols-2 gap-2">
+                    <MacroTile
+                      icon="🔥"
                       label="Calories"
                       value={nutritionReview.avg_calories}
-                      target={nutritionReview.calorie_target}
                       unit=" kcal"
-                      color="bg-coral-500"
                       badge={calorieBadge(nutritionReview.avg_calories, nutritionReview.calorie_target)}
+                      dailyData={nutritionReview.daily_calories}
+                      colors={SPARKLINE_COLORS.calories}
                     />
-                    <MacroBar
+                    <MacroTile
+                      icon="🥩"
                       label="Protein"
                       value={nutritionReview.avg_protein}
-                      target={nutritionReview.protein_target}
                       unit="g"
-                      color="bg-emerald-500"
                       badge={macroTargetBadge(nutritionReview.avg_protein, nutritionReview.protein_target)}
+                      dailyData={nutritionReview.daily_protein}
+                      colors={SPARKLINE_COLORS.protein}
                     />
-                    <MacroBar
+                    <MacroTile
+                      icon="🌾"
                       label="Carbs"
                       value={nutritionReview.avg_carbs}
-                      target={nutritionReview.carbs_target}
                       unit="g"
-                      color="bg-sky-500"
                       badge={macroTargetBadge(nutritionReview.avg_carbs, nutritionReview.carbs_target)}
+                      dailyData={nutritionReview.daily_carbs}
+                      colors={SPARKLINE_COLORS.carbs}
                     />
-                    <MacroBar
+                    <MacroTile
+                      icon="🥑"
                       label="Fat"
                       value={nutritionReview.avg_fat}
-                      target={nutritionReview.fat_target}
                       unit="g"
-                      color="bg-amber-500"
                       badge={macroTargetBadge(nutritionReview.avg_fat, nutritionReview.fat_target)}
+                      dailyData={nutritionReview.daily_fat}
+                      colors={SPARKLINE_COLORS.fat}
                     />
                   </div>
                 ) : (

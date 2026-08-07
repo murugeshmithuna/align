@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
@@ -265,24 +265,6 @@ export default function Profile() {
           )}
         </div>
       </form>
-
-      <Link
-        to="/nutrition/calculator"
-        className="card p-5 mt-6 flex items-center justify-between hover:border-coral-400 border border-transparent transition-colors group"
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🧮</span>
-          <div>
-            <h2 className="font-heading font-semibold group-hover:text-coral-300 transition-colors">
-              Nutritional &amp; Macro Calculator
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Auto-calculate daily calorie/protein/carbs/fat/fiber targets from your stats.
-            </p>
-          </div>
-        </div>
-        <span className="text-coral-400 group-hover:translate-x-0.5 transition-transform">→</span>
-      </Link>
     </div>
   )
 }

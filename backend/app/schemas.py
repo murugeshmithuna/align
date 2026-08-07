@@ -301,6 +301,11 @@ class NutritionReviewOut(BaseModel):
     protein_target: float | None = None
     carbs_target: float | None = None
     fat_target: float | None = None
+    # 7-point (oldest -> newest) daily series for sparkline charts on the frontend.
+    daily_calories: list[float] | None = None
+    daily_protein: list[float] | None = None
+    daily_carbs: list[float] | None = None
+    daily_fat: list[float] | None = None
 
 
 class CoachResolutionRequest(BaseModel):
