@@ -428,6 +428,11 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   // just kept around instead of discarded so a real session-over-session
   // trend can be computed server-side once the workout finishes.
   const repFormLogRef = useRef({})
+  // Guards against double-logging/double-submitting the same session's data
+  // if both the natural full-completion path and a later manual stop/unmount
+  // somehow both try to finalize (e.g. the user stops right as the last rep
+  // also finished the workout).
+  const sessionFinalizedRef = useRef(false)
 
   // `renderLoop` recurses via requestAnimationFrame(renderLoop) using the
   // closure captured when `start()` first scheduled it - it never picks up a
@@ -599,6 +604,50 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     setFormFeedback(results)
   }
 
+  // Handles every session-ending path OTHER than a full plan queue finishing
+  // on its own (that path is handled inline in handleSetComplete below,
+  // since it already knows to call logCompletedExercise for the final
+  // exercise) - the "Stop session" button, and the component unmounting
+  // (navigating to another page mid-session). Previously neither path
+  // logged the current in-progress set or submitted form feedback at all,
+  // and manual/no-plan mode had no other way to ever reach either one - a
+  // manual practice session just cycled sets/rest forever until the camera
+  // was torn down with nothing saved.
+  async function finalizeSession() {
+    if (sessionFinalizedRef.current) {
+      stop()
+      return
+    }
+    sessionFinalizedRef.current = true
+
+    const s = sessionRef.current
+    const item = getCurrentItem()
+
+    // Plan mode only - manual mode has no exercise_id to log a set against.
+    if (usingPlan && item && s.repCount > 0) {
+      try {
+        await api.createLog({
+          user_id: userId,
+          exercise_id: item.exerciseId,
+          plan_id: planId,
+          sets: 1,
+          reps: s.repCount,
+          weight: item.targetWeight,
+        })
+      } catch {
+        // Logging failure shouldn't block showing whatever feedback we can.
+      }
+    }
+
+    const hasTrackedReps = Object.values(repFormLogRef.current).some((reps) => reps.length > 0)
+    if (completedExercisesRef.current.length > 0 || hasTrackedReps || s.repCount > 0) {
+      setComplete(true)
+      await submitFormFeedback()
+    }
+
+    stop()
+  }
+
   async function handleSetComplete() {
     const item = getCurrentItem()
     const s = sessionRef.current
@@ -618,6 +667,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         resetRepState()
       } else {
         speak('Workout complete! Great job.')
+        sessionFinalizedRef.current = true
         setComplete(true)
         stop()
         submitFormFeedback()
@@ -843,6 +893,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       formFrameCountsRef.current = { ok: 0, total: 0 }
       completedExercisesRef.current = []
       repFormLogRef.current = {}
+      sessionFinalizedRef.current = false
       setFormFeedback(null)
       sessionRef.current.queueIndex = 0
       sessionRef.current.currentSet = 1
@@ -862,7 +913,10 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     }
   }
 
-  useEffect(() => stop, []) // release camera/model on unmount or tab switch
+  // Finalizes (logs the in-progress set, submits form feedback) rather than
+  // just tearing down the camera - navigating away mid-session previously
+  // silently discarded whatever the current set had done.
+  useEffect(() => finalizeSession, [])
 
   // Rest-countdown ticker, purely for the HUD display.
   useEffect(() => {
@@ -1018,7 +1072,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       <div className="flex justify-center items-center gap-3">
         {status === 'running' ? (
           <button
-            onClick={stop}
+            onClick={finalizeSession}
             className="px-5 py-2 rounded-lg bg-forest-800 hover:bg-forest-700 text-sm font-heading font-semibold"
           >
             Stop session
