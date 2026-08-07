@@ -1,9 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { bmiBand, calculateBmi } from '../utils/bmi.js'
 import { ACTIVITY_LABELS, GOAL_LABELS, calculateBaselineGoals } from '../utils/nutritionGoals.js'
-import { CM_PER_IN, KG_PER_LB, displayToMetric, metricToDisplay } from '../utils/units.js'
+import {
+  KG_PER_LB,
+  displayToMetric,
+  heightDisplayToMetric,
+  heightMetricToDisplay,
+  metricToDisplay,
+} from '../utils/units.js'
 import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 // +/- stepper wrapping a plain number input - lets the user nudge an
@@ -64,6 +71,49 @@ function MacroTargetCard({ id, emoji, label, value, onChange, step, unit }) {
   )
 }
 
+// BMI gradient bar - fixed proportional bands over a clamped 15-40 display
+// range (Underweight <18.5, Normal <25, Overweight <30, Obese 30+), same
+// thresholds bmiBand() classifies by, so the marker position and the label
+// can never disagree.
+const BMI_MIN = 15
+const BMI_MAX = 40
+const BMI_GRADIENT =
+  'linear-gradient(to right, #38bdf8 0%, #38bdf8 14%, #10b981 14%, #10b981 40%, #f59e0b 40%, #f59e0b 60%, #ef4444 60%, #ef4444 100%)'
+
+function BmiCard({ bmi }) {
+  const band = bmi ? bmiBand(bmi) : null
+  const pct = bmi ? ((Math.min(BMI_MAX, Math.max(BMI_MIN, bmi)) - BMI_MIN) / (BMI_MAX - BMI_MIN)) * 100 : 0
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <span className="text-xs uppercase tracking-wide text-slate-500 font-semibold">BMI</span>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className="text-2xl font-heading font-bold tabular-nums">{bmi ? bmi.toFixed(1) : '—'}</span>
+            {band && (
+              <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: band.color }}>
+                {band.label}
+              </span>
+            )}
+          </div>
+        </div>
+        {!bmi && (
+          <p className="text-xs text-slate-500 max-w-[16rem]">Enter your height and weight above to see your BMI.</p>
+        )}
+      </div>
+      {bmi && (
+        <div className="mt-3 relative h-1.5 rounded-full" style={{ backgroundImage: BMI_GRADIENT }}>
+          <div
+            className="absolute top-1/2 w-2.5 h-2.5 rounded-full bg-white border-2 border-forest-950 shadow"
+            style={{ left: `${pct}%`, transform: 'translate(-50%, -50%)' }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // Dedicated, high-visibility home for the baseline macro calculator -
 // previously buried at the bottom of Profile.jsx. Self-contained: it has its
 // own height/weight/age/sex/activity inputs (rather than silently reading
@@ -96,7 +146,7 @@ export default function NutritionCalculator() {
       .then((data) => {
         const units = data.preferred_units || 'metric'
         setPreferredUnits(units)
-        setHeightDisplay(metricToDisplay(data.height_cm, units, CM_PER_IN))
+        setHeightDisplay(heightMetricToDisplay(data.height_cm, units))
         setWeightDisplay(metricToDisplay(data.weight_kg, units, KG_PER_LB))
         setAge(data.age ?? '')
         setSex(data.sex || 'male')
@@ -114,15 +164,21 @@ export default function NutritionCalculator() {
   }, [userId])
 
   function handleUnitsChange(nextUnits) {
-    const heightCm = displayToMetric(heightDisplay, preferredUnits, CM_PER_IN)
+    const heightCm = heightDisplayToMetric(heightDisplay, preferredUnits)
     const weightKg = displayToMetric(weightDisplay, preferredUnits, KG_PER_LB)
-    setHeightDisplay(metricToDisplay(heightCm, nextUnits, CM_PER_IN))
+    setHeightDisplay(heightMetricToDisplay(heightCm, nextUnits))
     setWeightDisplay(metricToDisplay(weightKg, nextUnits, KG_PER_LB))
     setPreferredUnits(nextUnits)
   }
 
+  const bmi = useMemo(() => {
+    const heightCm = heightDisplayToMetric(heightDisplay, preferredUnits)
+    const weightKg = displayToMetric(weightDisplay, preferredUnits, KG_PER_LB)
+    return calculateBmi(heightCm, weightKg)
+  }, [heightDisplay, weightDisplay, preferredUnits])
+
   function handleAutoCalculate() {
-    const heightCm = displayToMetric(heightDisplay, preferredUnits, CM_PER_IN)
+    const heightCm = heightDisplayToMetric(heightDisplay, preferredUnits)
     const weightKg = displayToMetric(weightDisplay, preferredUnits, KG_PER_LB)
     if (!heightCm || !weightKg || !age) {
       showToast('Enter your height, weight, and age first.', 'error')
@@ -150,7 +206,7 @@ export default function NutritionCalculator() {
     try {
       await api.saveProfile({
         user_id: userId,
-        height_cm: displayToMetric(heightDisplay, preferredUnits, CM_PER_IN),
+        height_cm: heightDisplayToMetric(heightDisplay, preferredUnits),
         weight_kg: displayToMetric(weightDisplay, preferredUnits, KG_PER_LB),
         preferred_units: preferredUnits,
         age: age === '' ? null : Number(age),
@@ -188,17 +244,29 @@ export default function NutritionCalculator() {
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           <div>
             <label className="block text-xs text-slate-500 mb-1" htmlFor="height">
-              Height ({preferredUnits === 'metric' ? 'cm' : 'in'})
+              Height ({preferredUnits === 'metric' ? 'cm' : "ft'in"})
             </label>
-            <input
-              id="height"
-              type="number"
-              min="0"
-              step="0.1"
-              value={heightDisplay}
-              onChange={(e) => setHeightDisplay(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-            />
+            {preferredUnits === 'imperial' ? (
+              <input
+                id="height"
+                type="text"
+                inputMode="numeric"
+                placeholder={`5'4"`}
+                value={heightDisplay}
+                onChange={(e) => setHeightDisplay(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            ) : (
+              <input
+                id="height"
+                type="number"
+                min="0"
+                step="0.1"
+                value={heightDisplay}
+                onChange={(e) => setHeightDisplay(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            )}
           </div>
           <div>
             <label className="block text-xs text-slate-500 mb-1" htmlFor="weight">
@@ -276,6 +344,8 @@ export default function NutritionCalculator() {
             </select>
           </div>
         </div>
+
+        <BmiCard bmi={bmi} />
 
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div className="flex gap-4 text-sm text-slate-300">
