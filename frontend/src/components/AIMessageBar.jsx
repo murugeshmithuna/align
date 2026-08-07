@@ -271,10 +271,16 @@ export default function AIMessageBar() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Close AI coach' : 'Open AI coach'}
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 pl-4 pr-5 py-3 rounded-full bg-coral-500 hover:bg-coral-600 text-white shadow-lg shadow-coral-500/30 hover:shadow-xl hover:scale-105 transition-all duration-200 font-heading font-semibold"
+        // A wide labeled pill still overlaps page content it happens to
+        // scroll past even once it clears the BottomTabBar (mobile screen
+        // real estate is tight and content is full-width). A compact
+        // icon-only circle on mobile covers far less; the full labeled pill
+        // is kept on desktop where there's no competing tab bar and more
+        // room to spare.
+        className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 flex items-center justify-center md:justify-start gap-2 w-12 h-12 md:w-auto md:h-auto md:pl-4 md:pr-5 md:py-3 rounded-full bg-coral-500 hover:bg-coral-600 text-white shadow-lg shadow-coral-500/30 hover:shadow-xl hover:scale-105 transition-all duration-200 font-heading font-semibold"
       >
         <SparkleIcon />
-        <span>Ask Coach</span>
+        <span className="hidden md:inline">Ask Coach</span>
       </button>
 
       {/* Backdrop - click to close, doesn't block the rest of the page when closed */}

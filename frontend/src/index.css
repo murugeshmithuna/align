@@ -49,124 +49,26 @@ body {
 }
 
 /* ==========================================================================
-   CosmicParallaxBg - decorative deep-space parallax backdrop
-   (see src/components/CosmicParallaxBg.jsx)
+   LiveSignalBg - looping EKG-style hero backdrop
+   (see src/components/LiveSignalBg.jsx)
    ========================================================================== */
 
-:root {
-  --animation-iteration: infinite;
+.signal-track {
+  width: 200%;
+  animation: signal-scroll 14s linear infinite;
 }
 
-.cosmic-parallax-container {
-  background: linear-gradient(to bottom, var(--color-forest-950), var(--color-forest-900));
-}
-
-.cosmic-stars,
-.cosmic-stars-medium,
-.cosmic-stars-large {
-  position: absolute;
-  top: 0;
-  left: 0;
-  background: transparent;
-}
-
-.cosmic-stars {
-  width: 1px;
-  height: 1px;
-  animation: animStar 50s linear var(--animation-iteration);
-}
-
-.cosmic-stars-medium {
-  width: 2px;
-  height: 2px;
-  animation: animStar 100s linear var(--animation-iteration);
-}
-
-.cosmic-stars-large {
-  width: 3px;
-  height: 3px;
-  animation: animStar 150s linear var(--animation-iteration);
-}
-
-@keyframes animStar {
+@keyframes signal-scroll {
   from {
-    transform: translateY(0px);
+    transform: translateX(0);
   }
   to {
-    transform: translateY(-2000px);
+    transform: translateX(-50%);
   }
 }
 
-/* Atmospheric glow sitting just above the planet silhouette. */
-#horizon {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 140%;
-  height: 40%;
-  transform: translateX(-50%);
-  pointer-events: none;
-}
-
-#horizon .glow {
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 100%;
-  height: 100%;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    ellipse at center bottom,
-    rgba(255, 122, 77, 0.35) 0%,
-    rgba(255, 122, 77, 0.12) 30%,
-    rgba(28, 110, 89, 0.08) 55%,
-    transparent 75%
-  );
-  filter: blur(4px);
-}
-
-/* Large glowing planet silhouette anchored to the bottom of the scene -
-   fixed height (not `aspect-ratio: 1/1`) so only a shallow dome peeks above
-   the container's bottom edge regardless of how tall/short the hero is;
-   a wide, short box with border-radius: 50% renders as a flattened ellipse,
-   not a forced circle, which is what actually looks like a horizon. A true
-   1:1 circle here previously ballooned tall enough to paint over the whole
-   scene (including the stars behind it) on a short, wide container. */
-#earth {
-  position: absolute;
-  left: 50%;
-  bottom: -320px;
-  width: 160%;
-  height: 400px;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at 50% 0%,
-    var(--color-forest-600) 0%,
-    var(--color-forest-800) 35%,
-    var(--color-forest-950) 70%
-  );
-  box-shadow: 0 -40px 120px 20px rgba(255, 122, 77, 0.25);
-}
-
-/* Centered title/subtitle text overlay. */
-#title {
-  position: absolute;
-  top: 42%;
-  left: 50%;
-  width: 90%;
-  transform: translate(-50%, -50%);
-  font-size: clamp(2rem, 8vw, 6rem);
-  letter-spacing: 0.05em;
-  line-height: 1;
-}
-
-#subtitle {
-  position: absolute;
-  top: 42%;
-  left: 50%;
-  width: 90%;
-  transform: translate(-50%, 1.75rem);
-  letter-spacing: 0.2em;
-  font-size: clamp(0.75rem, 2vw, 1.125rem);
+@media (prefers-reduced-motion: reduce) {
+  .signal-track {
+    animation: none;
+  }
 }

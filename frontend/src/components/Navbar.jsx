@@ -6,6 +6,10 @@ import { useSession } from '../context/SessionContext.jsx'
 // Horizontal header-style links, restored per explicit direction after
 // trying the hamburger + left-drawer pattern (Sidebar.jsx/Header.jsx,
 // removed) - the user wanted header links back, not a slide-out drawer.
+// Desktop-only now (`hidden md:flex` below) - on mobile these wrapped into
+// 3+ rows and ate most of the viewport, so BottomTabBar.jsx covers the core
+// routes there instead (a different interaction than the rejected drawer:
+// thumb-reachable tabs, nothing slides over content).
 const LINKS = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/workout/live', label: 'Live Session' },
@@ -42,7 +46,7 @@ export default function Navbar() {
         <span className="font-heading font-bold tracking-tight hidden sm:inline">AI Fitness Agent</span>
       </div>
 
-      <div className="flex items-center gap-1 flex-wrap">
+      <div className="hidden md:flex items-center gap-1 flex-wrap">
         {LINKS.map((link) => (
           <NavLink
             key={link.to}

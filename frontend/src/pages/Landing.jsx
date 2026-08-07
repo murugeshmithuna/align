@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import CosmicParallaxBg from '../components/CosmicParallaxBg.jsx'
+import LiveSignalBg from '../components/LiveSignalBg.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
 // Marketing summary only - no cards, no links, nothing that renders a tool
@@ -36,17 +36,13 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen font-body">
-      {/* Cosmic parallax backdrop is scoped to just this wrapper (header +
-          hero) via `relative` + `absolute inset-0` on the child, not the
-          whole scrollable page - the feature/footer sections below keep the
-          app's normal dark forest/coral surface, unified by sharing the same
-          color tokens rather than by repeating the starfield everywhere.
-          No head/text passed - the giant faded duplicate of the heading
-          read as a fake-looking shadow behind the real crisp text rather
-          than a subtle watermark, so this only renders the ambient
-          stars/horizon/planet, not a second copy of the title. */}
+      {/* Live Signal backdrop is scoped to just this wrapper (header + hero)
+          via `relative` + `absolute inset-0` on the child, not the whole
+          scrollable page - the feature/footer sections below keep the app's
+          normal dark forest/coral surface, unified by sharing the same color
+          tokens rather than by repeating the animated signal everywhere. */}
       <div className="relative overflow-hidden">
-        <CosmicParallaxBg />
+        <LiveSignalBg />
 
         <header className="relative z-10 flex items-center justify-between px-6 md:px-12 py-6">
           <div className="flex items-center gap-2">
