@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
-import { CM_PER_IN, KG_PER_LB, displayToMetric, metricToDisplay } from '../utils/units.js'
+import {
+  KG_PER_LB,
+  displayToMetric,
+  heightDisplayToMetric,
+  heightMetricToDisplay,
+  metricToDisplay,
+} from '../utils/units.js'
 import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 const EQUIPMENT_OPTIONS = [
@@ -48,7 +54,7 @@ export default function Profile() {
         setGoals(data.primary_goals || [])
         setLimitations(data.physical_limitations || '')
         setPreferredUnits(units)
-        setHeightDisplay(metricToDisplay(data.height_cm, units, CM_PER_IN))
+        setHeightDisplay(heightMetricToDisplay(data.height_cm, units))
         setWeightDisplay(metricToDisplay(data.weight_kg, units, KG_PER_LB))
         setHasSaved(Boolean(data.experience_level))
       })
@@ -62,9 +68,9 @@ export default function Profile() {
   // rather than clearing it or silently reinterpreting the same number under
   // a different unit.
   function handleUnitsChange(nextUnits) {
-    const heightCm = displayToMetric(heightDisplay, preferredUnits, CM_PER_IN)
+    const heightCm = heightDisplayToMetric(heightDisplay, preferredUnits)
     const weightKg = displayToMetric(weightDisplay, preferredUnits, KG_PER_LB)
-    setHeightDisplay(metricToDisplay(heightCm, nextUnits, CM_PER_IN))
+    setHeightDisplay(heightMetricToDisplay(heightCm, nextUnits))
     setWeightDisplay(metricToDisplay(weightKg, nextUnits, KG_PER_LB))
     setPreferredUnits(nextUnits)
   }
@@ -88,7 +94,7 @@ export default function Profile() {
         available_equipment: equipment,
         primary_goals: goals,
         physical_limitations: limitations || null,
-        height_cm: displayToMetric(heightDisplay, preferredUnits, CM_PER_IN),
+        height_cm: heightDisplayToMetric(heightDisplay, preferredUnits),
         weight_kg: displayToMetric(weightDisplay, preferredUnits, KG_PER_LB),
         preferred_units: preferredUnits,
       })
@@ -196,7 +202,7 @@ export default function Profile() {
                 checked={preferredUnits === 'imperial'}
                 onChange={() => handleUnitsChange('imperial')}
               />
-              Imperial (in / lb)
+              Imperial (ft'in / lb)
             </label>
           </div>
         </div>
@@ -204,17 +210,29 @@ export default function Profile() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm mb-1" htmlFor="height">
-              Height ({preferredUnits === 'metric' ? 'cm' : 'in'})
+              Height ({preferredUnits === 'metric' ? 'cm' : "ft'in"})
             </label>
-            <input
-              id="height"
-              type="number"
-              min="0"
-              step="0.1"
-              value={heightDisplay}
-              onChange={(e) => setHeightDisplay(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-            />
+            {preferredUnits === 'imperial' ? (
+              <input
+                id="height"
+                type="text"
+                inputMode="numeric"
+                placeholder={`5'4"`}
+                value={heightDisplay}
+                onChange={(e) => setHeightDisplay(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            ) : (
+              <input
+                id="height"
+                type="number"
+                min="0"
+                step="0.1"
+                value={heightDisplay}
+                onChange={(e) => setHeightDisplay(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              />
+            )}
           </div>
           <div>
             <label className="block text-sm mb-1" htmlFor="weight">
