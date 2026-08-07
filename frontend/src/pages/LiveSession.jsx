@@ -181,6 +181,14 @@ function matchExerciseConfig(name) {
   return null
 }
 
+// sessionStorage key for a paused session's draft - scoped per user (shared
+// devices) and cleared when the tab/browser closes, unlike localStorage,
+// which matches "I stepped away for a bit" better than "resume this forever."
+const DRAFT_VERSION = 1
+function draftKey(userId) {
+  return `live_session_draft_v${DRAFT_VERSION}_${userId}`
+}
+
 function frameAngleAndSide(landmarks, config) {
   const side = avgVisibility(landmarks, config.left) >= avgVisibility(landmarks, config.right) ? 'left' : 'right'
   const triplet = side === 'left' ? config.left : config.right
@@ -468,6 +476,10 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   // null = not yet requested/still loading, [] = requested but nothing to
   // show (no tracked reps), array = one entry per exercise.
   const [formFeedback, setFormFeedback] = useState(null)
+  // A session paused by navigating away (see saveDraft/pausedDraftRef below)
+  // and not yet resumed or discarded.
+  const [paused, setPaused] = useState(false)
+  const pausedDraftRef = useRef(null)
 
   function toggleVoice() {
     const next = !voiceEnabledRef.current
@@ -604,21 +616,97 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     setFormFeedback(results)
   }
 
-  // Handles every session-ending path OTHER than a full plan queue finishing
-  // on its own (that path is handled inline in handleSetComplete below,
-  // since it already knows to call logCompletedExercise for the final
-  // exercise) - the "Stop session" button, and the component unmounting
-  // (navigating to another page mid-session). Previously neither path
-  // logged the current in-progress set or submitted form feedback at all,
-  // and manual/no-plan mode had no other way to ever reach either one - a
-  // manual practice session just cycled sets/rest forever until the camera
-  // was torn down with nothing saved.
+  // Saved when navigating away mid-session (see the unmount effect below) so
+  // it can be offered back as a "Session paused" prompt on return, instead
+  // of either losing the progress or force-finalizing a session the user
+  // might still want to continue. sessionStorage (not localStorage) - scoped
+  // to this tab/browser session, matching "I stepped away for a bit" rather
+  // than "remember this forever."
+  function saveDraft() {
+    const s = sessionRef.current
+    const draft = {
+      version: DRAFT_VERSION,
+      usingPlan,
+      planId: planId ?? null,
+      manualExercise: s.manualExercise,
+      queueIndex: s.queueIndex,
+      currentSet: s.currentSet,
+      repCount: s.repCount,
+      sessionStartedAt: sessionStartedAtRef.current,
+      formFrameCounts: formFrameCountsRef.current,
+      completedExercises: completedExercisesRef.current,
+      repFormLog: repFormLogRef.current,
+      pausedAt: Date.now(),
+    }
+    try {
+      sessionStorage.setItem(draftKey(userId), JSON.stringify(draft))
+    } catch {
+      // Private-browsing/storage-full edge cases just mean no resume prompt
+      // next time, not a crash.
+    }
+  }
+
+  function clearDraft() {
+    try {
+      sessionStorage.removeItem(draftKey(userId))
+    } catch {
+      // ignore
+    }
+  }
+
+  // "Discard" on the paused-session prompt - the user explicitly doesn't
+  // want to continue, but whatever they already did still counts: logs the
+  // partial set and submits form feedback quietly (no completion screen,
+  // since they chose not to see one) rather than throwing it away.
+  async function discardDraft() {
+    const draft = pausedDraftRef.current
+    pausedDraftRef.current = null
+    setPaused(false)
+    clearDraft()
+    if (!draft) return
+
+    if (draft.usingPlan && draft.repCount > 0) {
+      const item = queue[draft.queueIndex]
+      if (item) {
+        try {
+          await api.createLog({
+            user_id: userId,
+            exercise_id: item.exerciseId,
+            plan_id: planId,
+            sets: 1,
+            reps: draft.repCount,
+            weight: item.targetWeight,
+          })
+        } catch {
+          // best effort
+        }
+      }
+    }
+
+    const entries = Object.entries(draft.repFormLog || {}).filter(([, reps]) => reps.length > 0)
+    for (const [exerciseName, reps] of entries) {
+      try {
+        await api.submitLiveSessionForm({ user_id: userId, exercise_name: exerciseName, reps })
+      } catch {
+        // best effort
+      }
+    }
+  }
+
+  // "Stop session" - the user explicitly ending the workout (as opposed to
+  // navigating away mid-session, which pauses instead - see the unmount
+  // effect below). Previously this path (and the old unmount handler it was
+  // shared with) never logged the current in-progress set or submitted form
+  // feedback at all, and manual/no-plan mode had no other way to ever reach
+  // either one - a manual practice session just cycled sets/rest forever
+  // until the camera was torn down with nothing saved.
   async function finalizeSession() {
     if (sessionFinalizedRef.current) {
       stop()
       return
     }
     sessionFinalizedRef.current = true
+    clearDraft()
 
     const s = sessionRef.current
     const item = getCurrentItem()
@@ -668,6 +756,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       } else {
         speak('Workout complete! Great job.')
         sessionFinalizedRef.current = true
+        clearDraft()
         setComplete(true)
         stop()
         submitFormFeedback()
@@ -866,10 +955,19 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     setStatus('idle')
   }
 
-  async function start() {
+  // `resumeDraft` (from a paused session's saveDraft(), see below) restores
+  // progress instead of zeroing it out - everything else (camera/model
+  // acquisition) is identical either way, since a stream+landmarker never
+  // actually survives the earlier unmount that created the draft.
+  async function start(resumeDraft = null) {
     setStatus('loading')
     setError('')
     setComplete(false)
+    // `paused` stays true (showing the paused prompt, now mid-"Resuming…")
+    // until the camera/model actually finish loading below - clearing it
+    // immediately would flash a generic "Camera off" state if acquisition
+    // fails, and the draft would look like it vanished even though it's
+    // still safely in sessionStorage untouched.
     try {
       const vision = await FilesetResolver.forVisionTasks(WASM_URL)
       landmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
@@ -889,22 +987,42 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       prevLandmarksRef.current = null
       cameraShiftingRef.current = false
       setCameraShifting(false)
-      sessionStartedAtRef.current = Date.now()
-      formFrameCountsRef.current = { ok: 0, total: 0 }
-      completedExercisesRef.current = []
-      repFormLogRef.current = {}
       sessionFinalizedRef.current = false
       setFormFeedback(null)
-      sessionRef.current.queueIndex = 0
-      sessionRef.current.currentSet = 1
-      sessionRef.current.repCount = 0
+
+      if (resumeDraft) {
+        sessionStartedAtRef.current = resumeDraft.sessionStartedAt
+        formFrameCountsRef.current = resumeDraft.formFrameCounts
+        completedExercisesRef.current = resumeDraft.completedExercises
+        repFormLogRef.current = resumeDraft.repFormLog
+        sessionRef.current.manualExercise = resumeDraft.manualExercise
+        setManualExerciseState(resumeDraft.manualExercise)
+        sessionRef.current.queueIndex = resumeDraft.queueIndex
+        sessionRef.current.currentSet = resumeDraft.currentSet
+        sessionRef.current.repCount = resumeDraft.repCount
+        setQueueIndexState(resumeDraft.queueIndex)
+        setCurrentSetState(resumeDraft.currentSet)
+        setRepCountState(resumeDraft.repCount)
+        setCue('Welcome back - resume when ready')
+        setPaused(false)
+        pausedDraftRef.current = null
+        clearDraft()
+      } else {
+        sessionStartedAtRef.current = Date.now()
+        formFrameCountsRef.current = { ok: 0, total: 0 }
+        completedExercisesRef.current = []
+        repFormLogRef.current = {}
+        sessionRef.current.queueIndex = 0
+        sessionRef.current.currentSet = 1
+        sessionRef.current.repCount = 0
+        setQueueIndexState(0)
+        setCurrentSetState(1)
+        setRepCountState(0)
+        setCue('Stand tall / get set, then begin when ready')
+      }
       sessionRef.current.restUntil = null
-      setQueueIndexState(0)
-      setCurrentSetState(1)
-      setRepCountState(0)
       setResting(false)
       setPhase('START')
-      setCue('Stand tall / get set, then begin when ready')
       setStatus('running')
       rafRef.current = requestAnimationFrame(renderLoop)
     } catch (err) {
@@ -913,10 +1031,55 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     }
   }
 
-  // Finalizes (logs the in-progress set, submits form feedback) rather than
-  // just tearing down the camera - navigating away mid-session previously
-  // silently discarded whatever the current set had done.
-  useEffect(() => finalizeSession, [])
+  // Navigating away mid-session pauses (saves a resumable draft) rather than
+  // discarding or force-finalizing it - streamRef.current is only set while
+  // a session is actively running (refs, unlike the `status` state, are
+  // always current here even in a []-effect's closure), and
+  // sessionFinalizedRef guards the case where the session already ended on
+  // its own (or via "Stop session") right before unmounting, which has
+  // nothing left to pause.
+  useEffect(() => {
+    return () => {
+      if (streamRef.current && !sessionFinalizedRef.current) {
+        saveDraft()
+      }
+      stop()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Checks for a paused draft left by an earlier mount of this same page
+  // (see saveDraft/the unmount effect above) - only offered back if it
+  // matches the current context (same plan, or manual mode either way) and
+  // actually has something in it worth resuming.
+  useEffect(() => {
+    if (!userId) return
+    try {
+      const raw = sessionStorage.getItem(draftKey(userId))
+      if (!raw) return
+      const draft = JSON.parse(raw)
+      const contextMatches = usingPlan ? draft.usingPlan && draft.planId === planId : !draft.usingPlan
+      const hasSomethingToResume =
+        draft.repCount > 0 ||
+        (draft.completedExercises || []).length > 0 ||
+        Object.values(draft.repFormLog || {}).some((reps) => reps.length > 0)
+      if (contextMatches && hasSomethingToResume) {
+        pausedDraftRef.current = draft
+        setPaused(true)
+      } else {
+        sessionStorage.removeItem(draftKey(userId))
+      }
+    } catch {
+      try {
+        sessionStorage.removeItem(draftKey(userId))
+      } catch {
+        // ignore
+      }
+    }
+    // Only ever needs to run once on mount, against whatever was saved
+    // before this instance existed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Rest-countdown ticker, purely for the HUD display.
   useEffect(() => {
@@ -956,7 +1119,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
           ))}
         </div>
       )}
-      {!usingPlan && status !== 'running' && (
+      {!usingPlan && status !== 'running' && !paused && (
         <div>
           <label className="block text-xs text-slate-500 mb-1" htmlFor="manual-exercise">
             Exercise
@@ -1022,10 +1185,14 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
                 <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
                 Checking your form…
               </p>
+            ) : formFeedback.length === 0 ? (
+              <p className="text-xs text-slate-500 max-w-xs">
+                No completed reps to grade this session - a rep only counts once you go all the way down and
+                back up. Stay fully in frame and finish the full range of motion to get form feedback.
+              </p>
             ) : (
-              formFeedback.length > 0 && (
-                <div className="w-full max-w-sm space-y-2 text-left">
-                  {formFeedback.map((f) => (
+              <div className="w-full max-w-sm space-y-2 text-left">
+                {formFeedback.map((f) => (
                     <div
                       key={f.exerciseName}
                       className="rounded-lg border border-forest-700 bg-forest-900/70 p-3 space-y-1.5"
@@ -1049,7 +1216,6 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
                     </div>
                   ))}
                 </div>
-              )
             )}
 
             <button
@@ -1062,38 +1228,70 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
             {exportError && <p className="text-xs text-red-400">{exportError}</p>}
           </div>
         )}
-        {status !== 'running' && !complete && (
+        {paused && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6">
+            <span className="text-3xl">⏸️</span>
+            <p className="font-heading font-bold text-lg">Session paused</p>
+            <p className="text-sm text-slate-400">
+              {pausedDraftRef.current &&
+                (pausedDraftRef.current.usingPlan
+                  ? queue[pausedDraftRef.current.queueIndex]?.name
+                  : EXERCISE_CONFIGS[pausedDraftRef.current.manualExercise]?.label) + ' - '}
+              Set {pausedDraftRef.current?.currentSet}, {pausedDraftRef.current?.repCount} rep
+              {pausedDraftRef.current?.repCount === 1 ? '' : 's'} so far
+            </p>
+            <div className="flex gap-3 mt-1">
+              <button
+                onClick={() => start(pausedDraftRef.current)}
+                disabled={status === 'loading'}
+                className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+              >
+                {status === 'loading' ? 'Resuming…' : 'Resume session'}
+              </button>
+              <button
+                onClick={discardDraft}
+                disabled={status === 'loading'}
+                className="px-4 py-2 rounded-lg border border-forest-700 hover:border-red-400 disabled:opacity-50 text-sm font-heading font-semibold text-slate-300 transition-colors"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+        )}
+        {status !== 'running' && !complete && !paused && (
           <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm px-6 text-center">
             {status === 'loading' ? 'Loading pose model…' : 'Camera off'}
           </div>
         )}
       </div>
 
-      <div className="flex justify-center items-center gap-3">
-        {status === 'running' ? (
+      {!paused && (
+        <div className="flex justify-center items-center gap-3">
+          {status === 'running' ? (
+            <button
+              onClick={finalizeSession}
+              className="px-5 py-2 rounded-lg bg-forest-800 hover:bg-forest-700 text-sm font-heading font-semibold"
+            >
+              Stop session
+            </button>
+          ) : (
+            <button
+              onClick={() => start()}
+              disabled={status === 'loading'}
+              className="px-5 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+            >
+              {status === 'loading' ? 'Starting…' : complete ? 'Start again' : 'Start live session'}
+            </button>
+          )}
           <button
-            onClick={finalizeSession}
-            className="px-5 py-2 rounded-lg bg-forest-800 hover:bg-forest-700 text-sm font-heading font-semibold"
+            onClick={toggleVoice}
+            aria-label={voiceEnabled ? 'Mute voice cues' : 'Unmute voice cues'}
+            className="w-9 h-9 rounded-lg border border-forest-700 hover:border-coral-400 flex items-center justify-center text-slate-300 transition-colors"
           >
-            Stop session
+            {voiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
           </button>
-        ) : (
-          <button
-            onClick={start}
-            disabled={status === 'loading'}
-            className="px-5 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
-          >
-            {status === 'loading' ? 'Starting…' : complete ? 'Start again' : 'Start live session'}
-          </button>
-        )}
-        <button
-          onClick={toggleVoice}
-          aria-label={voiceEnabled ? 'Mute voice cues' : 'Unmute voice cues'}
-          className="w-9 h-9 rounded-lg border border-forest-700 hover:border-coral-400 flex items-center justify-center text-slate-300 transition-colors"
-        >
-          {voiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
-        </button>
-      </div>
+        </div>
+      )}
       {error && <p className="text-sm text-red-400 mt-1 text-center">{error}</p>}
       <p className="text-xs text-slate-500 text-center">
         Pose tracking runs entirely in your browser - video never leaves your device.
