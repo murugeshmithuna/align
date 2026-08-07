@@ -226,7 +226,8 @@ export default function Profile() {
               <input
                 id="height"
                 type="number"
-                min="0"
+                min="50"
+                max="272"
                 step="0.1"
                 value={heightDisplay}
                 onChange={(e) => setHeightDisplay(e.target.value)}
@@ -241,7 +242,11 @@ export default function Profile() {
             <input
               id="weight"
               type="number"
-              min="0"
+              // 20-450kg (or the lb equivalent) - matches backend's
+              // UserProfileUpdate.weight_kg bounds, converted to whichever
+              // unit is currently displayed.
+              min={preferredUnits === 'metric' ? 20 : 44}
+              max={preferredUnits === 'metric' ? 450 : 992}
               step="0.1"
               value={weightDisplay}
               onChange={(e) => setWeightDisplay(e.target.value)}
