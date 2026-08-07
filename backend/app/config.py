@@ -22,6 +22,15 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
+# Admin panel access - comma-separated allowlist of emails permitted to hit
+# GET /admin/* (every registered user's data). The app has no session/token
+# system yet (see routers/users.py) - every endpoint trusts whatever user_id
+# the client sends - so this checks the *email on record* for the claimed
+# requester_id, not a cryptographically verified identity. Acceptable for a
+# single-operator personal project; would need real auth before this app
+# ever has untrusted multi-tenant users.
+ADMIN_EMAILS = {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()}
+
 # Heavier reasoning model - reserved for turns that actually invoke a tool
 # (plan generation/adjustment, supplement recommendations).
 CLAUDE_MODEL = "claude-opus-4-8"

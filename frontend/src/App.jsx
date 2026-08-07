@@ -13,6 +13,8 @@ import NutritionCalculator from './pages/NutritionCalculator.jsx'
 import PlanList from './pages/PlanList.jsx'
 import PlanDetail from './pages/PlanDetail.jsx'
 import WorkoutLog from './pages/WorkoutLog.jsx'
+import Admin from './pages/Admin.jsx'
+import AdminUserDetail from './pages/AdminUserDetail.jsx'
 
 function App() {
   return (
@@ -32,6 +34,8 @@ function App() {
         <Route path="/nutrition/calculator" element={<NutritionCalculator />} />
         <Route path="/plans" element={<PlanList />} />
         <Route path="/plan/:planId" element={<PlanDetail />} />
+        <Route path="/admin" element={<Admin />} />
+        <Route path="/admin/users/:userId" element={<AdminUserDetail />} />
       </Route>
     </Routes>
   )

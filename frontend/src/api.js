@@ -92,6 +92,12 @@ export const api = {
 
   getDailyNutritionReview: (userId) => request(`/agent/nutrition-review/daily/${userId}`),
   getWeeklyNutritionReview: (userId) => request(`/agent/nutrition-review/weekly/${userId}`),
+
+  // Admin-only - gated server-side by ADMIN_EMAILS (backend/app/config.py).
+  // requesterId is the signed-in viewer; the backend 403s unless their email
+  // is on the allowlist.
+  adminListUsers: (requesterId) => request(`/admin/users?requester_id=${requesterId}`),
+  adminGetUserDetail: (requesterId, userId) => request(`/admin/users/${userId}?requester_id=${requesterId}`),
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every

@@ -15,6 +15,7 @@ const LINKS = [
   { to: '/analytics', label: 'Analytics' },
   { to: '/coach-resolution', label: 'Coach Resolution' },
   { to: '/profile', label: 'Profile Settings' },
+  { to: '/admin', label: 'Admin' },
 ]
 
 export default function Navbar() {
