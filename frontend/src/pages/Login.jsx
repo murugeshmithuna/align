@@ -10,20 +10,10 @@ export default function Login() {
   const { showToast } = useToast()
   const navigate = useNavigate()
 
-  const [users, setUsers] = useState([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    api
-      .listUsers()
-      .then(setUsers)
-      .catch(() => setError('Could not reach the API - is the backend running on :8001?'))
-      .finally(() => setLoadingUsers(false))
-  }, [])
 
   // After establishing a session, send first-timers to onboarding and
   // everyone else straight to the dashboard.
@@ -61,7 +51,12 @@ export default function Login() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  async function handleCreate(event) {
+  // createUser is find-or-create by email on the backend: if the email
+  // typed here already has an account, this signs into it (no password
+  // system yet); otherwise it creates a brand-new one. Either way, it only
+  // ever acts on the exact email the visitor typed themselves - never a
+  // list of other people's accounts to pick from.
+  async function handleSignIn(event) {
     event.preventDefault()
     if (!name.trim() || !email.trim()) return
     setBusy(true)
@@ -82,7 +77,8 @@ export default function Login() {
       <div className="card w-full max-w-md p-8">
         <h1 className="font-heading font-bold text-2xl mb-1">Sign in</h1>
         <p className="text-sm text-slate-400 mb-6">
-          No passwords here yet - pick an existing account or create a new one to establish your session.
+          No passwords here yet - sign in with Google, or enter your own name and email below to sign in
+          or create an account.
         </p>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
@@ -107,30 +103,8 @@ export default function Login() {
           <div className="flex-1 h-px bg-forest-800" />
         </div>
 
-        <div className="mb-6">
-          <h2 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Existing accounts</h2>
-          {loadingUsers ? (
-            <p className="text-sm text-slate-500">Loading…</p>
-          ) : users.length === 0 ? (
-            <p className="text-sm text-slate-500">No accounts yet - create one below.</p>
-          ) : (
-            <div className="space-y-2">
-              {users.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => enterAs(u.id)}
-                  className="w-full text-left px-4 py-2 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-sm"
-                >
-                  <span className="font-semibold">{u.name}</span>{' '}
-                  <span className="text-slate-500">({u.email})</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <h2 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Create a new account</h2>
-        <form onSubmit={handleCreate} className="space-y-3">
+        <h2 className="text-xs uppercase tracking-widest text-slate-500 mb-2">Sign in with your email</h2>
+        <form onSubmit={handleSignIn} className="space-y-3">
           <input
             type="text"
             placeholder="Name"
@@ -150,7 +124,7 @@ export default function Login() {
             disabled={busy}
             className="w-full px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
           >
-            {busy ? 'Creating…' : 'Create account & continue'}
+            {busy ? 'Signing in…' : 'Sign in / create account'}
           </button>
         </form>
       </div>

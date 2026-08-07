@@ -20,7 +20,10 @@ export const api = {
 
   chat: (payload) => request('/agent/chat', { method: 'POST', body: JSON.stringify(payload) }),
 
-  listUsers: () => request('/users'),
+  // NOTE: no listUsers() - there is deliberately no bulk user-listing
+  // endpoint on the backend (see backend/app/routers/users.py). createUser
+  // is find-or-create by email, so it also serves as "sign in with your own
+  // email" for a returning non-Google user.
   createUser: (payload) => request('/users', { method: 'POST', body: JSON.stringify(payload) }),
   googleSignIn: (idToken) => request('/auth/google', { method: 'POST', body: JSON.stringify({ id_token: idToken }) }),
 
