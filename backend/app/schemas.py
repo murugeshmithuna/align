@@ -399,6 +399,39 @@ class FormAnalysisOut(BaseModel):
     reps: list[RepAnalysis]
 
 
+# ---------- Vision (live-tracked session form feedback) ----------
+
+
+class LiveRepResult(BaseModel):
+    rep_index: int
+    min_angle: float
+    depth_ok: bool
+    form_ok: bool
+
+
+class LiveSessionFormCreate(BaseModel):
+    user_id: int
+    exercise_name: str
+    reps: list[LiveRepResult]
+
+
+class FormFeedbackOut(BaseModel):
+    # 1-3 short, specific things to work on - empty if form was clean.
+    focus_areas: list[str]
+    # One short sentence comparing this session to the previous one, or
+    # noting there's nothing to compare against yet.
+    trend: str
+    # One short sentence: improving / plateauing / declining, with why.
+    overall_insight: str
+    rep_count: int
+    good_depth_pct: float
+    good_form_pct: float
+    previous_rep_count: int | None = None
+    previous_good_depth_pct: float | None = None
+    previous_good_form_pct: float | None = None
+    sessions_compared: int
+
+
 # ---------- Vision (meal photo analysis) ----------
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.agent.meal_vision import analyze_meal_photo, analyze_meal_text, estimate_ingredient_macros
+from app.agent.orchestrator import generate_live_session_form_feedback
 from app.database import get_db
 from app.vision.pose_analysis import analyze_squat_video
 
@@ -163,6 +164,35 @@ def list_meal_analyses(user_id: int, db: Session = Depends(get_db)):
         .limit(20)
     )
     return db.scalars(stmt).all()
+
+
+@router.post("/live-session-form", response_model=schemas.FormFeedbackOut)
+def submit_live_session_form(payload: schemas.LiveSessionFormCreate, db: Session = Depends(get_db)):
+    """Called once per exercise when a LiveSession.jsx session completes -
+    persists the real per-rep depth/form pass-fail data the live pose
+    tracking already computes (previously discarded after the session), then
+    returns structured feedback comparing it against the user's most recent
+    prior session on the same exercise."""
+    if not db.get(models.User, payload.user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    if not payload.reps:
+        raise HTTPException(status_code=400, detail="No reps to evaluate")
+
+    reps = [r.model_dump() for r in payload.reps]
+    feedback = generate_live_session_form_feedback(db, payload.user_id, payload.exercise_name, reps)
+
+    record = models.LiveSessionForm(
+        user_id=payload.user_id,
+        exercise_name=payload.exercise_name,
+        rep_count=len(reps),
+        reps_with_good_depth=sum(1 for r in reps if r["depth_ok"]),
+        reps_with_good_form=sum(1 for r in reps if r["form_ok"]),
+        raw_json=json.dumps(reps),
+    )
+    db.add(record)
+    db.commit()
+
+    return feedback
 
 
 @router.get("/form-analyses/user/{user_id}", response_model=list[schemas.FormAnalysisOut])
