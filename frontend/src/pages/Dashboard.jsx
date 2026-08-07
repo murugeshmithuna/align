@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import CheckinModal from '../components/CheckinModal.jsx'
+import MacroBar from '../components/MacroBar.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
@@ -21,32 +22,6 @@ function isToday(dateInput) {
 function isWithinLastDays(dateInput, days) {
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
   return new Date(dateInput).getTime() >= cutoff
-}
-
-// No target set falls back to "filled if anything's logged, empty
-// otherwise" (same fallback the workouts-this-week bar above already uses)
-// rather than a fabricated percentage against a number that doesn't exist.
-function MacroBar({ label, value, target, unit, color }) {
-  return (
-    <div>
-      <div className="flex items-baseline justify-between mb-1">
-        <span className="text-xs text-slate-500">{label}</span>
-        <span className="text-xs font-semibold tabular-nums">
-          {Math.round(value).toLocaleString()}
-          {unit}
-          {target ? ` / ${Math.round(target).toLocaleString()}${unit}` : ''}
-        </span>
-      </div>
-      <div className="h-1.5 rounded-full bg-forest-900 overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all ${color}`}
-          style={{
-            width: target ? `${Math.min(100, (value / target) * 100)}%` : value > 0 ? '100%' : '0%',
-          }}
-        />
-      </div>
-    </div>
-  )
 }
 
 export default function Dashboard() {

@@ -289,6 +289,18 @@ class NutritionReviewOut(BaseModel):
     macro_status: str
     key_pattern: str
     recommendation: str
+    # Only populated by the weekly review (daily has no 7-day denominator) -
+    # lets the frontend render real progress bars instead of parsing numbers
+    # back out of macro_status's prose.
+    days_logged: int | None = None
+    avg_calories: float | None = None
+    avg_protein: float | None = None
+    avg_carbs: float | None = None
+    avg_fat: float | None = None
+    calorie_target: int | None = None
+    protein_target: float | None = None
+    carbs_target: float | None = None
+    fat_target: float | None = None
 
 
 class CoachResolutionRequest(BaseModel):
