@@ -15,7 +15,7 @@ import { useSavedFlash } from '../utils/useSavedFlash.js'
 
 // +/- stepper wrapping a plain number input - lets the user nudge an
 // auto-calculated goal up/down without retyping the whole number.
-function Stepper({ id, value, onChange, step, min = 0 }) {
+function Stepper({ id, value, onChange, step, min = 0, max = Infinity }) {
   const num = value === '' ? 0 : Number(value)
   return (
     <div className="flex items-center gap-1">
@@ -31,6 +31,7 @@ function Stepper({ id, value, onChange, step, min = 0 }) {
         id={id}
         type="number"
         min={min}
+        max={Number.isFinite(max) ? max : undefined}
         // "any" - the auto-calculated value (e.g. protein=176) won't
         // generally be a multiple of `step` (the +/- button increment), and
         // a native step-mismatch silently blocks the whole form's submit
@@ -42,7 +43,7 @@ function Stepper({ id, value, onChange, step, min = 0 }) {
       />
       <button
         type="button"
-        onClick={() => onChange(String(num + step))}
+        onClick={() => onChange(String(Math.min(max, num + step)))}
         aria-label="Increase"
         className="w-6 h-7 rounded-lg bg-forest-800 hover:bg-forest-700 text-sm leading-none shrink-0"
       >
@@ -55,7 +56,7 @@ function Stepper({ id, value, onChange, step, min = 0 }) {
 // A visual target card - emoji + label header, the current value in large
 // type, then a stepper row to adjust it. Distinct from a plain labeled input
 // so the five targets read as "goals to hit" rather than a form field.
-function MacroTargetCard({ id, emoji, label, value, onChange, step, unit }) {
+function MacroTargetCard({ id, emoji, label, value, onChange, step, unit, max }) {
   return (
     <div className="card p-4 flex flex-col gap-2">
       <div className="flex items-center gap-2">
@@ -66,7 +67,7 @@ function MacroTargetCard({ id, emoji, label, value, onChange, step, unit }) {
         {value === '' ? '—' : value}
         <span className="text-sm text-slate-500 ml-1">{unit}</span>
       </div>
-      <Stepper id={id} value={value} onChange={onChange} step={step} />
+      <Stepper id={id} value={value} onChange={onChange} step={step} max={max} />
     </div>
   )
 }
@@ -260,7 +261,8 @@ export default function NutritionCalculator() {
               <input
                 id="height"
                 type="number"
-                min="0"
+                min="50"
+                max="272"
                 step="0.1"
                 value={heightDisplay}
                 onChange={(e) => setHeightDisplay(e.target.value)}
@@ -275,7 +277,8 @@ export default function NutritionCalculator() {
             <input
               id="weight"
               type="number"
-              min="0"
+              min={preferredUnits === 'metric' ? 20 : 44}
+              max={preferredUnits === 'metric' ? 450 : 992}
               step="0.1"
               value={weightDisplay}
               onChange={(e) => setWeightDisplay(e.target.value)}
@@ -289,7 +292,8 @@ export default function NutritionCalculator() {
             <input
               id="age"
               type="number"
-              min="0"
+              min="10"
+              max="120"
               value={age}
               onChange={(e) => setAge(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
@@ -385,6 +389,7 @@ export default function NutritionCalculator() {
             value={calorieTarget}
             onChange={setCalorieTarget}
             step={50}
+            max={10000}
             unit="kcal"
           />
           <MacroTargetCard
@@ -394,6 +399,7 @@ export default function NutritionCalculator() {
             value={proteinTarget}
             onChange={setProteinTarget}
             step={5}
+            max={500}
             unit="g"
           />
           <MacroTargetCard
@@ -403,6 +409,7 @@ export default function NutritionCalculator() {
             value={carbsTarget}
             onChange={setCarbsTarget}
             step={5}
+            max={1000}
             unit="g"
           />
           <MacroTargetCard
@@ -412,6 +419,7 @@ export default function NutritionCalculator() {
             value={fatTarget}
             onChange={setFatTarget}
             step={5}
+            max={500}
             unit="g"
           />
           <MacroTargetCard
@@ -421,6 +429,7 @@ export default function NutritionCalculator() {
             value={fiberTarget}
             onChange={setFiberTarget}
             step={1}
+            max={200}
             unit="g"
           />
         </div>

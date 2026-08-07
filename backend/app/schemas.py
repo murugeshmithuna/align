@@ -1,7 +1,20 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+# Shared bounds - generous enough to cover genuine extremes (a world-record
+# deadlift, an ultra-endurance rep set) while rejecting obviously-impossible
+# input (e.g. 1000 reps x 10 sets, slipped through with zero validation
+# before this). Applied at the API boundary via Field(ge=/le=) below since
+# that's the layer every client (this frontend, a future one, or a direct
+# API call) actually has to go through - HTML min/max alone is only ever a
+# UX nicety, never enforcement.
+SETS_BOUNDS = {"ge": 1, "le": 20}
+REPS_BOUNDS = {"ge": 1, "le": 200}
+WEIGHT_BOUNDS = {"ge": 0, "le": 1200}  # covers kg or lb usage; heaviest raw deadlift on record is ~501kg/1104lb
+RPE_BOUNDS = {"ge": 0, "le": 10}
+REST_SECONDS_BOUNDS = {"ge": 0, "le": 3600}
 
 ExperienceLevel = Literal["beginner", "intermediate", "advanced"]
 UnitPreference = Literal["metric", "imperial"]
@@ -16,7 +29,7 @@ class UserCreate(BaseModel):
     name: str
     email: EmailStr
     experience_level: ExperienceLevel | None = None
-    target_frequency: int | None = None
+    target_frequency: int | None = Field(default=None, ge=1, le=7)
     available_equipment: list[str] | None = None
     primary_goals: list[str] | None = None
     physical_limitations: str | None = None
@@ -51,21 +64,23 @@ class UserOut(BaseModel):
 class UserProfileUpdate(BaseModel):
     user_id: int
     experience_level: ExperienceLevel | None = None
-    target_frequency: int | None = None
+    target_frequency: int | None = Field(default=None, ge=1, le=7)
     available_equipment: list[str] | None = None
     primary_goals: list[str] | None = None
     physical_limitations: str | None = None
-    height_cm: float | None = None
-    weight_kg: float | None = None
+    # 50cm/272cm - shortest documented adult to tallest documented human.
+    height_cm: float | None = Field(default=None, ge=50, le=272)
+    # 20kg/450kg - generous either side of any plausible adult bodyweight.
+    weight_kg: float | None = Field(default=None, ge=20, le=450)
     preferred_units: UnitPreference | None = None
-    age: int | None = None
+    age: int | None = Field(default=None, ge=10, le=120)
     sex: Sex | None = None
     activity_level: ActivityLevel | None = None
-    daily_calorie_target: int | None = None
-    daily_protein_target: float | None = None
-    daily_carbs_target: float | None = None
-    daily_fat_target: float | None = None
-    daily_fiber_target: float | None = None
+    daily_calorie_target: int | None = Field(default=None, ge=500, le=10000)
+    daily_protein_target: float | None = Field(default=None, ge=0, le=500)
+    daily_carbs_target: float | None = Field(default=None, ge=0, le=1000)
+    daily_fat_target: float | None = Field(default=None, ge=0, le=500)
+    daily_fiber_target: float | None = Field(default=None, ge=0, le=200)
 
 
 # ---------- Auth (Google Sign-In) ----------
@@ -103,12 +118,12 @@ class ExerciseOut(BaseModel):
 
 class PlanExerciseCreate(BaseModel):
     exercise_id: int
-    day_of_week: int | None = None
-    sets: int | None = None
-    reps: int | None = None
-    target_weight: float | None = None
-    rest_seconds: int | None = None
-    order_index: int = 0
+    day_of_week: int | None = Field(default=None, ge=0, le=6)
+    sets: int | None = Field(default=None, **SETS_BOUNDS)
+    reps: int | None = Field(default=None, **REPS_BOUNDS)
+    target_weight: float | None = Field(default=None, **WEIGHT_BOUNDS)
+    rest_seconds: int | None = Field(default=None, **REST_SECONDS_BOUNDS)
+    order_index: int = Field(default=0, ge=0, le=1000)
 
 
 class PlanExerciseOut(BaseModel):
@@ -151,10 +166,10 @@ class LogCreate(BaseModel):
     user_id: int
     exercise_id: int
     plan_id: int | None = None
-    sets: int | None = None
-    reps: int | None = None
-    weight: float | None = None
-    rpe: float | None = None
+    sets: int | None = Field(default=None, **SETS_BOUNDS)
+    reps: int | None = Field(default=None, **REPS_BOUNDS)
+    weight: float | None = Field(default=None, **WEIGHT_BOUNDS)
+    rpe: float | None = Field(default=None, **RPE_BOUNDS)
     notes: str | None = None
 
 
@@ -207,7 +222,7 @@ class ProgressOut(BaseModel):
 class SorenessNoteCreate(BaseModel):
     user_id: int
     muscle_group: str
-    severity: int
+    severity: int = Field(ge=1, le=5)
     notes: str | None = None
 
 
@@ -227,7 +242,7 @@ class SorenessNoteOut(BaseModel):
 
 class CheckInCreate(BaseModel):
     user_id: int
-    score: int  # 1 (sick/exhausted) - 5 (pumped up)
+    score: int = Field(ge=1, le=5)  # 1 (sick/exhausted) - 5 (pumped up)
 
 
 class CheckInOut(BaseModel):
@@ -315,9 +330,9 @@ class CoachResolutionRequest(BaseModel):
 
 class PlanAdjustmentItem(BaseModel):
     plan_exercise_id: int
-    sets: int | None = None
-    reps: int | None = None
-    target_weight: float | None = None
+    sets: int | None = Field(default=None, **SETS_BOUNDS)
+    reps: int | None = Field(default=None, **REPS_BOUNDS)
+    target_weight: float | None = Field(default=None, **WEIGHT_BOUNDS)
 
 
 class CoachResolutionOut(BaseModel):
@@ -361,9 +376,12 @@ class FatigueOut(BaseModel):
     risk: FatigueRisk
 
 
+MeasurementValue = Annotated[float, Field(ge=0, le=10000)]
+
+
 class AsymmetryRequest(BaseModel):
-    left_values: list[float]
-    right_values: list[float]
+    left_values: list[MeasurementValue]
+    right_values: list[MeasurementValue]
     metric_name: str = "measurement"
 
 
@@ -483,10 +501,10 @@ class MealTextRequest(BaseModel):
 class MealSaveRequest(BaseModel):
     user_id: int
     description: str
-    estimated_calories: int
-    protein_g: float
-    carbs_g: float
-    fat_g: float
+    estimated_calories: int = Field(ge=0, le=5000)
+    protein_g: float = Field(ge=0, le=500)
+    carbs_g: float = Field(ge=0, le=500)
+    fat_g: float = Field(ge=0, le=500)
     macro_summary: str
     quick_tip: str
     timing_note: str

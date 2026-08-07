@@ -141,6 +141,7 @@ export default function WorkoutLog() {
               id="sets"
               type="number"
               min="1"
+              max="20"
               value={sets}
               onChange={(e) => setSets(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
@@ -154,6 +155,7 @@ export default function WorkoutLog() {
               id="reps"
               type="number"
               min="1"
+              max="200"
               value={reps}
               onChange={(e) => setReps(e.target.value)}
               className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
@@ -167,6 +169,7 @@ export default function WorkoutLog() {
               id="weight"
               type="number"
               min="0"
+              max="1200"
               step="0.5"
               value={weight}
               onChange={(e) => setWeight(e.target.value)}

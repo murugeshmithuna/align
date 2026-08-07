@@ -1,5 +1,24 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
+// FastAPI's own request-validation errors (a Field(ge=/le=) violation, a
+// missing required field, etc.) send `detail` as an array of
+// {loc, msg, type} objects, not a plain string - passed straight into
+// `new Error(...)`, that stringifies to a useless "[object Object]" toast.
+// Every other error path (a plain `raise HTTPException(detail="...")`) still
+// sends a string, so this only needs to special-case the array shape.
+function formatErrorDetail(detail) {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        const field = Array.isArray(e.loc) ? e.loc.filter((part) => part !== 'body').join('.') : ''
+        return field ? `${field}: ${e.msg}` : e.msg
+      })
+      .join('; ')
+  }
+  return null
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE_URL}${path}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -8,7 +27,7 @@ async function request(path, options = {}) {
   const isJson = res.headers.get('content-type')?.includes('application/json')
   const data = isJson ? await res.json() : null
   if (!res.ok) {
-    const error = new Error(data?.detail || `HTTP ${res.status}`)
+    const error = new Error(formatErrorDetail(data?.detail) || `HTTP ${res.status}`)
     error.status = res.status
     throw error
   }
@@ -63,7 +82,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/vision/analyze-squat`, { method: 'POST', body: formData })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
-      const error = new Error(data?.detail || `HTTP ${res.status}`)
+      const error = new Error(formatErrorDetail(data?.detail) || `HTTP ${res.status}`)
       error.status = res.status
       throw error
     }
@@ -77,7 +96,7 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/vision/analyze-meal`, { method: 'POST', body: formData })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
-      const error = new Error(data?.detail || `HTTP ${res.status}`)
+      const error = new Error(formatErrorDetail(data?.detail) || `HTTP ${res.status}`)
       error.status = res.status
       throw error
     }
