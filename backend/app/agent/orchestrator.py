@@ -743,6 +743,25 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
     avg_protein = round(sum(m.protein_g for m in meals) / days_logged, 1)
     avg_carbs = round(sum(m.carbs_g for m in meals) / days_logged, 1)
     avg_fat = round(sum(m.fat_g for m in meals) / days_logged, 1)
+
+    daily_totals = {}
+    for m in meals:
+        d = m.analyzed_at.date()
+        totals = daily_totals.setdefault(d, {"calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0})
+        totals["calories"] += m.estimated_calories
+        totals["protein"] += m.protein_g
+        totals["carbs"] += m.carbs_g
+        totals["fat"] += m.fat_g
+
+    daily_calories, daily_protein, daily_carbs, daily_fat = [], [], [], []
+    for days_back in range(6, -1, -1):
+        d = _today() - timedelta(days=days_back)
+        totals = daily_totals.get(d, {"calories": 0, "protein": 0.0, "carbs": 0.0, "fat": 0.0})
+        daily_calories.append(totals["calories"])
+        daily_protein.append(round(totals["protein"], 1))
+        daily_carbs.append(round(totals["carbs"], 1))
+        daily_fat.append(round(totals["fat"], 1))
+
     meal_lines = "\n".join(
         f"- {m.analyzed_at.strftime('%a %H:%M')}: {m.description} (~{m.estimated_calories} kcal, "
         f"{m.protein_g}g protein, {m.carbs_g}g carbs, {m.fat_g}g fat)"
@@ -770,5 +789,9 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
         protein_target=user.daily_protein_target,
         carbs_target=user.daily_carbs_target,
         fat_target=user.daily_fat_target,
+        daily_calories=daily_calories,
+        daily_protein=daily_protein,
+        daily_carbs=daily_carbs,
+        daily_fat=daily_fat,
     )
     return result
