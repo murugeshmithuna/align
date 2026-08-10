@@ -195,8 +195,8 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 py-8 overflow-y-auto">
-      <div className="card w-full max-w-2xl p-6 space-y-5 my-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-2 sm:px-4 py-8 overflow-y-auto">
+      <div className="card w-full max-w-2xl p-4 sm:p-6 space-y-5 my-auto">
         <div>
           <h2 className="font-heading font-bold text-lg">Review & edit</h2>
           <p className="text-xs text-slate-500 mt-1">
@@ -218,7 +218,15 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
         </div>
 
         <div className="space-y-2">
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 text-xs text-slate-500 px-1">
+          {/* Desktop/tablet: one row per ingredient in a fixed-column grid.
+              Below `sm`, that same grid (name input + qty input + 4 macro
+              numbers + remove button, 6-7 columns of fixed width) doesn't
+              fit a phone screen - it was overflowing the modal horizontally
+              and getting clipped rather than wrapping. Below `sm`, each
+              ingredient instead renders as a stacked card: name+remove on
+              one line, qty on its own line, and the 4 macros as a wrapped
+              row of small read-only badges. */}
+          <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 text-xs text-slate-500 px-1">
             <span>Ingredient</span>
             <span className="w-20">Qty</span>
             <span className="w-16">Cal</span>
@@ -229,45 +237,77 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
           {ingredients.map((ing, i) => {
             const isEstimating = estimatingIndex === i
             return (
-              <div
-                key={i}
-                className={`grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-2 items-center transition-opacity ${
-                  isEstimating ? 'opacity-60' : ''
-                }`}
-              >
-                <input
-                  type="text"
-                  value={ing.name}
-                  onChange={(e) => updateIngredient(i, 'name', e.target.value)}
-                  onBlur={() => handleIngredientBlur(i)}
-                  className="px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm min-w-0"
-                />
-                <input
-                  type="text"
-                  value={ing.quantity}
-                  onChange={(e) => updateIngredient(i, 'quantity', e.target.value)}
-                  onBlur={() => handleIngredientBlur(i)}
-                  className="w-20 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
-                />
-                <span className="w-16 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
-                  {isEstimating ? '…' : ing.calories}
-                </span>
-                <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
-                  {isEstimating ? '…' : ing.protein_g}
-                </span>
-                <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
-                  {isEstimating ? '…' : ing.carbs_g}
-                </span>
-                <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
-                  {isEstimating ? '…' : ing.fat_g}
-                </span>
-                <button
-                  onClick={() => removeIngredient(i)}
-                  aria-label="Remove ingredient"
-                  className="text-slate-500 hover:text-red-400 text-sm px-1"
-                >
-                  ✕
-                </button>
+              <div key={i} className={`transition-opacity ${isEstimating ? 'opacity-60' : ''}`}>
+                {/* Mobile card layout */}
+                <div className="sm:hidden border border-forest-700 rounded-lg p-2.5 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={ing.name}
+                      onChange={(e) => updateIngredient(i, 'name', e.target.value)}
+                      onBlur={() => handleIngredientBlur(i)}
+                      className="flex-1 min-w-0 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+                    />
+                    <button
+                      onClick={() => removeIngredient(i)}
+                      aria-label="Remove ingredient"
+                      className="shrink-0 text-slate-500 hover:text-red-400 text-sm px-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={ing.quantity}
+                    onChange={(e) => updateIngredient(i, 'quantity', e.target.value)}
+                    onBlur={() => handleIngredientBlur(i)}
+                    placeholder="Qty"
+                    className="w-full px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
+                  />
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400 tabular-nums">
+                    <span>Cal {isEstimating ? '…' : ing.calories}</span>
+                    <span>P {isEstimating ? '…' : ing.protein_g}</span>
+                    <span>C {isEstimating ? '…' : ing.carbs_g}</span>
+                    <span>F {isEstimating ? '…' : ing.fat_g}</span>
+                  </div>
+                </div>
+
+                {/* Desktop/tablet row layout */}
+                <div className="hidden sm:grid grid-cols-[1fr_auto_auto_auto_auto_auto_auto] gap-2 items-center">
+                  <input
+                    type="text"
+                    value={ing.name}
+                    onChange={(e) => updateIngredient(i, 'name', e.target.value)}
+                    onBlur={() => handleIngredientBlur(i)}
+                    className="px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm min-w-0"
+                  />
+                  <input
+                    type="text"
+                    value={ing.quantity}
+                    onChange={(e) => updateIngredient(i, 'quantity', e.target.value)}
+                    onBlur={() => handleIngredientBlur(i)}
+                    className="w-20 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-xs"
+                  />
+                  <span className="w-16 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                    {isEstimating ? '…' : ing.calories}
+                  </span>
+                  <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                    {isEstimating ? '…' : ing.protein_g}
+                  </span>
+                  <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                    {isEstimating ? '…' : ing.carbs_g}
+                  </span>
+                  <span className="w-14 px-2 py-1.5 text-xs tabular-nums text-slate-300 text-right">
+                    {isEstimating ? '…' : ing.fat_g}
+                  </span>
+                  <button
+                    onClick={() => removeIngredient(i)}
+                    aria-label="Remove ingredient"
+                    className="text-slate-500 hover:text-red-400 text-sm px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             )
           })}
