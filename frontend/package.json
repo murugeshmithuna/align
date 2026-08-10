@@ -16,6 +16,7 @@
     "chart.js": "^4.5.1",
     "jspdf": "^4.2.1",
     "react": "^19.2.8",
+    "react-body-highlighter": "^2.0.5",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2",
