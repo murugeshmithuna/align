@@ -170,13 +170,28 @@ def _build_profile_context(user: models.User) -> str:
 _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
+def _today_context() -> str:
+    """Nowhere else in this file ever states today's actual day of the week -
+    confirmed live as a real bug: asked to "add glutes today", the model
+    replied "Today is a Wednesday-type upper-body day" while the real
+    calendar day (and the plan page's own "TODAY" badge) was Monday. With no
+    explicit grounding, the model has to guess, and guessed wrong - then
+    presumably called adjust_plan against whichever day it believed was
+    "today", so the change landed on a day the user wasn't looking at. Every
+    turn now states the real date/weekday up front, computed the exact same
+    way `_build_plan_context`'s schedule keys already are (Python's
+    `date.weekday()`: 0=Monday..6=Sunday, matching _DAY_NAMES)."""
+    today = _today()
+    return f"Today's real date is {today.isoformat()} ({_DAY_NAMES[today.weekday()]})."
+
+
 def _build_plan_context(db: Session, user_id: int) -> str:
     plans = db.scalars(
         select(models.Plan).where(models.Plan.user_id == user_id).order_by(models.Plan.created_at.desc())
     ).all()
     plan = next((p for p in plans if p.is_active), plans[0] if plans else None)
     if not plan:
-        return "Active plan: none yet - the user has no training plan (offer to generate one)."
+        return f"{_today_context()} Active plan: none yet - the user has no training plan (offer to generate one)."
 
     by_day: dict[str, list[str]] = {}
     for pe in plan.plan_exercises:
@@ -189,10 +204,13 @@ def _build_plan_context(db: Session, user_id: int) -> str:
     schedule = "\n".join(f"- {day}: {', '.join(exs)}" for day, exs in by_day.items()) or "no exercises yet"
 
     return (
+        f"{_today_context()}\n"
         f'Active plan (do not ask the user to restate any of this): "{plan.name}" (plan_id={plan.id}).\n'
         f"Weekly schedule:\n{schedule}\n"
         f"When calling adjust_plan, only ever reference plan_exercise_id values listed above - never invent "
-        f"one, and never describe or act on an exercise that isn't in this exact list."
+        f"one, and never describe or act on an exercise that isn't in this exact list. When the user says "
+        f'"today"/"add this to today", use the real weekday stated above - never guess or assume a '
+        f"different day."
     )
 
 
