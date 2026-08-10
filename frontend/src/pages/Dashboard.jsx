@@ -216,7 +216,24 @@ export default function Dashboard() {
 
         {/* Weekly Progress / Nutrition Snapshot */}
         <div className="card p-6">
-          <h2 className="font-heading font-semibold mb-3">This week</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-heading font-semibold">This week</h2>
+            {/* Two-tone status pill (lime = on track, amber = behind) - same
+                semantic convention as the new Calendar dashboard tiles. Only
+                shown once there's a real target and real activity data to
+                judge it against, never a guessed default. */}
+            {!activityLoading && profile?.target_frequency && (
+              <span
+                className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap ${
+                  workoutsThisWeek >= profile.target_frequency
+                    ? 'text-coral-400 bg-coral-500/10'
+                    : 'text-amber-400 bg-amber-500/10'
+                }`}
+              >
+                {workoutsThisWeek >= profile.target_frequency ? 'On track' : 'Behind'}
+              </span>
+            )}
+          </div>
           <div className="flex items-center justify-center gap-6 mb-4 pb-4 border-b border-forest-800">
             <ProgressRing
               value={workoutsThisWeek}
