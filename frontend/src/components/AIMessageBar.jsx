@@ -5,6 +5,33 @@ import { notifyIfMutating } from '../utils/coachEvents.js'
 
 let nextId = 1
 
+// Persisted per-user (not globally) to sessionStorage - survives a page
+// reload (the reported bug: "if I refresh all the chat vanishes with ai
+// coach") without leaking one account's conversation into a different
+// account's session on the same device, and without piling up forever the
+// way localStorage would across unrelated future browser sessions.
+function chatStorageKey(userId) {
+  return `align_coach_chat_${userId}`
+}
+
+function loadPersistedChat(userId) {
+  try {
+    const raw = sessionStorage.getItem(chatStorageKey(userId))
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function savePersistedChat(userId, state) {
+  try {
+    sessionStorage.setItem(chatStorageKey(userId), JSON.stringify(state))
+  } catch {
+    // Persistence is a nice-to-have, not critical - a quota/serialization
+    // error here shouldn't break the actual chat.
+  }
+}
+
 const ROLE_STYLES = {
   user: 'text-right text-slate-200',
   agent: 'text-coral-300',
@@ -179,15 +206,17 @@ function ChoiceWidget({ message, disabled, onOptionClick, onToggleOption, onMult
 export default function AIMessageBar() {
   const { userId } = useSession()
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState([])
+  const [messages, setMessages] = useState(() => loadPersistedChat(userId)?.messages ?? [])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
-  const [activeWidget, setActiveWidget] = useState(null)
+  const [activeWidget, setActiveWidget] = useState(() => loadPersistedChat(userId)?.activeWidget ?? null)
   const logRef = useRef(null)
   // Opaque conversation state echoed back to the backend on every turn - the
   // API itself is stateless, so without this a short reply like "2" arrives
-  // with no context and looks like a non-sequitur to the model.
-  const historyRef = useRef([])
+  // with no context and looks like a non-sequitur to the model. Restored from
+  // sessionStorage alongside the visible `messages` so a page reload doesn't
+  // just show old bubbles - the backend conversation actually continues too.
+  const historyRef = useRef(loadPersistedChat(userId)?.history ?? [])
   // Tracks the currently-shown "Updating your plan…" style status message so
   // it can be cleared once the tool actually finishes - the backend sends a
   // matching {"tool": name, "status": "done"} frame right after every
@@ -200,6 +229,24 @@ export default function AIMessageBar() {
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [messages, open])
+
+  // Restoring persisted messages must not collide with fresh ids the running
+  // `nextId` module counter hands out next - bump it past whatever the
+  // restored log already used, once, on mount.
+  useEffect(() => {
+    const maxId = messages.reduce((max, m) => Math.max(max, m.id), 0)
+    if (maxId >= nextId) nextId = maxId + 1
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    // `sending` is included so the freshest `historyRef.current` (updated
+    // outside React state, from the streamed `{"history": [...]}` frame) is
+    // always flushed once a turn actually finishes - otherwise the very last
+    // turn's history update could arrive with no further `messages`/
+    // `activeWidget` change to trigger this effect before a reload.
+    savePersistedChat(userId, { messages, activeWidget, history: historyRef.current })
+  }, [userId, messages, activeWidget, sending])
 
   function appendMessage(role, text) {
     const id = nextId++
@@ -338,7 +385,6 @@ export default function AIMessageBar() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-forest-800">
           <div>
             <h2 className="font-heading font-semibold">AI Coach</h2>
-            <p className="text-xs text-slate-500">Available on every page</p>
           </div>
           <button
             onClick={() => setOpen(false)}

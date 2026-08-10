@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -9,11 +9,15 @@ TOOL_SCHEMAS = [
     {
         "name": "generate_workout_plan",
         "description": (
-            "Create a new training plan for the current user and persist it. The user's baseline "
-            "profile (experience level, target frequency, available equipment, primary goals, "
-            "physical limitations) is already provided as context - use it to choose appropriate "
-            "exercises, sets/reps, and weekly frequency without asking the user to repeat any of it. "
-            "Use this when the user wants a new plan or a full program, not a tweak to an existing one."
+            "Create a new training plan for the current user and persist it, replacing any existing plan "
+            "as their one active plan. The user's baseline profile (experience level, target frequency, "
+            "available equipment, primary goals, physical limitations) is already provided as context - "
+            "use it to choose appropriate exercises, sets/reps, and weekly frequency without asking the "
+            "user to repeat any of it. Use this when the user wants a new plan or a full program, not a "
+            "tweak to an existing one. ALWAYS build a genuinely COMPLETE plan: schedule exercises across a "
+            "number of distinct days equal to the user's target training frequency (default 3 if "
+            "unspecified), with 4-6 well-chosen exercises per training day matching their goals/equipment "
+            "- never a single-exercise 'starter' or placeholder plan, even if asked for something quick."
         ),
         "input_schema": {
             "type": "object",
@@ -206,10 +210,24 @@ TOOL_SCHEMAS = [
 
 
 def execute_generate_workout_plan(db: Session, user_id: int, tool_input: dict) -> dict:
+    # A new plan must become the user's ONE AND ONLY active plan - Dashboard,
+    # PlanDetail, Calendar, and the orchestrator's own _build_plan_context()
+    # all assume at most one is_active=True row per user. Plan.is_active
+    # defaults to True, so without this, generating a second plan (e.g. "build
+    # out a full program" after an earlier single-exercise starter) left BOTH
+    # plans active at once: the orchestrator's context picks the newest active
+    # plan (ordered by created_at desc) and confidently reports the new plan,
+    # but the frontend's `plans.find(p => p.is_active)` has no such ordering
+    # and returns whichever active plan the backend's unordered response lists
+    # first - typically the OLDER one. Confirmed live as the real cause of
+    # "coach said he added exercises but the plan still only shows the old
+    # bicep curl" - the coach and the UI were looking at two different plans.
+    db.execute(update(models.Plan).where(models.Plan.user_id == user_id).values(is_active=False))
     plan = models.Plan(
         user_id=user_id,
         name=tool_input["plan_name"],
         notes=tool_input.get("notes"),
+        is_active=True,
     )
     for ex in tool_input.get("exercises", []):
         exercise = db.scalar(select(models.Exercise).where(models.Exercise.name == ex["name"]))

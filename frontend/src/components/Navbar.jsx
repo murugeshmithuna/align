@@ -99,13 +99,13 @@ export default function Navbar() {
           <AlignWordmark className="font-heading font-bold tracking-tight text-sm md:text-base" size="1.15em" />
         </div>
 
-        <div className="hidden md:flex items-center gap-x-3 xl:gap-x-5 overflow-x-auto no-scrollbar">
+        <div className="hidden md:flex items-center gap-x-3 overflow-x-auto no-scrollbar">
           {LINKS.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `font-heading text-xs xl:text-sm font-bold whitespace-nowrap pb-1.5 border-b-2 transition-colors ${
+                `font-heading text-xs font-bold whitespace-nowrap pb-1.5 border-b-2 transition-colors ${
                   isActive
                     ? 'text-forest-950 border-forest-950'
                     : 'text-forest-950/55 border-transparent hover:text-forest-950 hover:border-forest-950/40'

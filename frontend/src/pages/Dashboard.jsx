@@ -45,7 +45,11 @@ export default function Dashboard() {
     api
       .listPlans(userId)
       .then((plans) => {
-        const active = plans.find((p) => p.is_active) || plans[plans.length - 1] || null
+        const activePlans = plans.filter((p) => p.is_active)
+        const active =
+          activePlans.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0] ||
+          plans[plans.length - 1] ||
+          null
         setPlan(active)
       })
       .catch(() => setPlan(null))
