@@ -14,8 +14,11 @@ const WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wa
 
 // BlazePose 33-point landmark indices (verified against the official
 // MediaPipe Pose Landmarker guide - same indices used server-side in
-// pose_analysis.py).
+// pose_analysis.py). Ears added alongside the original limb joints for the
+// registry's vertical-pull scapular-depression check below.
 const LM = {
+  LEFT_EAR: 7,
+  RIGHT_EAR: 8,
   LEFT_SHOULDER: 11,
   RIGHT_SHOULDER: 12,
   LEFT_ELBOW: 13,
@@ -30,12 +33,43 @@ const LM = {
   RIGHT_ANKLE: 28,
 }
 
+// Friendly body-part names for the low-confidence camera-positioning message
+// below - not every landmark this app tracks needs an entry, just the ones
+// any registry entry actually reads.
+const LM_LABELS = {
+  [LM.LEFT_SHOULDER]: 'shoulders',
+  [LM.RIGHT_SHOULDER]: 'shoulders',
+  [LM.LEFT_ELBOW]: 'elbows',
+  [LM.RIGHT_ELBOW]: 'elbows',
+  [LM.LEFT_WRIST]: 'wrists',
+  [LM.RIGHT_WRIST]: 'wrists',
+  [LM.LEFT_HIP]: 'hips',
+  [LM.RIGHT_HIP]: 'hips',
+  [LM.LEFT_KNEE]: 'knees',
+  [LM.RIGHT_KNEE]: 'knees',
+  [LM.LEFT_ANKLE]: 'ankles',
+  [LM.RIGHT_ANKLE]: 'ankles',
+  [LM.LEFT_EAR]: 'neck',
+  [LM.RIGHT_EAR]: 'neck',
+}
+
+// Dynamic exercise-picker categories (Request 1, #3).
+const CATEGORIES = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core']
+
 // Required-keypoint confidence gate: below this, don't trust the angle
 // enough to count reps or process form at all (raised from an earlier 0.5 -
 // camera repositioning or a laptop nudge tends to produce low-confidence
 // landmark jitter rather than a clean drop to near-zero, so a loose
 // threshold let those frames through as if they were reliable).
 const MIN_LANDMARK_VISIBILITY = 0.75
+
+// Safety/confidence fallback (Request 1, #4) - a separate, looser floor than
+// MIN_LANDMARK_VISIBILITY above. Below 0.75 the state machine just quietly
+// pauses (ordinary jitter, still roughly in frame). Below this 0.65 floor
+// the camera almost certainly isn't framing what this exercise needs at all
+// (e.g. hips/feet out of shot), which deserves an explicit, actionable
+// camera-positioning message instead of silence or an inaccurate rep count.
+const LOW_CONFIDENCE_VISIBILITY = 0.65
 
 // Camera-shift guard: if a large fraction of ALL landmarks (not just the
 // exercise's own joints) move more than this normalized distance between
@@ -47,12 +81,20 @@ const MIN_LANDMARK_VISIBILITY = 0.75
 const CAMERA_SHIFT_DISTANCE = 0.04
 const CAMERA_SHIFT_FRACTION = 0.8
 
-// Minimum time the joint angle must stay at/past the flexed threshold
-// before the rep is allowed to count - filters out a brief, jittery dip
-// below the threshold (a camera flicker, a partial/incomplete rep) that
-// crosses the angle boundary for a single frame without a real controlled
-// rep happening.
+// Minimum time the joint angle must stay at/past the peak threshold before
+// the rep is allowed to count - filters out a brief, jittery dip below the
+// threshold (a camera flicker, a partial/incomplete rep) that crosses the
+// angle boundary for a single frame without a real controlled rep happening.
 const PEAK_DWELL_MS = 400
+
+// Sustained (not single-frame) bad-form dwell time before a routine
+// coaching cue escalates into the high-visibility injury-risk warning below
+// - same anti-flicker philosophy as PEAK_DWELL_MS/CAMERA_SHIFT_FRACTION
+// above, just applied to "how long has form actually been wrong" instead of
+// rep timing or camera movement. Not a clinical threshold - an engineering
+// choice long enough to filter one noisy/misread frame, short enough to
+// warn well before a whole set of bad reps happens.
+const INJURY_RISK_DWELL_MS = 1500
 
 function clamp(x, lo, hi) {
   return Math.max(lo, Math.min(hi, x))
@@ -86,23 +128,304 @@ function avgVisibility(landmarks, indices) {
   return indices.reduce((sum, i) => sum + landmarks[i].visibility, 0) / indices.length
 }
 
-// Every supported exercise reduces to the same shape: a 3-point angle that
-// starts extended (large angle, "UP"), decreases to a flexed "DOWN" position,
-// then returns to extended - one rep. Only the joint triplet and thresholds
-// change between squats/curls/pushups, so one state machine drives all three.
-const EXERCISE_CONFIGS = {
+// Shared by every registry entry below that needs a "how far is the torso
+// leaning from upright" reading (squat's back-rounding check, the hinge's
+// spine-alignment check, the row's torso-stability check, the overhead
+// press's lumbar-arch check) - one honest heuristic formula, reused instead
+// of re-derived per exercise.
+function trunkAngleFromVertical(shoulder, hip) {
+  const trunk = { x: shoulder.x - hip.x, y: shoulder.y - hip.y }
+  const trunkMag = Math.hypot(trunk.x, trunk.y) || 1e-6
+  return (Math.acos(clamp((trunk.y * -1) / trunkMag, -1, 1)) * 180) / Math.PI
+}
+
+/**
+ * @typedef {Object} ExerciseConfig
+ * @property {string} label - display name
+ * @property {string} category - one of CATEGORIES, drives the picker's grouping
+ * @property {string} pattern - movement-pattern id (horizontal_push, vertical_push,
+ *   horizontal_pull, vertical_pull, hinge, squat_lunge, isolation_arms, isolation_core)
+ * @property {string[]} keywords - lowercase substrings matched against free-text plan
+ *   exercise names (see matchExerciseConfig) - e.g. "bench press"/"push-up"/"dip" all
+ *   reduce to the same shoulder-elbow-wrist pressing angle, just a different body
+ *   orientation, so they legitimately share one config rather than needing separate ones.
+ * @property {number[]} left - [a, b, c] landmark indices for the primary angle triplet, left side
+ * @property {number[]} right - same triplet, right side
+ * @property {{left: number[], right: number[]}} [extraVisibility] - additional landmarks
+ *   checkForm() reads beyond the primary triplet, gated for confidence the same way
+ * @property {number} restAngle - the joint angle at the natural start/rest point of the rep
+ * @property {number} peakAngle - the angle that must be crossed to reach the working end of the rep
+ * @property {number} goodRepThreshold - how close to peakAngle the rep's extreme angle must get
+ *   to count as full range of motion (a real depth/ROM check, not just "a rep happened")
+ * @property {1 | -1} direction - 1 if peakAngle < restAngle (a flexion-style rep - squat, curl,
+ *   row, pulldown, hinge, leg raise), -1 if peakAngle > restAngle (an extension-style rep -
+ *   overhead press). One direction-aware state machine (see the pastRest/reachedPeak/etc.
+ *   helpers below) drives every entry regardless of which way the angle moves.
+ * @property {string} motionCue - cue shown once the rep leaves the rest position
+ * @property {string} returnCue - cue shown once the rep starts returning to rest after the peak
+ * @property {(landmarks: object[], side: 'left' | 'right') => {ok: boolean, cue: string | null}} checkForm -
+ *   real-time safety/form check; a hand-tuned engineering heuristic (angle/ratio threshold), not
+ *   clinically validated biomechanical data
+ * @property {(rep: {extremeAngle: number, badForm?: boolean}) => string | null} repFormCue -
+ *   post-rep depth/ROM cue
+ * @property {string} injuryWarning - escalated, high-visibility message shown/spoken (prefixed
+ *   "Careful — ") once checkForm has failed continuously for INJURY_RISK_DWELL_MS
+ */
+
+// Direction-aware state-machine helpers - every registry entry reduces to
+// the same shape (a 3-point angle that starts at a "rest" position, moves to
+// a "peak" position at the working end of the rep, then returns), whether
+// the angle DECREASES toward the peak (squat/curl/row/pulldown/hinge/leg
+// raise - direction 1) or INCREASES toward it (overhead press - direction
+// -1). Writing these five comparisons direction-aware once, instead of
+// hardcoding "<"/">=" per exercise, is what lets one state machine drive
+// every entry in the registry - adding a new exercise later never touches
+// this logic, it just picks direction 1 or -1.
+function pastRest(angle, config) {
+  return config.direction === 1 ? angle < config.restAngle : angle > config.restAngle
+}
+function reachedPeak(angle, config) {
+  return config.direction === 1 ? angle <= config.peakAngle : angle >= config.peakAngle
+}
+function backAtRest(angle, config) {
+  return config.direction === 1 ? angle >= config.restAngle : angle <= config.restAngle
+}
+function isMoreExtreme(angle, currentExtreme, config) {
+  return config.direction === 1 ? angle < currentExtreme : angle > currentExtreme
+}
+function turnedBackTowardRest(angle, prevAngle, config) {
+  return config.direction === 1 ? angle > prevAngle : angle < prevAngle
+}
+function isGoodRep(extremeAngle, config) {
+  return config.direction === 1 ? extremeAngle <= config.goodRepThreshold : extremeAngle >= config.goodRepThreshold
+}
+
+// The modular exercise registry (Request 1, #1/#2). One well-built config
+// per major movement pattern (isolation is split into an Arms and a Core
+// example so every UI category in Request 1 #3 has a real, working entry),
+// each specifying joint triplets, phase-trigger thresholds, a safety
+// heuristic with its own error-tolerance angle/ratio, and cue copy. Adding a
+// new exercise means adding one object here (and, if it's a genuinely new
+// movement pattern, one new direction/threshold shape) - nothing in the
+// state machine, rendering, or logging logic below needs to change.
+const EXERCISE_REGISTRY = {
+  bench_press: {
+    label: 'Bench Press / Push-up',
+    category: 'Chest',
+    pattern: 'horizontal_push',
+    keywords: [
+      'bench press', 'chest press', 'push-up', 'pushup', 'push up',
+      'dip', 'incline press', 'decline press', 'floor press',
+    ],
+    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    extraVisibility: { left: [LM.LEFT_HIP], right: [LM.RIGHT_HIP] },
+    restAngle: 160,
+    peakAngle: 90,
+    goodRepThreshold: 100,
+    direction: 1,
+    motionCue: 'Lower with control',
+    returnCue: 'Press up!',
+    // Elbow flare: the angle the upper arm makes with the torso at the
+    // shoulder. A wide "chicken wing" elbow position is a commonly cited
+    // shoulder-stress heuristic in horizontal pressing - an honest
+    // engineering heuristic, same category as the squat/curl checks below,
+    // not a clinical threshold - and it holds regardless of whether the
+    // torso is upright (push-up) or horizontal (bench press).
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const elbow = landmarks[side === 'left' ? LM.LEFT_ELBOW : LM.RIGHT_ELBOW]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const flareAngle = angleDeg(hip, shoulder, elbow)
+      if (flareAngle > 80) return { ok: false, cue: "Tuck your elbows in, don't flare them out" }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Go lower next rep'
+    },
+    injuryWarning:
+      "Your elbows keep flaring out wide on the way down — that's added shoulder strain. Reset your setup and keep them closer to your body.",
+  },
+
+  overhead_press: {
+    label: 'Overhead Press',
+    category: 'Shoulders',
+    pattern: 'vertical_push',
+    keywords: [
+      'overhead press', 'shoulder press', 'military press',
+      'pike push-up', 'pike pushup', 'arnold press', 'strict press',
+    ],
+    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    extraVisibility: { left: [LM.LEFT_HIP], right: [LM.RIGHT_HIP] },
+    restAngle: 80,
+    peakAngle: 160,
+    goodRepThreshold: 155,
+    direction: -1,
+    motionCue: 'Press it overhead',
+    returnCue: 'Lower with control',
+    // Two independent checks: the wrist drifting far from a straight
+    // vertical line above the shoulder (bar/vertical-path drift), and
+    // leaning back from vertical to help the weight up (a compensatory
+    // lumbar-arch pattern).
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const wrist = landmarks[side === 'left' ? LM.LEFT_WRIST : LM.RIGHT_WRIST]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const leftShoulder = landmarks[LM.LEFT_SHOULDER]
+      const rightShoulder = landmarks[LM.RIGHT_SHOULDER]
+      const shoulderWidth = Math.abs(leftShoulder.x - rightShoulder.x) || 1e-6
+      const wristOffsetPct = (Math.abs(wrist.x - shoulder.x) / shoulderWidth) * 100
+      if (wristOffsetPct > 45) return { ok: false, cue: 'Press straight up, keep the weight over your shoulder' }
+      const backAngle = trunkAngleFromVertical(shoulder, hip)
+      if (backAngle > 20) return { ok: false, cue: "Don't lean back, brace your core" }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Get to full lockout overhead'
+    },
+    injuryWarning:
+      "You're repeatedly leaning back and drifting the bar path to press the weight up — that loads your lower back. Drop the weight and reset your brace.",
+  },
+
+  row: {
+    label: 'Bent-Over Row',
+    category: 'Back',
+    pattern: 'horizontal_pull',
+    keywords: [
+      'row', 'bent-over row', 'bent over row', 'seated row', 'cable row',
+      'dumbbell row', 'barbell row', 'inverted row', 'chest supported row',
+    ],
+    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    extraVisibility: { left: [LM.LEFT_HIP], right: [LM.RIGHT_HIP] },
+    restAngle: 160,
+    peakAngle: 65,
+    goodRepThreshold: 75,
+    direction: 1,
+    motionCue: 'Row it back',
+    returnCue: 'Extend with control',
+    // Torso inclination stability (standing up out of the hinge mid-row is
+    // a classic sign of using body momentum instead of the target muscles)
+    // and elbow drive (elbow flaring out to the side instead of driving
+    // straight back) - the same category of "flag momentum/swinging" check
+    // the bicep curl uses below, applied to a hinge instead of a fixed torso.
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const elbow = landmarks[side === 'left' ? LM.LEFT_ELBOW : LM.RIGHT_ELBOW]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const backAngle = trunkAngleFromVertical(shoulder, hip)
+      if (backAngle < 20) return { ok: false, cue: "Keep your hinge, don't stand up into the pull" }
+      if (backAngle > 80) return { ok: false, cue: 'Flatten your back, keep your chest up' }
+      const torsoHeight = Math.abs(shoulder.y - hip.y) || 1e-6
+      const elbowDriftPct = (Math.abs(elbow.x - shoulder.x) / torsoHeight) * 100
+      if (elbowDriftPct > 35) return { ok: false, cue: 'Drive your elbow straight back, not out to the side' }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Pull all the way to your ribs'
+    },
+    injuryWarning:
+      "You're repeatedly standing up out of your hinge to swing the weight back — that's lower-back strain risk from momentum. Slow down and reset your hinge each rep.",
+  },
+
+  lat_pulldown: {
+    label: 'Lat Pulldown / Pull-up',
+    category: 'Back',
+    pattern: 'vertical_pull',
+    keywords: ['pulldown', 'lat pulldown', 'pull-up', 'pullup', 'pull up', 'chin-up', 'chinup', 'chin up'],
+    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
+    extraVisibility: { left: [LM.LEFT_EAR, LM.LEFT_HIP], right: [LM.RIGHT_EAR, LM.RIGHT_HIP] },
+    restAngle: 160,
+    peakAngle: 65,
+    goodRepThreshold: 75,
+    direction: 1,
+    motionCue: 'Pull it down',
+    returnCue: 'Extend with control',
+    // Scapular depression proxy: shoulder height relative to the ear,
+    // normalized by shoulder-to-hip torso height. A shrugged, shoulders-
+    // near-ears position (small ratio) means the traps are doing the
+    // pulling instead of the lats - the classic "shrug pulldown" fault.
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const ear = landmarks[side === 'left' ? LM.LEFT_EAR : LM.RIGHT_EAR]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const torsoHeight = Math.abs(shoulder.y - hip.y) || 1e-6
+      const shoulderToEarPct = (Math.abs(shoulder.y - ear.y) / torsoHeight) * 100
+      if (shoulderToEarPct < 15) return { ok: false, cue: "Depress your shoulder blades, don't shrug" }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Pull all the way down to your chest'
+    },
+    injuryWarning:
+      "You're repeatedly shrugging your shoulders up toward your ears instead of pulling with your back — reset your shoulder position before continuing.",
+  },
+
+  deadlift_hinge: {
+    label: 'Romanian Deadlift / Hip Thrust',
+    category: 'Legs',
+    pattern: 'hinge',
+    keywords: [
+      'deadlift', 'romanian deadlift', 'rdl', 'hip thrust',
+      'good morning', 'stiff-leg deadlift', 'stiff leg deadlift', 'hip hinge',
+    ],
+    left: [LM.LEFT_SHOULDER, LM.LEFT_HIP, LM.LEFT_KNEE],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_HIP, LM.RIGHT_KNEE],
+    extraVisibility: { left: [LM.LEFT_ANKLE], right: [LM.RIGHT_ANKLE] },
+    restAngle: 170,
+    peakAngle: 90,
+    goodRepThreshold: 100,
+    direction: 1,
+    motionCue: 'Hinge back, push your hips back',
+    returnCue: 'Drive your hips forward',
+    // Two checks that specifically distinguish a hinge from a squat (the
+    // exact ask - "soft-knee bend so it's not mistaken for a squat"): the
+    // knee should stay soft/near-straight rather than bending deeply (a
+    // bending knee angle means the movement is sliding into a squat
+    // pattern), and the back should stay relatively flat rather than
+    // rounding under load - the same trunk-angle formula squat uses below,
+    // just a higher tolerance since a hinge naturally leans further forward.
+    checkForm(landmarks, side) {
+      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
+      const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const knee = landmarks[side === 'left' ? LM.LEFT_KNEE : LM.RIGHT_KNEE]
+      const ankle = landmarks[side === 'left' ? LM.LEFT_ANKLE : LM.RIGHT_ANKLE]
+      const kneeAngle = angleDeg(hip, knee, ankle)
+      if (kneeAngle < 140) {
+        return { ok: false, cue: "That's turning into a squat - hinge at the hips, keep a soft knee" }
+      }
+      const backAngle = trunkAngleFromVertical(shoulder, hip)
+      if (backAngle > 75) return { ok: false, cue: "Keep your chest up, don't round your lower back" }
+      return { ok: true, cue: null }
+    },
+    repFormCue(rep) {
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Hinge deeper next rep'
+    },
+    injuryWarning:
+      "You're repeatedly rounding your lower back under load — that's a real injury-risk pattern for hinges. Stop, reset a flat back, and consider lighter weight.",
+  },
+
   squat: {
-    label: 'Squat',
+    label: 'Squat / Lunge',
+    category: 'Legs',
+    pattern: 'squat_lunge',
+    keywords: [
+      'squat', 'lunge', 'split squat', 'bulgarian split squat',
+      'step-up', 'step up', 'goblet squat', 'front squat', 'back squat',
+    ],
     left: [LM.LEFT_HIP, LM.LEFT_KNEE, LM.LEFT_ANKLE],
     right: [LM.RIGHT_HIP, LM.RIGHT_KNEE, LM.RIGHT_ANKLE],
     // checkForm also reads the shoulder (back angle) - gate its confidence too,
     // not just the hip/knee/ankle triplet used for the rep-counting angle.
     extraVisibility: { left: [LM.LEFT_SHOULDER], right: [LM.RIGHT_SHOULDER] },
-    extendedAngle: 160,
-    flexedAngle: 110,
-    goodRepMaxAngle: 100, // depth: min angle reached must be at/below this
-    downCue: 'Keep descending',
-    upCue: 'Drive up!',
+    restAngle: 160,
+    peakAngle: 110,
+    goodRepThreshold: 100,
+    direction: 1,
+    motionCue: 'Keep descending',
+    returnCue: 'Drive up!',
     checkForm(landmarks, side) {
       const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
       const knee = landmarks[side === 'left' ? LM.LEFT_KNEE : LM.RIGHT_KNEE]
@@ -112,28 +435,40 @@ const EXERCISE_CONFIGS = {
       const rightHip = landmarks[LM.RIGHT_HIP]
       const hipWidth = Math.abs(leftHip.x - rightHip.x) || 1e-6
       const kneeOffsetPct = (Math.abs(knee.x - ankle.x) / hipWidth) * 100
-      const trunk = { x: shoulder.x - hip.x, y: shoulder.y - hip.y }
-      const trunkMag = Math.hypot(trunk.x, trunk.y) || 1e-6
-      const backAngle = (Math.acos(clamp((trunk.y * -1) / trunkMag, -1, 1)) * 180) / Math.PI
+      const backAngle = trunkAngleFromVertical(shoulder, hip)
       if (kneeOffsetPct > 15) return { ok: false, cue: 'Push your knees out' }
       if (backAngle > 45) return { ok: false, cue: 'Keep your chest up' }
       return { ok: true, cue: null }
     },
     repFormCue(rep) {
-      return rep.minAngle <= this.goodRepMaxAngle ? null : 'Go lower next rep'
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Go lower next rep'
     },
+    injuryWarning:
+      "Your knees are repeatedly caving in or your back is rounding — that's a real injury-risk pattern for squats. Reset your stance, slow down, and consider lighter weight.",
   },
+
   bicep_curl: {
     label: 'Bicep Curl',
+    category: 'Arms',
+    pattern: 'isolation_arms',
+    // Deliberately no bare 'curl' keyword - that would also match "Leg
+    // Curl" (a hamstring/knee-flexion isolation exercise, completely
+    // different joints) as a false positive, caught live during testing.
+    // Every real bicep/arm-curl variant is named explicitly instead.
+    keywords: [
+      'bicep curl', 'hammer curl', 'preacher curl', 'concentration curl',
+      'cable curl', 'barbell curl', 'ez bar curl', 'reverse curl', 'dumbbell curl',
+    ],
     left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
     right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
     // checkForm also reads the hip (torso reference for elbow drift).
     extraVisibility: { left: [LM.LEFT_HIP], right: [LM.RIGHT_HIP] },
-    extendedAngle: 155,
-    flexedAngle: 55,
-    goodRepMaxAngle: 70,
-    downCue: 'Curl it up',
-    upCue: 'Lower with control',
+    restAngle: 155,
+    peakAngle: 55,
+    goodRepThreshold: 70,
+    direction: 1,
+    motionCue: 'Curl it up',
+    returnCue: 'Lower with control',
     checkForm(landmarks, side) {
       const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
       const elbow = landmarks[side === 'left' ? LM.LEFT_ELBOW : LM.RIGHT_ELBOW]
@@ -144,41 +479,60 @@ const EXERCISE_CONFIGS = {
       return { ok: true, cue: null }
     },
     repFormCue(rep) {
-      return rep.minAngle <= this.goodRepMaxAngle ? null : 'Squeeze harder at the top'
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Squeeze harder at the top'
     },
+    injuryWarning:
+      "You're repeatedly swinging your elbow away from your body to move the weight — that momentum raises shoulder strain risk. Slow down and reset.",
   },
-  pushup: {
-    label: 'Push-up',
-    left: [LM.LEFT_SHOULDER, LM.LEFT_ELBOW, LM.LEFT_WRIST],
-    right: [LM.RIGHT_SHOULDER, LM.RIGHT_ELBOW, LM.RIGHT_WRIST],
-    // checkForm also reads the hip + ankle (hip-sag alignment check).
-    extraVisibility: { left: [LM.LEFT_HIP, LM.LEFT_ANKLE], right: [LM.RIGHT_HIP, LM.RIGHT_ANKLE] },
-    extendedAngle: 160,
-    flexedAngle: 90,
-    goodRepMaxAngle: 100,
-    downCue: 'Lower your chest',
-    upCue: 'Push up!',
+
+  leg_raise: {
+    label: 'Leg Raise / Crunch',
+    category: 'Core',
+    pattern: 'isolation_core',
+    keywords: [
+      'leg raise', 'hanging leg raise', 'lying leg raise', 'crunch',
+      'sit-up', 'situp', 'sit up', 'knee raise', 'v-up', 'flutter kick',
+    ],
+    left: [LM.LEFT_SHOULDER, LM.LEFT_HIP, LM.LEFT_KNEE],
+    right: [LM.RIGHT_SHOULDER, LM.RIGHT_HIP, LM.RIGHT_KNEE],
+    extraVisibility: { left: [LM.LEFT_ANKLE], right: [LM.RIGHT_ANKLE] },
+    restAngle: 170,
+    peakAngle: 90,
+    goodRepThreshold: 100,
+    direction: 1,
+    motionCue: 'Raise with control',
+    returnCue: 'Lower with control, no swinging',
+    // Bending the knees a lot to shorten the lever arm ("cheating" the rep
+    // with momentum) is the isolation/core equivalent of the bicep curl's
+    // elbow-drift check above - same "flag momentum/swinging" category,
+    // different joint.
     checkForm(landmarks, side) {
-      const shoulder = landmarks[side === 'left' ? LM.LEFT_SHOULDER : LM.RIGHT_SHOULDER]
       const hip = landmarks[side === 'left' ? LM.LEFT_HIP : LM.RIGHT_HIP]
+      const knee = landmarks[side === 'left' ? LM.LEFT_KNEE : LM.RIGHT_KNEE]
       const ankle = landmarks[side === 'left' ? LM.LEFT_ANKLE : LM.RIGHT_ANKLE]
-      const hipAngle = angleDeg(shoulder, hip, ankle)
-      if (hipAngle < 160) return { ok: false, cue: "Don't let your hips sag" }
+      const kneeAngle = angleDeg(hip, knee, ankle)
+      if (kneeAngle < 120) {
+        return { ok: false, cue: "Keep your legs straighter, don't bend your knees to cheat the rep" }
+      }
       return { ok: true, cue: null }
     },
     repFormCue(rep) {
-      return rep.minAngle <= this.goodRepMaxAngle ? null : 'Go lower next rep'
+      return isGoodRep(rep.extremeAngle, this) ? null : 'Raise your legs higher next rep'
     },
+    injuryWarning:
+      "You're repeatedly bending your knees and swinging to muscle the rep up — that momentum reduces control and raises strain risk. Slow down and reset.",
   },
 }
 
 // Free-text plan exercise names ("Back Squat", "Dumbbell Bicep Curl", ...)
-// are matched to a supported config by keyword rather than exact match.
+// are matched to a registry entry by keyword rather than exact match -
+// generic over whatever's in EXERCISE_REGISTRY, so a new registry entry
+// never needs a change here.
 function matchExerciseConfig(name) {
   const lower = name.toLowerCase()
-  if (lower.includes('squat')) return 'squat'
-  if (lower.includes('curl')) return 'bicep_curl'
-  if (lower.includes('push')) return 'pushup'
+  for (const [key, config] of Object.entries(EXERCISE_REGISTRY)) {
+    if (config.keywords.some((kw) => lower.includes(kw))) return key
+  }
   return null
 }
 
@@ -190,18 +544,42 @@ function draftKey(userId) {
   return `live_session_draft_v${DRAFT_VERSION}_${userId}`
 }
 
-function frameAngleAndSide(landmarks, config) {
+// Returns which side (left/right) has better-tracked landmarks for this
+// config, plus the full set of landmarks its rep-counting angle and
+// checkForm() safety checks together require - shared by frameAngleAndSide
+// (the strict 0.75 processing gate) and lowConfidenceMessage (the looser
+// 0.65 camera-positioning fallback) below so both read confidence the same way.
+function evaluateVisibility(landmarks, config) {
   const side = avgVisibility(landmarks, config.left) >= avgVisibility(landmarks, config.right) ? 'left' : 'right'
   const triplet = side === 'left' ? config.left : config.right
   const extra = (side === 'left' ? config.extraVisibility?.left : config.extraVisibility?.right) || []
   const requiredIndices = [...triplet, ...extra]
-
   const minVisibility = Math.min(...requiredIndices.map((i) => landmarks[i].visibility))
-  if (minVisibility < MIN_LANDMARK_VISIBILITY) return null
+  return { side, triplet, requiredIndices, minVisibility }
+}
 
+function frameAngleAndSide(landmarks, config) {
+  const { side, triplet, minVisibility } = evaluateVisibility(landmarks, config)
+  if (minVisibility < MIN_LANDMARK_VISIBILITY) return null
   const [aIdx, bIdx, cIdx] = triplet
   const angle = angleDeg(landmarks[aIdx], landmarks[bIdx], landmarks[cIdx])
   return { angle, side }
+}
+
+// Safety/confidence fallback (Request 1, #4): below LOW_CONFIDENCE_VISIBILITY
+// the camera almost certainly isn't framing what this exercise needs at all
+// (e.g. hips/feet out of shot) - surface that directly as actionable
+// camera-positioning feedback instead of producing an inaccurate form/rep
+// count or just silently freezing (which is all the stricter 0.75 gate above
+// does on its own).
+function lowConfidenceMessage(landmarks, config) {
+  const { requiredIndices, minVisibility } = evaluateVisibility(landmarks, config)
+  if (minVisibility >= LOW_CONFIDENCE_VISIBILITY) return null
+  const labels = new Set()
+  for (const idx of requiredIndices) {
+    if (landmarks[idx].visibility < LOW_CONFIDENCE_VISIBILITY) labels.add(LM_LABELS[idx] || 'body')
+  }
+  return `Adjust camera to show your ${[...labels].join(' and ')}`
 }
 
 // Rep counts almost never exceed this in a single set; falls back to the
@@ -240,6 +618,70 @@ function tabClass(active) {
   return `px-4 py-2 rounded-lg text-sm font-heading font-semibold transition-colors ${
     active ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
   }`
+}
+
+// Categorized/searchable exercise picker (Request 1, #3) - replaces the old
+// static <select> of 3 hardcoded exercises. Purely reads EXERCISE_REGISTRY,
+// so it never needs a change when a new registry entry is added.
+function ExercisePicker({ value, onChange }) {
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('All')
+  const entries = useMemo(() => Object.entries(EXERCISE_REGISTRY), [])
+  const filtered = entries.filter(([, config]) => {
+    if (category !== 'All' && config.category !== category) return false
+    const q = search.trim().toLowerCase()
+    if (!q) return true
+    return config.label.toLowerCase().includes(q) || config.keywords.some((kw) => kw.includes(q))
+  })
+
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs text-slate-500" htmlFor="exercise-search">
+        Exercise
+      </label>
+      <input
+        id="exercise-search"
+        type="text"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search exercises… (e.g. bench, row, squat)"
+        className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+      />
+      <div className="flex flex-wrap gap-1.5">
+        {['All', ...CATEGORIES].map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setCategory(c)}
+            className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-colors ${
+              category === c ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+        {filtered.length === 0 ? (
+          <p className="text-xs text-slate-500 py-1">No exercises match.</p>
+        ) : (
+          filtered.map(([key, config]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => onChange(key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                value === key ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {config.label}
+              <span className="ml-1.5 text-[10px] opacity-70">{config.category}</span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  )
 }
 
 // Text-based PDF via jsPDF's own drawing primitives rather than html2canvas -
@@ -461,16 +903,23 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const prevLandmarksRef = useRef(null)
   const cameraShiftingRef = useRef(false)
   const voiceEnabledRef = useRef(true)
+  // Consecutive-bad-form dwell tracker for the injury-risk escalation below -
+  // `since` is the wall-clock time the current unbroken run of failed
+  // checkForm() frames started (null when form is currently ok), `warned`
+  // guards against re-speaking/re-flashing every single frame once a streak
+  // has already crossed INJURY_RISK_DWELL_MS.
+  const formFailStreakRef = useRef({ since: null, warned: false })
   // Session metrics for the PDF export - counted every processed frame /
   // completed exercise, not recomputed after the fact.
   const sessionStartedAtRef = useRef(null)
   const formFrameCountsRef = useRef({ ok: 0, total: 0 })
   const completedExercisesRef = useRef([])
   // Per-exercise rep-by-rep depth/form pass-fail, keyed by exercise label
-  // ("Squat", "Bicep Curl", "Push-up") - fed from the exact same
-  // repFormCue()/checkForm() results already driving the live voice cues,
-  // just kept around instead of discarded so a real session-over-session
-  // trend can be computed server-side once the workout finishes.
+  // ("Squat", "Bicep Curl", "Bench Press / Push-up", ...) - fed from the
+  // exact same repFormCue()/checkForm() results already driving the live
+  // voice cues, just kept around instead of discarded so a real
+  // session-over-session trend (and the injury_risk_flagged verdict) can be
+  // computed server-side once the workout finishes.
   const repFormLogRef = useRef({})
   // Guards against double-logging/double-submitting the same session's data
   // if both the natural full-completion path and a later manual stop/unmount
@@ -506,6 +955,14 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   const [cue, setCue] = useState('Start the session, then step into frame')
   const [formOk, setFormOk] = useState(true)
   const [cameraShifting, setCameraShifting] = useState(false)
+  // Sustained-bad-form escalation (Request 2): distinct from the routine
+  // per-frame `cue`/`formOk` - only flips on once checkForm() has failed
+  // continuously for INJURY_RISK_DWELL_MS, and drives both a visually
+  // distinct banner (not just the small cue-text line) and a
+  // "Careful — " prefixed voice cue, so it reads as categorically different
+  // from an ordinary rep-cue or form correction.
+  const [injuryWarningActive, setInjuryWarningActive] = useState(false)
+  const [injuryWarningText, setInjuryWarningText] = useState('')
   const [voiceEnabled, setVoiceEnabledState] = useState(true)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [exportError, setExportError] = useState('')
@@ -614,7 +1071,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   }
   function getCurrentConfig() {
     const item = getCurrentItem()
-    return EXERCISE_CONFIGS[item ? item.configKey : sessionRef.current.manualExercise]
+    return EXERCISE_REGISTRY[item ? item.configKey : sessionRef.current.manualExercise]
   }
   function getTargetReps() {
     const item = getCurrentItem()
@@ -637,6 +1094,8 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       peakReachedAt: null,
       prevAngle: null,
     }
+    formFailStreakRef.current = { since: null, warned: false }
+    setInjuryWarningActive(false)
     setPhase('START')
   }
 
@@ -871,20 +1330,26 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       speak(repNumberWord(repNumber))
     }
 
-    // Same depth (repFormCue) / form (checkForm, via rep.badForm - see
-    // processFrame) results already computed above, kept per-rep instead of
-    // discarded so submitFormFeedback() has real data once the session ends.
+    // The pushed object below keeps the field name `min_angle` even though
+    // this file now tracks the value as a direction-aware `extremeAngle`
+    // internally (the extreme angle reached during the rep - a minimum for a
+    // decreasing-angle exercise like a squat, a maximum for an increasing
+    // one like the overhead press) - `min_angle` is the exact field name the
+    // backend's LiveSessionFormCreate schema expects (backend/app/
+    // schemas.py), a fixed API contract that isn't being touched here.
     const log = repFormLogRef.current[activeConfig.label] || (repFormLogRef.current[activeConfig.label] = [])
-    log.push({ rep_index: log.length, min_angle: rep.minAngle, depth_ok: !formCue, form_ok: !rep.badForm })
+    log.push({ rep_index: log.length, min_angle: rep.extremeAngle, depth_ok: !formCue, form_ok: !rep.badForm })
   }
 
   // START_POSITION -> IN_MOTION -> PEAK_DEPTH -> RETURN_POSITION -> (rep
   // counts) -> START_POSITION. PEAK_DEPTH requires PEAK_DWELL_MS of real
   // wall-clock time before it's allowed to advance to RETURN_POSITION - a
-  // brief, jittery dip below the flexed threshold (camera flicker, an
-  // incomplete rep) that recovers before the dwell is satisfied gets
+  // brief, jittery dip below/past the peak threshold (camera flicker, an
+  // incomplete rep) that bounces back before the dwell is satisfied gets
   // rejected as noise (back to START_POSITION, no rep counted) rather than
-  // registering.
+  // registering. One state machine drives every registry entry regardless of
+  // which direction its angle moves - see the pastRest/reachedPeak/etc.
+  // helpers above.
   function processFrame(landmarks) {
     const activeConfig = getCurrentConfig()
     const result = frameAngleAndSide(landmarks, activeConfig)
@@ -897,25 +1362,44 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     formFrameCountsRef.current.total += 1
     if (formCheck.ok) formFrameCountsRef.current.ok += 1
 
+    // Sustained (not single-frame) bad form escalates into the distinct,
+    // high-visibility injury-risk warning (Request 2) - same dwell-time
+    // anti-flicker philosophy as the camera-shift guard and the
+    // PEAK_DWELL_MS rep-bounce guard, just measuring "how long has form
+    // actually been wrong" instead of camera movement or rep timing.
+    if (!formCheck.ok) {
+      if (formFailStreakRef.current.since == null) formFailStreakRef.current.since = Date.now()
+      const failedForMs = Date.now() - formFailStreakRef.current.since
+      if (failedForMs >= INJURY_RISK_DWELL_MS && !formFailStreakRef.current.warned) {
+        formFailStreakRef.current.warned = true
+        setInjuryWarningActive(true)
+        setInjuryWarningText(activeConfig.injuryWarning)
+        speak(`Careful — ${activeConfig.injuryWarning}`)
+      }
+    } else if (formFailStreakRef.current.since != null) {
+      formFailStreakRef.current = { since: null, warned: false }
+      setInjuryWarningActive(false)
+    }
+
     const rs = repStateRef.current
 
     if (rs.state === 'START_POSITION') {
-      if (angle < activeConfig.extendedAngle) {
+      if (pastRest(angle, activeConfig)) {
         rs.state = 'IN_MOTION'
-        rs.current = { minAngle: angle }
+        rs.current = { extremeAngle: angle }
         rs.reachedFlexed = false
         setPhase('MOTION')
-        setCue(formCheck.cue || activeConfig.downCue)
+        setCue(formCheck.cue || activeConfig.motionCue)
       }
     } else if (rs.state === 'IN_MOTION') {
-      if (angle < rs.current.minAngle) rs.current = { minAngle: angle }
-      if (angle <= activeConfig.flexedAngle) {
+      if (isMoreExtreme(angle, rs.current.extremeAngle, activeConfig)) rs.current = { extremeAngle: angle }
+      if (reachedPeak(angle, activeConfig)) {
         rs.state = 'PEAK_DEPTH'
         rs.reachedFlexed = true
         rs.peakReachedAt = Date.now()
         setPhase('PEAK')
-      } else if (angle >= activeConfig.extendedAngle) {
-        // Came back up without ever reaching depth - shallow, doesn't count.
+      } else if (backAtRest(angle, activeConfig)) {
+        // Came back to rest without ever reaching the peak - shallow, doesn't count.
         rs.state = 'START_POSITION'
         rs.current = null
         setPhase('START')
@@ -923,27 +1407,27 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         setCue(formCheck.cue)
       }
     } else if (rs.state === 'PEAK_DEPTH') {
-      if (angle < rs.current.minAngle) rs.current = { minAngle: angle }
+      if (isMoreExtreme(angle, rs.current.extremeAngle, activeConfig)) rs.current = { extremeAngle: angle }
 
       const dwellSatisfied = Date.now() - rs.peakReachedAt >= PEAK_DWELL_MS
-      const turnedUpward = rs.prevAngle != null && angle > rs.prevAngle
+      const turnedBack = rs.prevAngle != null && turnedBackTowardRest(angle, rs.prevAngle, activeConfig)
 
-      if (turnedUpward && dwellSatisfied) {
+      if (turnedBack && dwellSatisfied) {
         rs.state = 'RETURN_POSITION'
         setPhase('RETURN')
-        setCue(formCheck.cue || activeConfig.upCue)
-      } else if (angle >= activeConfig.extendedAngle) {
-        // Shot back up before satisfying the minimum dwell at depth - reject
-        // as a false positive rather than count a rep.
+        setCue(formCheck.cue || activeConfig.returnCue)
+      } else if (backAtRest(angle, activeConfig)) {
+        // Shot back to rest before satisfying the minimum dwell at the peak -
+        // reject as a false positive rather than count a rep.
         rs.state = 'START_POSITION'
         rs.current = null
         setPhase('START')
-        setCue('Hold the bottom position a bit longer')
+        setCue('Hold the peak position a bit longer')
       } else if (formCheck.cue) {
         setCue(formCheck.cue)
       }
     } else if (rs.state === 'RETURN_POSITION') {
-      if (angle >= activeConfig.extendedAngle) {
+      if (backAtRest(angle, activeConfig)) {
         completeRep(rs.current)
         rs.state = 'START_POSITION'
         rs.current = null
@@ -1006,7 +1490,21 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         if (isShifting) {
           setCue('Camera shifting, please hold still')
         } else if (!s.restUntil) {
-          processFrame(landmarks)
+          const activeConfig = getCurrentConfig()
+          const lowConfMsg = lowConfidenceMessage(landmarks, activeConfig)
+          if (lowConfMsg) {
+            // Safety/confidence fallback (Request 1, #4) - don't process
+            // reps/form off landmarks this unreliable, and don't leave the
+            // in-progress bad-form streak counting against a badly-framed
+            // camera once it clears.
+            setCue(lowConfMsg)
+            if (formFailStreakRef.current.since != null) {
+              formFailStreakRef.current = { since: null, warned: false }
+              setInjuryWarningActive(false)
+            }
+          } else {
+            processFrame(landmarks)
+          }
         }
       }
     }
@@ -1190,23 +1688,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         </div>
       )}
       {!usingPlan && status !== 'running' && !paused && (
-        <div>
-          <label className="block text-xs text-slate-500 mb-1" htmlFor="manual-exercise">
-            Exercise
-          </label>
-          <select
-            id="manual-exercise"
-            value={manualExercise}
-            onChange={(e) => setManualExercise(e.target.value)}
-            className="px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-          >
-            {Object.entries(EXERCISE_CONFIGS).map(([key, c]) => (
-              <option key={key} value={key}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        <ExercisePicker value={manualExercise} onChange={setManualExercise} />
       )}
       {skipped.length > 0 && (
         <p className="text-xs text-slate-500">
@@ -1233,6 +1715,15 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
                 {cameraShifting ? 'HOLD STILL' : phase}
               </span>
             </div>
+            {injuryWarningActive && !cameraShifting && (
+              <div
+                role="alert"
+                className="absolute top-24 left-4 right-4 rounded-xl border-2 border-red-500 bg-red-950/95 px-4 py-3 text-center shadow-lg shadow-red-950/60 animate-pulse"
+              >
+                <p className="text-red-300 font-heading font-extrabold text-sm">⚠️ Form breakdown — injury risk</p>
+                <p className="text-red-100 text-xs mt-1">{injuryWarningText}</p>
+              </div>
+            )}
             <div className="absolute bottom-4 left-4 right-4 text-center">
               <span
                 className={`inline-block bg-forest-950/80 rounded-xl px-4 py-2 text-sm font-heading font-semibold ${
@@ -1270,8 +1761,8 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
               </p>
             ) : formFeedback.length === 0 ? (
               <p className="text-xs text-slate-500 max-w-xs">
-                No completed reps to grade this session - a rep only counts once you go all the way down and
-                back up. Stay fully in frame and finish the full range of motion to get form feedback.
+                No completed reps to grade this session - a rep only counts once you go all the way through
+                and back. Stay fully in frame and finish the full range of motion to get form feedback.
               </p>
             ) : (
               <div className="w-full max-w-sm space-y-2 text-left">
@@ -1287,6 +1778,14 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
                           <span className="text-sky-400">{f.good_form_pct}% form</span>
                         </div>
                       </div>
+                      {f.injury_risk_flagged ? (
+                        <div className="rounded-lg border-2 border-red-500 bg-red-950/70 px-2.5 py-2">
+                          <p className="text-red-300 font-heading font-bold text-xs">⚠️ Injury risk flagged</p>
+                          <p className="text-red-100 text-xs mt-0.5">{f.injury_risk_note}</p>
+                        </div>
+                      ) : (
+                        f.injury_risk_note && <p className="text-xs text-emerald-400/80">✅ {f.injury_risk_note}</p>
+                      )}
                       {f.focus_areas.length > 0 && (
                         <ul className="text-xs text-slate-300 space-y-0.5 list-disc list-inside">
                           {f.focus_areas.map((area, i) => (
@@ -1319,7 +1818,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
               {pausedDraftRef.current &&
                 (pausedDraftRef.current.usingPlan
                   ? queue[pausedDraftRef.current.queueIndex]?.name
-                  : EXERCISE_CONFIGS[pausedDraftRef.current.manualExercise]?.label) + ' - '}
+                  : EXERCISE_REGISTRY[pausedDraftRef.current.manualExercise]?.label) + ' - '}
               Set {pausedDraftRef.current?.currentSet}, {pausedDraftRef.current?.repCount} rep
               {pausedDraftRef.current?.repCount === 1 ? '' : 's'} so far
             </p>
