@@ -507,17 +507,24 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
         "\n".join(f"- {c.checkin_date}: {c.score}/5 ({c.label})" for c in checkins) or "none logged"
     )
 
+    # Kept to at most 2 short sentences on purpose: this text now renders
+    # inside a compact tinted "Snapshot" box alongside a real chart
+    # dashboard (calories-per-day, streak, macro balance - see Progress.jsx)
+    # that already shows the raw numbers, so the prose only needs to add the
+    # qualitative read + one action, not restate stats a bar chart already
+    # displays more precisely.
     prompt = (
-        "Summarize this user's past 7 days of training in a short, encouraging weekly recap "
-        "(3-5 sentences). Mention notable trends (volume, consistency, readiness), and end with "
-        "one concrete, specific suggestion for next week.\n\n"
+        "In at most 2 short sentences (no more, no preamble), give a qualitative read on this user's "
+        "past 7 days of training - the single most important pattern - then one concrete, specific "
+        "suggestion for next week. Do not restate raw numbers/dates verbatim; a chart already shows "
+        "those. Just the insight and the action.\n\n"
         f"Workout logs (last 7 days):\n{log_lines}\n\n"
         f"Daily readiness check-ins (last 7 days):\n{checkin_lines}"
     )
 
     response = client.messages.create(
         model=FAST_MODEL,
-        max_tokens=500,
+        max_tokens=150,
         messages=[{"role": "user", "content": prompt}],
     )
     return "".join(block.text for block in response.content if block.type == "text")
