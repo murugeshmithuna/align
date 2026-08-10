@@ -1,41 +1,53 @@
 // Maps the free-text `muscle_group` strings written by the LLM's
 // generate_workout_plan tool (see backend/app/agent/tools.py - there's no
 // fixed catalog, the model can write "Chest", "Quadriceps", "Upper Back",
-// "core", etc. in whatever casing/phrasing it lands on) into one of a
-// small, fixed set of zone keys that MuscleBodyMap.jsx knows how to render.
-// Same fuzzy-keyword-matching spirit as LiveSession.jsx's matchExerciseConfig -
-// case-insensitive substring checks against a fixed internal set, no attempt
-// at exhaustive/exact enum matching.
+// "core", etc. in whatever casing/phrasing it lands on) into the muscle
+// identifiers `react-body-highlighter` understands (see MuscleBodyMap.jsx) -
+// keeping our own zone keys 1:1 with that library's names avoids a pointless
+// extra translation layer, since it's the only consumer. Same fuzzy-keyword-
+// matching spirit as LiveSession.jsx's matchExerciseConfig - case-insensitive
+// substring checks against a fixed internal set, no attempt at exhaustive/
+// exact enum matching.
+//
+// 'shoulders' is a synthetic zone (not one of the library's real muscle
+// names) - generic "Shoulders"/"Delts" text can't be reliably split into
+// front vs. rear deltoid from a muscle_group string alone, so MuscleBodyMap
+// expands it into 'front-deltoids' on the anterior view and 'back-deltoids'
+// on the posterior view rather than guessing which head was meant.
 
 export const MUSCLE_ZONES = [
   'chest',
   'shoulders',
   'biceps',
   'triceps',
-  'forearms',
+  'forearm',
   'abs',
-  'upperBack',
-  'lowerBack',
-  'glutes',
-  'quads',
-  'hamstrings',
+  'obliques',
+  'trapezius',
+  'upper-back',
+  'lower-back',
+  'gluteal',
+  'quadriceps',
+  'hamstring',
   'calves',
 ]
 
-// Ordered most-specific-first so e.g. "lower back" matches lowerBack before
-// a looser "back" keyword (checked later) could grab it as upperBack.
+// Ordered most-specific-first so e.g. "lower back" matches lower-back before
+// a looser "back" keyword (checked last) could grab it as upper-back.
 const KEYWORD_RULES = [
   { zone: 'chest', keywords: ['chest', 'pec'] },
   { zone: 'shoulders', keywords: ['shoulder', 'delt'] },
   { zone: 'triceps', keywords: ['tricep'] },
   { zone: 'biceps', keywords: ['bicep'] },
-  { zone: 'forearms', keywords: ['forearm'] },
-  { zone: 'abs', keywords: ['ab', 'core', 'oblique'] },
-  { zone: 'lowerBack', keywords: ['lower back', 'low back', 'lumbar'] },
-  { zone: 'upperBack', keywords: ['upper back', 'lat', 'trap', 'rhomboid', 'back'] },
-  { zone: 'glutes', keywords: ['glute'] },
-  { zone: 'quads', keywords: ['quad'] },
-  { zone: 'hamstrings', keywords: ['ham'] },
+  { zone: 'forearm', keywords: ['forearm'] },
+  { zone: 'obliques', keywords: ['oblique'] },
+  { zone: 'abs', keywords: ['ab', 'core'] },
+  { zone: 'lower-back', keywords: ['lower back', 'low back', 'lumbar'] },
+  { zone: 'trapezius', keywords: ['trap'] },
+  { zone: 'upper-back', keywords: ['upper back', 'lat', 'rhomboid', 'back'] },
+  { zone: 'gluteal', keywords: ['glute'] },
+  { zone: 'quadriceps', keywords: ['quad'] },
+  { zone: 'hamstring', keywords: ['ham'] },
   { zone: 'calves', keywords: ['calf', 'calve'] },
 ]
 
