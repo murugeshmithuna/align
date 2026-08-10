@@ -1,6 +1,17 @@
 import { Link } from 'react-router-dom'
+import AiCoreGlow from '../components/AiCoreGlow.jsx'
 import LiveSignalBg from '../components/LiveSignalBg.jsx'
 import { useSession } from '../context/SessionContext.jsx'
+
+// Real features only - no fabricated trust logos or stats. Mirrors the
+// visual rhythm of a typical landing-page "trusted by" row without
+// pretending to have partners/press this app doesn't have.
+const FEATURE_BADGES = [
+  { icon: '🧠', label: 'AI Coach' },
+  { icon: '📹', label: 'Live Form Tracking' },
+  { icon: '🍽️', label: 'Nutrition Analysis' },
+  { icon: '📊', label: 'Fatigue Modeling' },
+]
 
 // Marketing summary only - no cards, no links, nothing that renders a tool
 // or navigates anywhere on its own. Every feature has its own dedicated
@@ -43,6 +54,7 @@ export default function Landing() {
           tokens rather than by repeating the animated signal everywhere. */}
       <div className="relative overflow-hidden">
         <LiveSignalBg />
+        <AiCoreGlow className="opacity-80" />
 
         <header className="relative z-10 flex items-center justify-between px-6 md:px-12 py-6">
           <div className="flex items-center gap-2">
@@ -57,26 +69,49 @@ export default function Landing() {
           </Link>
         </header>
 
-        {/* Hero: website title first, tagline right under it, one clear CTA */}
+        {/* Hero: eyebrow tagline, bold benefit-led headline, one clear
+            primary CTA + a secondary anchor into the feature section below. */}
         <main className="relative z-10 flex flex-col items-center justify-center text-center px-6 py-20 md:py-28">
-          <h1 className="font-heading font-extrabold text-5xl md:text-7xl leading-tight">
-            AI Fitness Agent
-          </h1>
-          <p className="mt-4 max-w-2xl text-coral-400 text-lg md:text-xl font-heading font-semibold">
-            A coach that watches, listens, and adapts.
+          <p className="uppercase tracking-[0.25em] text-coral-400 text-xs md:text-sm font-heading font-semibold">
+            A coach that watches, listens, and adapts
           </p>
-          <p className="mt-5 max-w-xl text-slate-300 text-base md:text-lg">
+          <h1 className="mt-4 font-heading font-extrabold uppercase text-4xl sm:text-5xl md:text-7xl leading-[1.05] tracking-tight">
+            Train smarter.
+            <br />
+            Recover faster.
+            <br />
+            <span className="text-coral-400">Never guess again.</span>
+          </h1>
+          <p className="mt-6 max-w-xl text-slate-300 text-base md:text-lg">
             Onboard once, then let a multi-agent coach generate, adjust, and explain your training -
             grounded in your real logs, recovery, and daily readiness.
           </p>
 
-          <div className="mt-10">
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link
               to={primaryCta.to}
               className="px-8 py-3.5 rounded-full bg-coral-500 hover:bg-coral-600 transition-colors font-heading font-semibold shadow-lg shadow-coral-500/20 inline-block"
             >
               {primaryCta.label}
             </Link>
+            <a
+              href="#features"
+              className="px-8 py-3.5 rounded-full border border-forest-600 hover:border-coral-400 transition-colors font-heading font-semibold inline-block"
+            >
+              See what's inside
+            </a>
+          </div>
+
+          <div className="mt-14 flex flex-wrap items-center justify-center gap-2.5">
+            {FEATURE_BADGES.map((f) => (
+              <span
+                key={f.label}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-forest-700 bg-forest-900/60 text-xs md:text-sm text-slate-300"
+              >
+                <span>{f.icon}</span>
+                {f.label}
+              </span>
+            ))}
           </div>
         </main>
       </div>

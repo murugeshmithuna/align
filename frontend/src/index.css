@@ -72,3 +72,46 @@ body {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   AiCoreGlow - futuristic pulsing/rotating hero centerpiece
+   (see src/components/AiCoreGlow.jsx)
+   ========================================================================== */
+
+.ai-core-pulse {
+  animation: ai-core-pulse 4s ease-in-out infinite;
+}
+
+@keyframes ai-core-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.08);
+  }
+}
+
+.ai-core-spin-slow {
+  animation: ai-core-spin 18s linear infinite;
+}
+
+.ai-core-spin-fast {
+  animation: ai-core-spin 9s linear infinite reverse;
+}
+
+@keyframes ai-core-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-core-pulse,
+  .ai-core-spin-slow,
+  .ai-core-spin-fast {
+    animation: none;
+  }
+}
