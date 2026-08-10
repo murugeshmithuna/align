@@ -19,10 +19,14 @@ listens, and adapts.
 
 ROLE: The user's baseline training plan is generated automatically from their profile settings - you \
 are a fine-tuning assistant and Q&A expert, not the primary plan generator in normal conversation. Use \
-adjust_plan when the user wants to tweak their existing plan's future structure/prescription, \
-log_workout when the user reports a workout they ALREADY did (e.g. "log 3x10 squats at 135lb") so it's \
-recorded in their real history rather than changing what's planned next, generate_workout_plan only \
-when there's no active plan yet or they explicitly want a full replacement, ask_schedule for grounded \
+adjust_plan when the user wants to tweak their existing plan's future structure/prescription (its \
+`additions` field adds a brand-new exercise the plan doesn't already have; its `updates` field changes \
+sets/reps/weight/day of an exercise already on the plan - never confuse the two), log_workout when the \
+user reports a workout they ALREADY did (e.g. "log 3x10 squats at 135lb") so it's recorded in their real \
+history rather than changing what's planned next, update_log when they want to correct a specific entry \
+already in their real activity log (context below), delete_log when they want one removed entirely, \
+generate_workout_plan only when there's no active plan yet or they explicitly want a full replacement, \
+ask_schedule for grounded \
 scheduling questions ("when should I train legs again?", "what's next?"), suggest_supplements for \
 supplement questions, analyze_form for squat-form questions ("how was my squat form?", "what should I \
 work on?"), ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating enough?"), \
@@ -121,9 +125,9 @@ ROUTING_TOOL = {
     "name": "route_to_tool",
     "description": (
         "Call this ONLY if the user's request requires generate_workout_plan, adjust_plan, log_workout, "
-        "suggest_supplements, ask_schedule, analyze_form, or ask_nutrition - i.e. it needs a database "
-        "change or a grounded data lookup. For general conversation, questions, or advice that doesn't "
-        "need one of those, do not call this - just answer directly with text instead."
+        "update_log, delete_log, suggest_supplements, ask_schedule, analyze_form, or ask_nutrition - i.e. "
+        "it needs a database change or a grounded data lookup. For general conversation, questions, or "
+        "advice that doesn't need one of those, do not call this - just answer directly with text instead."
     ),
     "input_schema": {
         "type": "object",
@@ -134,6 +138,8 @@ ROUTING_TOOL = {
                     "generate_workout_plan",
                     "adjust_plan",
                     "log_workout",
+                    "update_log",
+                    "delete_log",
                     "suggest_supplements",
                     "ask_schedule",
                     "analyze_form",
@@ -187,6 +193,41 @@ def _build_plan_context(db: Session, user_id: int) -> str:
         f"Weekly schedule:\n{schedule}\n"
         f"When calling adjust_plan, only ever reference plan_exercise_id values listed above - never invent "
         f"one, and never describe or act on an exercise that isn't in this exact list."
+    )
+
+
+def _build_recent_logs_context(db: Session, user_id: int) -> str:
+    """Real log_id values for the last 7 days of logged workouts - update_log
+    and delete_log both need a real ID to target, the same reason
+    _build_plan_context lists plan_exercise_id values above. Without this,
+    "update today's squat log" has no real ID to act on and either silently
+    fails or gets guessed, exactly the bug class plan_exercise_id fixed for
+    adjust_plan."""
+    since = _utcnow() - timedelta(days=7)
+    logs = db.scalars(
+        select(models.WorkoutLog)
+        .where(models.WorkoutLog.user_id == user_id, models.WorkoutLog.performed_at >= since)
+        .order_by(models.WorkoutLog.performed_at.desc())
+    ).all()
+    if not logs:
+        return "Recent activity log: no workouts logged in the last 7 days."
+
+    by_day: dict[str, list[str]] = {}
+    for log in logs:
+        day_label = log.performed_at.strftime("%A %Y-%m-%d")
+        detail = f"{log.exercise.name} ({log.sets}x{log.reps}"
+        if log.weight:
+            detail += f" @ {log.weight}"
+        detail += f", log_id={log.id})"
+        by_day.setdefault(day_label, []).append(detail)
+    schedule = "\n".join(f"- {day}: {', '.join(entries)}" for day, entries in by_day.items())
+
+    return (
+        f"Recent activity log (last 7 days, real entries the user already logged):\n{schedule}\n"
+        f"When calling update_log or delete_log, only ever reference log_id values listed above - never "
+        f"invent one. Use update_log to correct/change a specific entry (e.g. 'that was actually 5 sets "
+        f"not 3'), delete_log to remove one entirely (e.g. 'I didn't actually do that'), and log_workout "
+        f"to record something new that isn't in this list yet."
     )
 
 
@@ -288,7 +329,7 @@ def run_agent_turn(db: Session, user_id: int, message: str, history: list[dict] 
     user = _get_user_or_raise(db, user_id)
     system_prompt = (
         f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
-        f"{_build_checkin_context(db, user_id)}"
+        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}"
     )
 
     history = list(history or [])
@@ -412,7 +453,7 @@ def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dic
 
     system_prompt = (
         f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
-        f"{_build_checkin_context(db, user_id)}"
+        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}"
     )
 
     history = list(history or [])
