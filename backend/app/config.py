@@ -22,6 +22,19 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 
+# The frontend's own origin - used to build the redirect target at the end
+# of the server-side Google OAuth flow (routers/auth.py's /auth/google/start
+# and /auth/google/callback). Defaults to the local Vite dev server.
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+# Signs the `state` param on the server-side Google OAuth redirect flow so
+# /auth/google/callback can confirm a request genuinely followed one this
+# server issued, without needing any server-side session store or cookie -
+# falls back to the Google client secret (already a real secret present in
+# this environment) so this works out of the box without a second env var,
+# but can be overridden with its own dedicated value.
+OAUTH_STATE_SECRET = os.getenv("OAUTH_STATE_SECRET") or GOOGLE_CLIENT_SECRET or ""
+
 # Admin panel access - comma-separated allowlist of emails permitted to hit
 # GET /admin/* (every registered user's data). The app has no session/token
 # system yet (see routers/users.py) - every endpoint trusts whatever user_id

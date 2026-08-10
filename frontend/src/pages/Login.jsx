@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { GoogleLogin } from '@react-oauth/google'
-import { api } from '../api.js'
+import { API_BASE_URL, api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
@@ -31,11 +30,14 @@ export default function Login() {
     }
   }
 
-  // Google's redirect flow (see below) lands back here with ?uid=.../
-  // ?is_new=... (set by frontend/api/google-redirect.js after it verifies
-  // the credential server-side) or ?google_error=... on failure - not a
-  // popup callback. Reuses the exact same enterAs() bridge the plain-login
-  // path uses, so there's no second session mechanism to maintain.
+  // The backend's server-side Google OAuth redirect flow (GET /auth/google/
+  // start -> Google consent screen -> GET /auth/google/callback) lands back
+  // here with ?uid=.../?is_new=... on success or ?google_error=... on
+  // failure - a plain top-level navigation, not a popup callback and not
+  // dependent on any Google-set cookie (see routers/auth.py for why that
+  // matters - it's what actually fixed Safari). Reuses the exact same
+  // enterAs() bridge the plain-login path uses, so there's no second
+  // session mechanism to maintain.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const uid = params.get('uid')
@@ -84,17 +86,27 @@ export default function Login() {
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
         <div className="mb-6 flex justify-center">
-          {/* Redirect flow (full-page navigation), not the default popup +
-              postMessage flow - Safari's Intelligent Tracking Prevention
-              blocks that handshake by default, confirmed live (sign-in got
-              stuck on the account picker until third-party tracking
-              protection was manually disabled). A redirect isn't subject to
-              that restriction at all, and works the same for every browser. */}
-          <GoogleLogin
-            ux_mode="redirect"
-            login_uri={`${window.location.origin}/api/google-redirect`}
-            onError={() => setError('Google sign-in failed - please try again.')}
-          />
+          {/* A plain top-level navigation straight to the backend, which
+              redirects to Google's own consent screen - the classic server-
+              side OAuth flow, not Google's Identity Services JS widget. No
+              Google-hosted script ever runs on this page, so there's no
+              Google-set cookie for Safari's tracking prevention to block -
+              confirmed as the real fix after the popup flow and then the
+              GIS redirect flow (which still depended on a Google-set
+              g_csrf_token cookie under the hood) both failed for real users
+              on Safari. */}
+          <a
+            href={`${API_BASE_URL}/auth/google/start`}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-white text-slate-900 text-sm font-semibold hover:bg-slate-100 transition-colors"
+          >
+            <svg viewBox="0 0 48 48" className="w-4 h-4" aria-hidden="true">
+              <path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z" />
+              <path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z" />
+              <path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z" />
+              <path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z" />
+            </svg>
+            Sign in with Google
+          </a>
         </div>
 
         <div className="flex items-center gap-3 mb-6">
