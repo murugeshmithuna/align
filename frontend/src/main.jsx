@@ -1,25 +1,21 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import { GoogleOAuthProvider } from '@react-oauth/google'
 import './index.css'
 import App from './App.jsx'
 import { SessionProvider } from './context/SessionContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
-
-// If VITE_GOOGLE_CLIENT_ID isn't set (e.g. local dev without a .env), this
-// still renders the rest of the app - only the Google button on Login.jsx
-// is affected, everything else works exactly as before Google sign-in existed.
+// Google sign-in is now a plain link straight to the backend's server-side
+// OAuth redirect flow (see Login.jsx / backend/app/routers/auth.py) - no
+// Google Identity Services JS SDK runs on this page at all anymore, so
+// there's no provider/client-id wiring needed here.
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter>
       <ToastProvider>
         <SessionProvider>
-          <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-            <App />
-          </GoogleOAuthProvider>
+          <App />
         </SessionProvider>
       </ToastProvider>
     </BrowserRouter>
