@@ -64,6 +64,7 @@ const PRIMARY_TABS = [
 const MORE_LINKS = [
   { to: '/workout/log', label: 'Log Workout' },
   { to: '/nutrition/calculator', label: 'Macro Calculator' },
+  { to: '/calendar', label: 'Calendar' },
   { to: '/coach-resolution', label: 'Coach Resolution' },
   { to: '/profile', label: 'Profile Settings' },
   { to: '/admin', label: 'Admin' },
