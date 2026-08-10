@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useToast } from '../context/ToastContext.jsx'
 import ExerciseMuscleModal from '../components/ExerciseMuscleModal.jsx'
 import { classifyMuscleGroup } from '../utils/muscleZones.js'
+import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -38,13 +39,32 @@ export default function PlanDetail() {
   // scoped to just the one exercise the user clicked.
   const [muscleModalExercise, setMuscleModalExercise] = useState(null)
 
-  useEffect(() => {
+  const loadPlan = useCallback(() => {
     setLoading(true)
     api
       .getPlan(planId)
       .then(setPlan)
       .catch(() => setError('Could not load this plan.'))
       .finally(() => setLoading(false))
+  }, [planId])
+
+  useEffect(() => {
+    loadPlan()
+  }, [loadPlan])
+
+  // The AI Coach can add/adjust exercises on this exact plan from its
+  // floating drawer, which is mounted completely separately from this page -
+  // without this, a confirmed "Added X to your plan" reply left this page
+  // showing the pre-change plan until a manual reload (reproduced live).
+  // Silent - a background refresh while the user is mid-read shouldn't
+  // interrupt them with a loading flash, so this bypasses setLoading/setPlan's
+  // usual loading state.
+  useEffect(() => {
+    function handleCoachChange() {
+      api.getPlan(planId).then(setPlan).catch(() => {})
+    }
+    window.addEventListener(COACH_DATA_CHANGED_EVENT, handleCoachChange)
+    return () => window.removeEventListener(COACH_DATA_CHANGED_EVENT, handleCoachChange)
   }, [planId])
 
   async function handleActivate() {
