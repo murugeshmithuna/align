@@ -53,6 +53,7 @@ export const api = {
   saveProfile: (payload) => request('/user/profile', { method: 'POST', body: JSON.stringify(payload) }),
 
   getTodaysCheckin: (userId) => request(`/user/checkin/today/${userId}`),
+  getCheckinHistory: (userId) => request(`/user/checkin/history/${userId}`),
   submitCheckin: (payload) => request('/user/checkin', { method: 'POST', body: JSON.stringify(payload) }),
 
   listPlans: (userId) => request(`/plans/user/${userId}`),

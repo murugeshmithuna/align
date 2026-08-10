@@ -13,6 +13,7 @@ import NutritionCalculator from './pages/NutritionCalculator.jsx'
 import PlanList from './pages/PlanList.jsx'
 import PlanDetail from './pages/PlanDetail.jsx'
 import WorkoutLog from './pages/WorkoutLog.jsx'
+import Calendar from './pages/Calendar.jsx'
 import Admin from './pages/Admin.jsx'
 import AdminUserDetail from './pages/AdminUserDetail.jsx'
 
@@ -29,6 +30,7 @@ function App() {
         <Route path="/workout/live" element={<LiveSession />} />
         <Route path="/workout/log" element={<WorkoutLog />} />
         <Route path="/analytics" element={<Progress />} />
+        <Route path="/calendar" element={<Calendar />} />
         <Route path="/coach-resolution" element={<CoachResolution />} />
         <Route path="/nutrition" element={<MealPhoto />} />
         <Route path="/nutrition/calculator" element={<NutritionCalculator />} />

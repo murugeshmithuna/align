@@ -52,3 +52,19 @@ def get_todays_checkin(user_id: int, db: Session = Depends(get_db)):
     if not checkin:
         raise HTTPException(status_code=404, detail="No check-in submitted today")
     return checkin
+
+
+@router.get("/checkin/history/{user_id}", response_model=list[schemas.CheckInOut])
+def get_checkin_history(user_id: int, db: Session = Depends(get_db)):
+    """Every check-in a user has ever submitted, most recent first - unlike
+    /checkin/today (single row, 404 if unset), this is a read-only list used
+    by the Calendar page to mark which past days had a readiness check-in."""
+    if not db.get(models.User, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    stmt = (
+        select(models.CheckIn)
+        .where(models.CheckIn.user_id == user_id)
+        .order_by(models.CheckIn.checkin_date.desc())
+    )
+    return db.scalars(stmt).all()
