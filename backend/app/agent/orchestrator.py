@@ -62,6 +62,18 @@ present_choice when something is truly impossible to proceed without (e.g. the r
 open-ended, like "give me a session" with no other detail); in every other case, act first and explain \
 your choice afterward in at most one sentence.
 
+SAFETY CHECK. Before applying any request, weigh it against the real facts you're given below - \
+bodyweight/height/age, experience level, noted physical limitations, and recent soreness/injury notes. If \
+a request is inconsistent with those facts - a load or volume implausible for this person's bodyweight/ \
+experience (e.g. a beginner asking for a 300kg squat), an exercise that stresses a noted physical \
+limitation, or adding/increasing volume on a muscle group with a severity 4-5 soreness note in the last \
+few days - do NOT silently comply as if nothing's unusual. Say so plainly in one short sentence citing the \
+specific fact (their bodyweight, the limitation, the soreness note), then either apply a sensible, safer \
+version and explain what you changed and why, or if it's a genuine safety concern (not just a stretch \
+goal), use present_choice to confirm before applying anything. Never invent a precise medical/physiological \
+threshold you don't actually have - reason from the concrete facts provided, and if you're genuinely \
+unsure whether something is advisable, say that honestly rather than asserting false confidence either way.
+
 Today's plan status (see context below) may already be auto-adjusted based on a low readiness score \
 before the user ever opens chat: a low score (1-2) means today's baseline routine has already been \
 marked "Scaled Down" or "Rest / Mobility" in the database, with no chat message required. If the user \
@@ -161,13 +173,24 @@ def _build_profile_context(user: models.User) -> str:
     equipment = ", ".join(user.available_equipment) or "not specified"
     goals = ", ".join(user.primary_goals) or "not specified"
     frequency = f"{user.target_frequency} days/week" if user.target_frequency else "not specified"
+    # height_cm/weight_kg/age were previously omitted from this context
+    # entirely - the model had no way to judge whether a requested load/
+    # volume was even plausible for THIS person (e.g. a 500kg deadlift
+    # request from a 60kg-bodyweight beginner) since it never knew their
+    # bodyweight or age in the first place. Included here so the SAFETY
+    # CHECK instruction below has something concrete to reason against.
+    body = (
+        f"{user.weight_kg}kg" if user.weight_kg else "not specified",
+        f"{user.height_cm}cm" if user.height_cm else "not specified",
+    )
     return (
         "User onboarding profile (do not ask the user to repeat any of this):\n"
         f"- Experience level: {user.experience_level or 'not specified'}\n"
         f"- Target training frequency: {frequency}\n"
         f"- Available equipment: {equipment}\n"
         f"- Primary goals: {goals}\n"
-        f"- Physical limitations: {user.physical_limitations or 'none noted'}"
+        f"- Physical limitations: {user.physical_limitations or 'none noted'}\n"
+        f"- Bodyweight: {body[0]}, Height: {body[1]}, Age: {user.age or 'not specified'}"
     )
 
 
@@ -269,6 +292,35 @@ def _build_checkin_context(db: Session, user_id: int) -> str:
     )
 
 
+def _build_soreness_context(db: Session, user_id: int) -> str:
+    """Previously only visible to the model via the suggest_supplements tool
+    (a gathered fact list returned on-demand) - meaning a request unrelated
+    to supplements (e.g. "add heavy squats today") could be applied with zero
+    awareness of a severity-5 quad soreness note logged yesterday. Injected
+    unconditionally now, alongside profile/plan/check-in context, so the
+    SAFETY CHECK instruction below always has real soreness data to weigh a
+    request against - not just when the user happens to ask about
+    supplements."""
+    since = _utcnow() - timedelta(days=14)
+    notes = db.scalars(
+        select(models.SorenessNote)
+        .where(models.SorenessNote.user_id == user_id, models.SorenessNote.noted_at >= since)
+        .order_by(models.SorenessNote.noted_at.desc())
+    ).all()
+    if not notes:
+        return "Recent soreness/injury notes: none logged in the last 14 days."
+    lines = "\n".join(
+        f"- {n.noted_at.strftime('%Y-%m-%d')}: {n.muscle_group}, severity {n.severity}/5"
+        + (f" ({n.notes})" if n.notes else "")
+        for n in notes
+    )
+    return (
+        f"Recent soreness/injury notes (last 14 days, real logged entries):\n{lines}\n"
+        "A severity 4-5 note for a muscle group is a real signal, not background trivia - weigh it before "
+        "adding/increasing volume or intensity for that same muscle group."
+    )
+
+
 # The SDK's own default is a 600s read timeout (anthropic._constants.
 # DEFAULT_TIMEOUT) - a hung/slow upstream response (the Manifest proxy this
 # project routes through, or Anthropic's API itself) could leave a call
@@ -351,7 +403,8 @@ def run_agent_turn(db: Session, user_id: int, message: str, history: list[dict] 
     user = _get_user_or_raise(db, user_id)
     system_prompt = (
         f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
-        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}"
+        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}\n\n"
+        f"{_build_soreness_context(db, user_id)}"
     )
 
     history = list(history or [])
@@ -475,7 +528,8 @@ def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dic
 
     system_prompt = (
         f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
-        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}"
+        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}\n\n"
+        f"{_build_soreness_context(db, user_id)}"
     )
 
     history = list(history or [])
