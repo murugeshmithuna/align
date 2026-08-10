@@ -309,7 +309,7 @@ function buildNutritionAuditPdf(review) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(20)
   doc.setTextColor(...CORAL)
-  doc.text('AI Fitness Agent', marginX, y)
+  doc.text('ALIGN', marginX, y)
   y += 8
 
   doc.setFont('helvetica', 'normal')

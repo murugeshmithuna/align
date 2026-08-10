@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import AlignWordmark from './AlignWordmark.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
 // Horizontal header-style links, restored per explicit direction after
@@ -95,8 +96,7 @@ export default function Navbar() {
     <nav className="bg-coral-500">
       <div className="flex items-center gap-4 md:gap-6 px-4 md:px-8 py-3">
         <div className="flex items-center gap-2 shrink-0">
-          <span className="w-2.5 h-2.5 rounded-full bg-forest-950" />
-          <span className="font-heading font-bold tracking-tight text-sm md:text-base whitespace-nowrap">AI Fitness Agent</span>
+          <AlignWordmark className="font-heading font-bold tracking-tight text-sm md:text-base" size="1.15em" />
         </div>
 
         <div className="hidden md:flex items-center gap-x-3 xl:gap-x-5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
