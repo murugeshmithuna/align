@@ -159,6 +159,21 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
     setIngredients((prev) => [...prev, { name: '', quantity: '', calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }])
   }
 
+  // Guards against an out-of-order network response overwriting a newer
+  // edit's result. Real race caught via live request/response tracing: a
+  // fast edit-name-then-edit-quantity sequence (well within human/careless-
+  // user typing speed) can fire TWO overlapping estimate-ingredient requests
+  // for the same row - one from the name edit's debounce timer firing before
+  // the quantity edit even lands, one from the immediate blur-triggered
+  // call - and network/model latency gives no guarantee the more-recent
+  // request's response arrives last. Without this guard, the older
+  // (semantically stale) response landing after the newer one silently wins,
+  // showing macros that don't match what's actually in the name/quantity
+  // fields with no visible indication anything went wrong. Each call is
+  // tagged with an incrementing per-row sequence number; a response only
+  // gets applied if no newer request has been issued for that row since.
+  const requestSeqRef = useRef({})
+
   // Re-estimates one row's macros so the (read-only) numbers and the total
   // stay accurate. Reads from ingredientsRef (not the `ingredients` state
   // variable) so a debounced call firing later always sees the latest edit,
@@ -169,9 +184,14 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
   async function estimateRow(index) {
     const ing = ingredientsRef.current[index]
     if (!ing || !ing.name?.trim() || !ing.quantity?.trim()) return
+    const seq = (requestSeqRef.current[index] || 0) + 1
+    requestSeqRef.current[index] = seq
     setEstimatingIndex(index)
     try {
       const est = await api.estimateIngredient({ name: ing.name.trim(), quantity: ing.quantity.trim() })
+      // A newer request for this same row was issued while this one was in
+      // flight - that one is the source of truth now, discard this result.
+      if (requestSeqRef.current[index] !== seq) return
       const next = ingredientsRef.current.map((row, i) =>
         i === index
           ? { ...row, calories: est.calories, protein_g: est.protein_g, carbs_g: est.carbs_g, fat_g: est.fat_g }
@@ -180,7 +200,9 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
       ingredientsRef.current = next
       setIngredients(next)
     } catch (err) {
-      showToast(`Couldn't recalculate "${ing.name}": ${err.message}`, 'error')
+      if (requestSeqRef.current[index] === seq) {
+        showToast(`Couldn't recalculate "${ing.name}": ${err.message}`, 'error')
+      }
     } finally {
       setEstimatingIndex((cur) => (cur === index ? null : cur))
     }
