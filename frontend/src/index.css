@@ -137,3 +137,38 @@ body {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   Profile wizard - step transition + hidden scrollbars for WheelPicker
+   (see src/pages/Profile.jsx, src/components/WheelPicker.jsx)
+   ========================================================================== */
+
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes wizard-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.wizard-step {
+  animation: wizard-step-in 0.32s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wizard-step {
+    animation: none;
+  }
+}
