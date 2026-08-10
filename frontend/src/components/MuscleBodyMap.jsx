@@ -15,17 +15,22 @@
 
 const MATCHED_FILL = 'rgba(198, 255, 61, 0.55)' // coral-500 @ ~55% opacity
 const MATCHED_STROKE = '#c6ff3d' // coral-500
-const IDLE_FILL = 'rgba(69, 69, 76, 0.25)' // forest-600 @ low opacity
-const IDLE_STROKE = '#45454c' // forest-600
-const STRUCTURE_STROKE = '#323238' // forest-700, for non-zone body outline
+const STRUCTURE_STROKE = '#323238' // forest-700, for the body outline
 const DETAIL_STROKE = 'rgba(50, 50, 56, 0.6)' // forest-700, faint anatomical detail lines
 
+// An untargeted zone renders as nothing at all (no fill, no stroke) - the
+// reference diagram shows a plain, unbroken body outline for every
+// untrained region, not a dim marker. Drawing every zone shape at low
+// opacity regardless of state (the previous approach) is what made this
+// read as a jointed mannequin - a visible dim capsule/ellipse sitting at
+// every shoulder/elbow/hip/knee looks exactly like a ball-joint. Only a
+// targeted zone should ever be visible, appearing as a color patch on top
+// of the plain silhouette rather than one of many always-present parts.
 function Zone({ zoneKey, targeted, shape, ...props }) {
   const isOn = targeted.has(zoneKey)
-  const fill = isOn ? MATCHED_FILL : IDLE_FILL
-  const stroke = isOn ? MATCHED_STROKE : IDLE_STROKE
+  if (!isOn) return null
   const Tag = shape
-  return <Tag fill={fill} stroke={stroke} strokeWidth="1.5" {...props} />
+  return <Tag fill={MATCHED_FILL} stroke={MATCHED_STROKE} strokeWidth="1.5" {...props} />
 }
 
 // Shared silhouette geometry - identical between front/back views (a body's
