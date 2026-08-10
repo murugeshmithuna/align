@@ -99,7 +99,7 @@ export default function Navbar() {
           <AlignWordmark className="font-heading font-bold tracking-tight text-sm md:text-base" size="1.15em" />
         </div>
 
-        <div className="hidden md:flex items-center gap-x-3 xl:gap-x-5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+        <div className="hidden md:flex items-center gap-x-3 xl:gap-x-5 overflow-x-auto no-scrollbar">
           {LINKS.map((link) => (
             <NavLink
               key={link.to}
