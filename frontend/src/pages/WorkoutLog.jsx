@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
@@ -28,6 +28,23 @@ function ChevronRightIcon({ className }) {
   return (
     <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
       <path d="M7 4l6 6-6 6" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function ChevronDownIcon({ className }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className={className} aria-hidden="true">
+      <path d="M5 7.5l5 5 5-5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function SearchIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
     </svg>
   )
 }
@@ -151,6 +168,153 @@ function LogCard({ log }) {
   )
 }
 
+// A native <select>'s dropdown list is rendered by the OS/browser chrome,
+// not by this app's CSS - on Safari/macOS it's a plain light-gray system
+// popup with no way to theme it dark, which is exactly what "the scroll
+// doesn't match the theme of the app" was reporting. Replaced with a plain
+// div-based custom dropdown (this app's existing pattern - see
+// ProfileMenu in Navbar.jsx) rendered entirely in this app's own markup,
+// so full styling control comes for free.
+//
+// Defaults to a short "Today's plan" list (today's real scheduled
+// exercises, not the entire catalog) with an explicit tab to switch to
+// "Different workout" (the full searchable catalog) - avoids forcing a
+// scroll through 40+ exercises for the common case of logging exactly
+// what was already planned for today.
+function ExercisePicker({ exercises, todaysExercises, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [tab, setTab] = useState(todaysExercises.length > 0 ? 'today' : 'all')
+  const [query, setQuery] = useState('')
+  const containerRef = useRef(null)
+
+  useEffect(() => {
+    if (todaysExercises.length > 0) setTab('today')
+  }, [todaysExercises.length])
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const selected = exercises.find((ex) => String(ex.id) === String(value))
+  const filteredAll = query.trim()
+    ? exercises.filter((ex) => ex.name.toLowerCase().includes(query.trim().toLowerCase()))
+    : exercises
+
+  function selectExercise(id) {
+    onChange(String(id))
+    setOpen(false)
+    setQuery('')
+  }
+
+  return (
+    <div className="relative" ref={containerRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm text-left hover:border-forest-600 transition-colors"
+      >
+        <span className={`truncate ${selected ? '' : 'text-slate-500'}`}>
+          {selected ? selected.name : 'Choose an exercise'}
+        </span>
+        <ChevronDownIcon className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1.5 w-full rounded-xl border border-forest-700 bg-forest-900 shadow-2xl overflow-hidden">
+          {todaysExercises.length > 0 && (
+            <div className="flex border-b border-forest-800">
+              <button
+                type="button"
+                onClick={() => setTab('today')}
+                className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
+                  tab === 'today' ? 'text-coral-400 border-b-2 border-coral-400' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Today's plan
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab('all')}
+                className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
+                  tab === 'all' ? 'text-coral-400 border-b-2 border-coral-400' : 'text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                Different workout
+              </button>
+            </div>
+          )}
+
+          {tab === 'all' && (
+            <div className="p-2 border-b border-forest-800">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-forest-950 border border-forest-700">
+                <SearchIcon className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search exercises…"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-slate-500"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="max-h-56 overflow-y-auto py-1">
+            {tab === 'today'
+              ? todaysExercises.map((pe) => (
+                  <button
+                    key={pe.id}
+                    type="button"
+                    onClick={() => selectExercise(pe.exercise_id)}
+                    className={`w-full flex items-center justify-between gap-2 text-left px-3 py-2 text-sm transition-colors ${
+                      String(pe.exercise_id) === String(value)
+                        ? 'text-coral-400 font-semibold bg-forest-800/60'
+                        : 'text-slate-200 hover:bg-forest-800/60'
+                    }`}
+                  >
+                    <span className="truncate">{pe.exercise.name}</span>
+                    {pe.sets && pe.reps && (
+                      <span className="text-[11px] text-slate-500 shrink-0 tabular-nums">
+                        {pe.sets}×{pe.reps}
+                      </span>
+                    )}
+                  </button>
+                ))
+              : filteredAll.length === 0
+                ? (
+                    <p className="px-3 py-3 text-xs text-slate-500 text-center">
+                      No matches - use "+ New" to add it.
+                    </p>
+                  )
+                : filteredAll.map((ex) => (
+                    <button
+                      key={ex.id}
+                      type="button"
+                      onClick={() => selectExercise(ex.id)}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors truncate ${
+                        String(ex.id) === String(value)
+                          ? 'text-coral-400 font-semibold bg-forest-800/60'
+                          : 'text-slate-200 hover:bg-forest-800/60'
+                      }`}
+                    >
+                      {ex.name}
+                    </button>
+                  ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function WorkoutLog() {
   const { userId } = useSession()
   const { showToast } = useToast()
@@ -158,16 +322,23 @@ export default function WorkoutLog() {
   const [exercises, setExercises] = useState([])
   const [logs, setLogs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [todaysExercises, setTodaysExercises] = useState([])
 
   const [exerciseId, setExerciseId] = useState('')
   const [newExerciseName, setNewExerciseName] = useState('')
   const [showNewExercise, setShowNewExercise] = useState(false)
+  const [creatingExercise, setCreatingExercise] = useState(false)
+  const [newExerciseError, setNewExerciseError] = useState('')
   const [sets, setSets] = useState(3)
   const [reps, setReps] = useState(10)
   const [weight, setWeight] = useState('')
   const [rpe, setRpe] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  // Set only by an explicit user pick (see handleExerciseChange) - the
+  // default-selection effect below must never clobber a real choice once
+  // the user has made one, even if today's plan finishes loading afterward.
+  const hasUserPickedRef = useRef(false)
 
   const loadLogs = useCallback(() => {
     api.listLogs(userId).then(setLogs).catch(() => {})
@@ -178,11 +349,47 @@ export default function WorkoutLog() {
       .then(([exerciseList, logList]) => {
         setExercises(exerciseList)
         setLogs(logList)
-        if (exerciseList.length > 0) setExerciseId(String(exerciseList[0].id))
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [userId])
+
+  // Real day-wise scheduling, not the entire exercise catalog dumped into
+  // one control - a direct request: "i have a listed activity plan day wise
+  // for a reason so the log page [should have] the same list of exercise
+  // that a user can select". Mirrors the same active-plan + today's-
+  // day-of-week filter LiveSession.jsx already uses for its own picker.
+  useEffect(() => {
+    api
+      .listPlans(userId)
+      .then((plans) => {
+        const active = plans.find((p) => p.is_active)
+        if (!active) return
+        const today = (new Date().getDay() + 6) % 7 // JS getDay(): 0=Sun..6=Sat -> 0=Mon..6=Sun
+        const scheduled = active.plan_exercises
+          .filter((pe) => pe.day_of_week === today)
+          .sort((a, b) => a.order_index - b.order_index)
+        setTodaysExercises(scheduled)
+      })
+      .catch(() => {})
+  }, [userId])
+
+  // Defaults to today's first planned exercise once it's known, falling
+  // back to the first catalog exercise only if nothing's scheduled today -
+  // never overrides an exercise the user actually picked themselves.
+  useEffect(() => {
+    if (hasUserPickedRef.current) return
+    if (todaysExercises.length > 0) {
+      setExerciseId(String(todaysExercises[0].exercise_id))
+    } else if (exercises.length > 0) {
+      setExerciseId((current) => current || String(exercises[0].id))
+    }
+  }, [todaysExercises, exercises])
+
+  function handleExerciseChange(id) {
+    hasUserPickedRef.current = true
+    setExerciseId(id)
+  }
 
   // The AI Coach can log/correct/delete entries from its own floating
   // drawer, mounted separately from this page - refetch the recent-logs
@@ -204,26 +411,42 @@ export default function WorkoutLog() {
     return { sessionCount: recent.length, setsCount, calories }
   }, [logs])
 
+  // A brand-new exercise name is validated and created immediately, right
+  // where the user typed it - not deferred to the final "Log set" submit.
+  // Real user report this addresses directly: "what if i enter
+  // bananasmoothie? coz thats not a real workout so validation is also
+  // mandatory" - the backend's POST /exercises now rejects non-exercise
+  // names with a 422 (see backend/app/agent/exercise_validation.py); this
+  // surfaces that rejection inline instead of only failing at the very end.
+  async function handleAddNewExercise() {
+    const trimmed = newExerciseName.trim()
+    if (!trimmed) return
+    setCreatingExercise(true)
+    setNewExerciseError('')
+    try {
+      const created = await api.createExercise({ name: trimmed })
+      setExercises((prev) => [...prev, created])
+      handleExerciseChange(String(created.id))
+      setShowNewExercise(false)
+      setNewExerciseName('')
+    } catch (err) {
+      setNewExerciseError(err.message)
+    } finally {
+      setCreatingExercise(false)
+    }
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
+    if (!exerciseId) {
+      showToast('Pick or create an exercise first', 'error')
+      return
+    }
     setSaving(true)
     try {
-      let targetExerciseId = exerciseId ? Number(exerciseId) : null
-
-      if (showNewExercise && newExerciseName.trim()) {
-        const created = await api.createExercise({ name: newExerciseName.trim() })
-        targetExerciseId = created.id
-        setExercises((prev) => [...prev, created])
-      }
-
-      if (!targetExerciseId) {
-        showToast('Pick or create an exercise first', 'error')
-        return
-      }
-
       const log = await api.createLog({
         user_id: userId,
-        exercise_id: targetExerciseId,
+        exercise_id: Number(exerciseId),
         sets: Number(sets),
         reps: Number(reps),
         weight: weight === '' ? null : Number(weight),
@@ -232,8 +455,6 @@ export default function WorkoutLog() {
       })
       setLogs((prev) => [log, ...prev])
       setNotes('')
-      setShowNewExercise(false)
-      setNewExerciseName('')
       showToast('Set logged.')
     } catch (err) {
       showToast(err.message, 'error')
@@ -341,19 +562,14 @@ export default function WorkoutLog() {
           </label>
           {!showNewExercise ? (
             <div className="flex gap-2">
-              <select
-                id="exercise"
-                value={exerciseId}
-                onChange={(e) => setExerciseId(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-              >
-                {exercises.length === 0 && <option value="">No exercises yet</option>}
-                {exercises.map((ex) => (
-                  <option key={ex.id} value={ex.id}>
-                    {ex.name}
-                  </option>
-                ))}
-              </select>
+              <div className="flex-1 min-w-0">
+                <ExercisePicker
+                  exercises={exercises}
+                  todaysExercises={todaysExercises}
+                  value={exerciseId}
+                  onChange={handleExerciseChange}
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => setShowNewExercise(true)}
@@ -363,22 +579,40 @@ export default function WorkoutLog() {
               </button>
             </div>
           ) : (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="New exercise name"
-                value={newExerciseName}
-                onChange={(e) => setNewExerciseName(e.target.value)}
-                className="flex-1 px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-                autoFocus
-              />
-              <button
-                type="button"
-                onClick={() => setShowNewExercise(false)}
-                className="px-3 py-2 rounded-xl border border-forest-600 text-xs font-semibold"
-              >
-                Cancel
-              </button>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="New exercise name"
+                  value={newExerciseName}
+                  onChange={(e) => {
+                    setNewExerciseName(e.target.value)
+                    setNewExerciseError('')
+                  }}
+                  className="flex-1 px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={handleAddNewExercise}
+                  disabled={creatingExercise || !newExerciseName.trim()}
+                  className="px-3 py-2 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
+                >
+                  {creatingExercise ? 'Checking…' : 'Add'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNewExercise(false)
+                    setNewExerciseName('')
+                    setNewExerciseError('')
+                  }}
+                  className="px-3 py-2 rounded-xl border border-forest-600 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+              {newExerciseError && <p className="text-xs text-red-400">{newExerciseError}</p>}
             </div>
           )}
         </div>
