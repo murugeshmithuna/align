@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import CheckinModal from '../components/CheckinModal.jsx'
 import MacroBar from '../components/MacroBar.jsx'
+import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
@@ -211,26 +212,20 @@ export default function Dashboard() {
         {/* Weekly Progress / Nutrition Snapshot */}
         <div className="card p-6">
           <h2 className="font-heading font-semibold mb-3">This week</h2>
-          <div className="mb-4">
-            <div className="flex items-baseline justify-between mb-1">
-              <span className="text-xs text-slate-500">Workouts</span>
-              <span className="text-sm font-semibold tabular-nums">
-                {workoutsThisWeek}
-                {profile?.target_frequency ? ` / ${profile.target_frequency} days` : ' days logged'}
-              </span>
-            </div>
-            <div className="h-2 rounded-full bg-forest-900 overflow-hidden">
-              <div
-                className="h-full bg-coral-500 rounded-full transition-all"
-                style={{
-                  width: profile?.target_frequency
-                    ? `${Math.min(100, (workoutsThisWeek / profile.target_frequency) * 100)}%`
-                    : workoutsThisWeek > 0
-                      ? '100%'
-                      : '0%',
-                }}
+          <div className="flex items-center justify-center gap-6 mb-4 pb-4 border-b border-forest-800">
+            <ProgressRing
+              value={workoutsThisWeek}
+              target={profile?.target_frequency}
+              label={profile?.target_frequency ? `Workouts / ${profile.target_frequency}` : 'Workouts'}
+            />
+            {todaysNutrition.count > 0 && (
+              <ProgressRing
+                value={todaysNutrition.calories}
+                target={profile?.daily_calorie_target}
+                label="Calories"
+                unit="kcal"
               />
-            </div>
+            )}
           </div>
           <div>
             <span className="text-xs text-slate-500">Today's macros</span>
@@ -246,13 +241,6 @@ export default function Dashboard() {
               </p>
             ) : (
               <div className="space-y-2.5 mt-2">
-                <MacroBar
-                  label="Calories"
-                  value={todaysNutrition.calories}
-                  target={profile?.daily_calorie_target}
-                  unit=" kcal"
-                  color="bg-coral-500"
-                />
                 <MacroBar
                   label="Protein"
                   value={todaysNutrition.protein}
