@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.models import _today
+from app.schemas import REPS_BOUNDS, RPE_BOUNDS, SETS_BOUNDS, WEIGHT_BOUNDS
 
 TOOL_SCHEMAS = [
     {
@@ -45,9 +46,13 @@ TOOL_SCHEMAS = [
     {
         "name": "adjust_plan",
         "description": (
-            "Modify an existing plan for the current user based on logged performance or "
-            "recovery data - e.g. reduce volume after a hard week, or progress load after "
-            "consistent completion."
+            "Modify an existing plan for the current user: `updates` changes sets/reps/weight/day for "
+            "exercises ALREADY on the plan (e.g. reduce volume after a hard week, progress load after "
+            "consistent completion), and `additions` inserts brand-new exercises onto the plan (e.g. "
+            "'add a glute exercise to today'). These are different operations - an item in `updates` "
+            "needs a real existing plan_exercise_id from the plan context above; never invent one or put "
+            "a new exercise there, since that silently does nothing. A request to ADD something the plan "
+            "doesn't already have always goes in `additions`, not `updates`."
         ),
         "input_schema": {
             "type": "object",
@@ -56,7 +61,7 @@ TOOL_SCHEMAS = [
                 "notes": {"type": "string", "description": "Updated coaching notes for the plan"},
                 "updates": {
                     "type": "array",
-                    "description": "Per-exercise-slot changes to apply",
+                    "description": "Changes to exercises already on the plan - plan_exercise_id must be a real ID from the plan context",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -67,6 +72,22 @@ TOOL_SCHEMAS = [
                             "day_of_week": {"type": "integer"},
                         },
                         "required": ["plan_exercise_id"],
+                    },
+                },
+                "additions": {
+                    "type": "array",
+                    "description": "Brand-new exercises to insert onto the plan - use this to add something the plan doesn't already have",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Exercise name, e.g. 'Hip Thrust'"},
+                            "muscle_group": {"type": "string", "description": "Only used if this exercise doesn't exist yet"},
+                            "day_of_week": {"type": "integer", "description": "0=Monday .. 6=Sunday"},
+                            "sets": {"type": "integer"},
+                            "reps": {"type": "integer"},
+                            "target_weight": {"type": "number"},
+                        },
+                        "required": ["name", "day_of_week"],
                     },
                 },
             },
@@ -144,6 +165,43 @@ TOOL_SCHEMAS = [
             "required": ["exercise_name"],
         },
     },
+    {
+        "name": "update_log",
+        "description": (
+            "Correct a workout the user already logged (e.g. 'that squat entry was actually 5 sets not "
+            "3', 'change today's bench weight to 155'). Only ever use a log_id from the real recent "
+            "activity log listed in context above - never invent one. Only the fields provided are "
+            "changed; anything omitted is left as-is."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "log_id": {"type": "integer", "description": "Real log_id from the recent activity log context"},
+                "sets": {"type": "integer"},
+                "reps": {"type": "integer"},
+                "weight": {"type": "number"},
+                "rpe": {"type": "number"},
+                "notes": {"type": "string"},
+            },
+            "required": ["log_id"],
+        },
+    },
+    {
+        "name": "delete_log",
+        "description": (
+            "Remove a workout log entry entirely (e.g. 'delete that entry, I didn't actually do it', "
+            "'remove today's squat log'). Only ever use a log_id from the real recent activity log listed "
+            "in context above - never invent one. This is permanent - use update_log instead if the user "
+            "just wants to correct a number, not erase the entry."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "log_id": {"type": "integer", "description": "Real log_id from the recent activity log context"},
+            },
+            "required": ["log_id"],
+        },
+    },
 ]
 
 
@@ -187,9 +245,11 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
         plan.notes = tool_input["notes"]
 
     updated_ids = []
+    skipped_updates = 0
     for upd in tool_input.get("updates", []):
         plan_exercise = db.get(models.PlanExercise, upd["plan_exercise_id"])
         if not plan_exercise or plan_exercise.plan_id != plan.id:
+            skipped_updates += 1
             continue
         # Skip explicit nulls, not just absent keys - a client that echoes
         # back a full adjustment object (e.g. the Coach Resolution "Apply"
@@ -201,8 +261,53 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
                 setattr(plan_exercise, field, upd[field])
         updated_ids.append(plan_exercise.id)
 
+    # Brand-new exercises the plan doesn't already have - `updates` above can
+    # only ever change a real, existing plan_exercise row, so a request to
+    # ADD something previously had no valid path at all: the model would
+    # reference a plan_exercise_id that doesn't exist, which silently no-ops
+    # via the `continue` above, then narrate a change that never happened.
+    # Reuses the exact find-or-create Exercise pattern execute_generate_
+    # workout_plan already uses, so exercise naming/catalog behavior matches.
+    added_ids = []
+    existing_order_indexes = [pe.order_index for pe in plan.plan_exercises]
+    next_order_index = (max(existing_order_indexes) + 1) if existing_order_indexes else 0
+    for addition in tool_input.get("additions", []):
+        exercise = db.scalar(select(models.Exercise).where(models.Exercise.name == addition["name"]))
+        if not exercise:
+            exercise = models.Exercise(name=addition["name"], muscle_group=addition.get("muscle_group"))
+            db.add(exercise)
+            db.flush()
+        plan_exercise = models.PlanExercise(
+            plan_id=plan.id,
+            exercise_id=exercise.id,
+            day_of_week=addition.get("day_of_week"),
+            sets=addition.get("sets"),
+            reps=addition.get("reps"),
+            target_weight=addition.get("target_weight"),
+            order_index=next_order_index,
+        )
+        next_order_index += 1
+        db.add(plan_exercise)
+        db.flush()
+        added_ids.append(plan_exercise.id)
+
     db.commit()
-    return {"plan_id": plan.id, "updated_plan_exercise_ids": updated_ids, "notes": plan.notes}
+    result = {
+        "plan_id": plan.id,
+        "updated_plan_exercise_ids": updated_ids,
+        "added_plan_exercise_ids": added_ids,
+        "notes": plan.notes,
+    }
+    if skipped_updates:
+        # Explicit so the model can never mistake silence for success - an
+        # update referencing an ID that doesn't exist on this plan is always
+        # worth surfacing, not swallowing.
+        result["warning"] = (
+            f"{skipped_updates} update(s) referenced a plan_exercise_id not found on this plan and were "
+            "skipped - if you meant to add a new exercise rather than change an existing one, use "
+            "`additions` instead."
+        )
+    return result
 
 
 def execute_suggest_supplements(db: Session, user_id: int, tool_input: dict) -> dict:
@@ -389,6 +494,52 @@ def execute_log_workout(db: Session, user_id: int, tool_input: dict) -> dict:
     }
 
 
+def _in_bounds(value, bounds: dict) -> bool:
+    return bounds["ge"] <= value <= bounds["le"]
+
+
+def execute_update_log(db: Session, user_id: int, tool_input: dict) -> dict:
+    log = db.get(models.WorkoutLog, tool_input["log_id"])
+    if not log or log.user_id != user_id:
+        return {"error": "log entry not found for this user"}
+
+    field_bounds = {"sets": SETS_BOUNDS, "reps": REPS_BOUNDS, "weight": WEIGHT_BOUNDS, "rpe": RPE_BOUNDS}
+    for field, bounds in field_bounds.items():
+        value = tool_input.get(field)
+        if value is not None and not _in_bounds(value, bounds):
+            return {"error": f"{field}={value} is outside the allowed range {bounds['ge']}-{bounds['le']}"}
+
+    # Only overwrite fields actually provided - same "skip absent, not just
+    # null" pattern as execute_adjust_plan, so a correction to one field
+    # never silently blanks out the others.
+    for field in ("sets", "reps", "weight", "rpe", "notes"):
+        if tool_input.get(field) is not None:
+            setattr(log, field, tool_input[field])
+
+    db.commit()
+    db.refresh(log)
+    return {
+        "log_id": log.id,
+        "exercise_name": log.exercise.name,
+        "sets": log.sets,
+        "reps": log.reps,
+        "weight": log.weight,
+        "rpe": log.rpe,
+        "notes": log.notes,
+    }
+
+
+def execute_delete_log(db: Session, user_id: int, tool_input: dict) -> dict:
+    log = db.get(models.WorkoutLog, tool_input["log_id"])
+    if not log or log.user_id != user_id:
+        return {"error": "log entry not found for this user"}
+
+    exercise_name = log.exercise.name
+    db.delete(log)
+    db.commit()
+    return {"deleted_log_id": tool_input["log_id"], "exercise_name": exercise_name}
+
+
 TOOL_EXECUTORS = {
     "generate_workout_plan": execute_generate_workout_plan,
     "adjust_plan": execute_adjust_plan,
@@ -397,4 +548,6 @@ TOOL_EXECUTORS = {
     "analyze_form": execute_analyze_form,
     "ask_nutrition": execute_ask_nutrition,
     "log_workout": execute_log_workout,
+    "update_log": execute_update_log,
+    "delete_log": execute_delete_log,
 }

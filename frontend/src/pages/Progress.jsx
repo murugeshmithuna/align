@@ -291,107 +291,185 @@ function MacroTile({ icon, label, value, unit, badge, dailyData, colors }) {
   )
 }
 
-// Same text-based jsPDF approach as LiveSession.jsx's buildWorkoutPdf - real
-// vector text (small, selectable, searchable) rather than rasterizing a DOM
-// snapshot for content that's fundamentally a few labeled numbers and two
-// short paragraphs.
-function buildNutritionAuditPdf(review) {
+// Single consolidated report across the whole Analytics tab (recap, weekly
+// insights, nutrition audit, training volume, calories burned, fatigue
+// model) rather than one PDF per card - real vector text throughout (small,
+// selectable, searchable), same approach as LiveSession.jsx's
+// buildWorkoutPdf, extended with page-break handling since this report is
+// much longer than the old single-card one.
+const PDF_MARGIN_X = 20
+const PDF_PAGE_BOTTOM = 275
+// A PDF renders on white paper regardless of the app's dark theme - the
+// bright neon lime used on-screen has terrible contrast on white, so this
+// uses a darker, print-safe olive-lime instead of the literal UI accent.
+const PDF_CORAL = [122, 176, 24]
+const PDF_SLATE = [100, 116, 139]
+const PDF_INK = [15, 23, 42]
+
+function buildFullAnalyticsReport({ recap, digest, nutritionReview, progress, fatigue }) {
   const doc = new jsPDF()
-  // A PDF renders on white paper regardless of the app's dark theme - the
-  // bright neon lime used on-screen has terrible contrast on white, so this
-  // uses a darker, print-safe olive-lime instead of the literal UI accent.
-  const CORAL = [122, 176, 24]
-  const SLATE = [100, 116, 139]
-  const INK = [15, 23, 42]
-  const marginX = 20
   let y = 22
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(20)
-  doc.setTextColor(...CORAL)
-  doc.text('ALIGN', marginX, y)
-  y += 8
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(12)
-  doc.setTextColor(...INK)
-  doc.text('Weekly Nutrition Audit', marginX, y)
-  y += 6
-
-  doc.setFontSize(10)
-  doc.setTextColor(...SLATE)
-  doc.text(new Date().toLocaleDateString(undefined, { dateStyle: 'long' }), marginX, y)
-  y += 4
-  doc.setDrawColor(...SLATE)
-  doc.line(marginX, y, 190, y)
-  y += 10
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
-  doc.setTextColor(...INK)
-  doc.text('Macro Breakdown', marginX, y)
-  y += 8
-
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(11)
-  const rows = [
-    ['Calories', review.avg_calories, review.calorie_target, ' kcal'],
-    ['Protein', review.avg_protein, review.protein_target, 'g'],
-    ['Carbs', review.avg_carbs, review.carbs_target, 'g'],
-    ['Fat', review.avg_fat, review.fat_target, 'g'],
-  ]
-  const numericRows = rows.filter(([, value]) => value != null)
-  if (numericRows.length === 0) {
-    doc.setTextColor(...SLATE)
-    doc.text('No numeric macro data available for this period.', marginX, y)
-    y += 7
-  } else {
-    for (const [label, value, target, unit] of numericRows) {
-      const pct = target ? Math.round((value / target) * 100) : null
-      doc.setTextColor(...SLATE)
-      doc.text(label, marginX, y)
-      doc.setTextColor(...INK)
-      const valueLabel = target
-        ? `${Math.round(value)}${unit} / ${Math.round(target)}${unit}${pct != null ? ` (${pct}%)` : ''}`
-        : `${Math.round(value)}${unit}`
-      doc.text(valueLabel, marginX + 45, y)
-      y += 7
+  function ensureRoom(neededHeight) {
+    if (y + neededHeight > PDF_PAGE_BOTTOM) {
+      doc.addPage()
+      y = 22
     }
   }
-  y += 5
 
-  doc.setDrawColor(...SLATE)
-  doc.line(marginX, y, 190, y)
-  y += 10
+  function sectionRule() {
+    ensureRoom(12)
+    doc.setDrawColor(...PDF_SLATE)
+    doc.line(PDF_MARGIN_X, y, 190, y)
+    y += 10
+  }
 
+  function sectionTitle(title, color = PDF_INK) {
+    ensureRoom(14)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(13)
+    doc.setTextColor(...color)
+    doc.text(title, PDF_MARGIN_X, y)
+    y += 8
+  }
+
+  function paragraph(text) {
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(...PDF_INK)
+    const lines = doc.splitTextToSize(text || 'n/a', 170)
+    ensureRoom(lines.length * 6)
+    doc.text(lines, PDF_MARGIN_X, y)
+    y += lines.length * 6 + 4
+  }
+
+  function statLine(label, value) {
+    ensureRoom(7)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(11)
+    doc.setTextColor(...PDF_SLATE)
+    doc.text(label, PDF_MARGIN_X, y)
+    doc.setTextColor(...PDF_INK)
+    doc.text(String(value), PDF_MARGIN_X + 55, y)
+    y += 7
+  }
+
+  // Header
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
-  doc.setTextColor(...INK)
-  doc.text('Pattern', marginX, y)
+  doc.setFontSize(20)
+  doc.setTextColor(...PDF_CORAL)
+  doc.text('ALIGN', PDF_MARGIN_X, y)
   y += 8
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(11)
-  doc.setTextColor(...INK)
-  const patternLines = doc.splitTextToSize(review.key_pattern || 'n/a', 170)
-  doc.text(patternLines, marginX, y)
-  y += patternLines.length * 6 + 8
+  doc.setFontSize(12)
+  doc.setTextColor(...PDF_INK)
+  doc.text('Full Progress Report', PDF_MARGIN_X, y)
+  y += 6
+  doc.setFontSize(10)
+  doc.setTextColor(...PDF_SLATE)
+  doc.text(new Date().toLocaleDateString(undefined, { dateStyle: 'long' }), PDF_MARGIN_X, y)
+  y += 4
+  sectionRule()
 
-  doc.setDrawColor(...SLATE)
-  doc.line(marginX, y, 190, y)
-  y += 10
+  // Weekly Recap
+  sectionTitle('Weekly Recap')
+  paragraph(recap || 'Not generated yet - visit AI Insights & Audits and click Generate.')
+  sectionRule()
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
-  doc.setTextColor(...CORAL)
-  doc.text('Recommendation', marginX, y)
-  y += 8
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(11)
-  doc.setTextColor(...INK)
-  const recLines = doc.splitTextToSize(review.recommendation || 'n/a', 170)
-  doc.text(recLines, marginX, y)
+  // Weekly Insights
+  sectionTitle('Weekly Insights')
+  if (digest) {
+    statLine('Win', digest.biggest_win || 'n/a')
+    statLine('Recovery', digest.recovery_note || 'n/a')
+    statLine('Focus', digest.next_week_focus || 'n/a')
+  } else {
+    paragraph('Not generated yet - visit AI Insights & Audits and click Generate.')
+  }
+  sectionRule()
 
-  doc.save(`nutrition-audit-${new Date().toISOString().slice(0, 10)}.pdf`)
+  // Weekly Nutrition Audit
+  sectionTitle('Weekly Nutrition Audit')
+  if (nutritionReview) {
+    const macroRows = [
+      ['Calories', nutritionReview.avg_calories, nutritionReview.calorie_target, ' kcal'],
+      ['Protein', nutritionReview.avg_protein, nutritionReview.protein_target, 'g'],
+      ['Carbs', nutritionReview.avg_carbs, nutritionReview.carbs_target, 'g'],
+      ['Fat', nutritionReview.avg_fat, nutritionReview.fat_target, 'g'],
+    ].filter(([, value]) => value != null)
+    if (macroRows.length === 0) {
+      paragraph('No numeric macro data available for this period.')
+    } else {
+      for (const [label, value, target, unit] of macroRows) {
+        const pct = target ? Math.round((value / target) * 100) : null
+        const valueLabel = target
+          ? `${Math.round(value)}${unit} / ${Math.round(target)}${unit}${pct != null ? ` (${pct}%)` : ''}`
+          : `${Math.round(value)}${unit}`
+        statLine(label, valueLabel)
+      }
+    }
+    y += 2
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    ensureRoom(7)
+    doc.setTextColor(...PDF_SLATE)
+    doc.text('Pattern', PDF_MARGIN_X, y)
+    y += 6
+    paragraph(nutritionReview.key_pattern)
+    doc.setFont('helvetica', 'bold')
+    ensureRoom(7)
+    doc.setTextColor(...PDF_CORAL)
+    doc.text('Recommendation', PDF_MARGIN_X, y)
+    y += 6
+    paragraph(nutritionReview.recommendation)
+  } else {
+    paragraph('Not generated yet - visit AI Insights & Audits and click Generate.')
+  }
+  sectionRule()
+
+  // Training Volume
+  sectionTitle('Training Volume')
+  const volumeByDate = progress?.volume_by_date || []
+  if (volumeByDate.length > 0) {
+    const total = volumeByDate.reduce((sum, p) => sum + p.total_volume, 0)
+    statLine('Days trained', volumeByDate.length)
+    statLine('Total volume', `${Math.round(total).toLocaleString()} lbs`)
+    statLine('Avg per session', `${Math.round(total / volumeByDate.length).toLocaleString()} lbs`)
+    statLine('Most recent', `${volumeByDate[volumeByDate.length - 1].date} - ${Math.round(volumeByDate[volumeByDate.length - 1].total_volume).toLocaleString()} lbs`)
+  } else {
+    paragraph('No workouts logged yet.')
+  }
+  sectionRule()
+
+  // Calories Burned
+  sectionTitle('Calories Burned (est.)')
+  const caloriesByDate = progress?.calories_by_date || []
+  if (caloriesByDate.length > 0) {
+    const total = caloriesByDate.reduce((sum, p) => sum + p.total_calories, 0)
+    statLine('Days logged', caloriesByDate.length)
+    statLine('Total burned', `~${Math.round(total).toLocaleString()} kcal`)
+    statLine('Avg per session', `~${Math.round(total / caloriesByDate.length).toLocaleString()} kcal`)
+  } else {
+    paragraph('No workouts logged yet.')
+  }
+  sectionRule()
+
+  // Fitness / Fatigue / Form
+  sectionTitle('Fitness, Fatigue & Form')
+  const fatigueSeries = fatigue?.series || []
+  if (fatigueSeries.length > 0) {
+    const latest = fatigueSeries[fatigueSeries.length - 1]
+    statLine('Fitness', latest.fitness.toFixed(1))
+    statLine('Fatigue', latest.fatigue.toFixed(1))
+    statLine('Form', latest.form.toFixed(1))
+    if (fatigue.risk) {
+      statLine('Injury risk', fatigue.risk.risk_level)
+      paragraph(fatigue.risk.message)
+    }
+  } else {
+    paragraph('No workouts logged yet.')
+  }
+
+  doc.save(`align-progress-report-${new Date().toISOString().slice(0, 10)}.pdf`)
 }
 
 // Same tab-pill pattern used elsewhere in the app (MealPhoto.jsx, LiveSession.jsx).
@@ -605,6 +683,7 @@ export default function Progress() {
   const [mealsByDate, setMealsByDate] = useState({})
   const [checkinsByDate, setCheckinsByDate] = useState({})
   const [weekProfile, setWeekProfile] = useState(null)
+  const [exportingReport, setExportingReport] = useState(false)
 
   useEffect(() => {
     api
@@ -779,6 +858,29 @@ export default function Progress() {
     }
   }
 
+  // One PDF covering the whole tab, not just whichever card happened to have
+  // an export button - fills in any of the three AI sections that haven't
+  // been generated yet on this visit (best-effort per section; one section
+  // failing to fetch doesn't block the rest of the report), then builds from
+  // whatever's available. Training volume/calories/fatigue are always
+  // already loaded (no Generate step for those), so they're included as-is.
+  async function handleExportFullReport() {
+    setExportingReport(true)
+    try {
+      const [recapText, digestData, nutritionData] = await Promise.all([
+        recap ? Promise.resolve(recap) : api.getWeeklyRecap(userId).then((d) => d.recap).catch(() => recap),
+        digest ? Promise.resolve(digest) : api.getWeeklyDigest(userId).catch(() => digest),
+        nutritionReview ? Promise.resolve(nutritionReview) : api.getWeeklyNutritionReview(userId).catch(() => nutritionReview),
+      ])
+      if (recapText && recapText !== recap) setRecap(recapText)
+      if (digestData && digestData !== digest) setDigest(digestData)
+      if (nutritionData && nutritionData !== nutritionReview) setNutritionReview(nutritionData)
+      buildFullAnalyticsReport({ recap: recapText, digest: digestData, nutritionReview: nutritionData, progress, fatigue })
+    } finally {
+      setExportingReport(false)
+    }
+  }
+
   async function handleAsymmetrySubmit(event) {
     event.preventDefault()
     setAsymmetryLoading(true)
@@ -821,7 +923,16 @@ export default function Progress() {
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-8 font-body space-y-4">
-      <h1 className="font-heading font-bold text-2xl">Progress</h1>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <h1 className="font-heading font-bold text-2xl">Progress</h1>
+        <button
+          onClick={handleExportFullReport}
+          disabled={exportingReport}
+          className="px-3 py-1.5 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-xs font-semibold disabled:opacity-50"
+        >
+          {exportingReport ? 'Building report…' : '📄 Export Full PDF Report'}
+        </button>
+      </div>
 
       <div className="flex gap-2 flex-wrap">
         {TABS.map((tab) => (
@@ -1051,14 +1162,6 @@ export default function Progress() {
             <div className="flex justify-between items-center mb-2 gap-2">
               <h2 className="font-heading font-semibold text-sm">Weekly Nutrition Audit</h2>
               <div className="flex gap-2 shrink-0">
-                {nutritionReview && (
-                  <button
-                    onClick={() => buildNutritionAuditPdf(nutritionReview)}
-                    className="px-3 py-1.5 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-xs font-semibold"
-                  >
-                    📄 Export PDF Report
-                  </button>
-                )}
                 <button
                   onClick={loadNutritionReview}
                   disabled={nutritionReviewLoading}

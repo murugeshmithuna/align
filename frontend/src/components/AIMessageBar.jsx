@@ -29,6 +29,8 @@ const TOOL_STATUS_LABELS = {
   generate_workout_plan: 'Generating your plan…',
   adjust_plan: 'Updating your plan…',
   log_workout: 'Logging your workout…',
+  update_log: 'Updating your activity log…',
+  delete_log: 'Removing that log entry…',
   suggest_supplements: 'Finding supplement suggestions…',
   ask_schedule: 'Checking your schedule…',
   analyze_form: 'Reviewing your form…',
@@ -185,6 +187,14 @@ export default function AIMessageBar() {
   // API itself is stateless, so without this a short reply like "2" arrives
   // with no context and looks like a non-sequitur to the model.
   const historyRef = useRef([])
+  // Tracks the currently-shown "Updating your plan…" style status message so
+  // it can be cleared once the tool actually finishes - the backend sends a
+  // matching {"tool": name, "status": "done"} frame right after every
+  // {"status": "running"} one, but nothing here was listening for it, so the
+  // status message was appended once and then left in the log forever,
+  // looking exactly like a permanent hang even when the turn completed in a
+  // few seconds and the model's real reply streamed in right below it.
+  const statusMessageIdRef = useRef(null)
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
@@ -216,6 +226,7 @@ export default function AIMessageBar() {
     if (!text || sending) return
     appendMessage('user', text)
     setSending(true)
+    statusMessageIdRef.current = null
     const agentId = appendMessage('agent', '')
 
     try {
@@ -226,7 +237,13 @@ export default function AIMessageBar() {
           if (payload.content) {
             appendToMessage(agentId, payload.content)
           } else if (payload.tool && payload.status === 'running') {
-            appendMessage('status', toolStatusLabel(payload.tool))
+            statusMessageIdRef.current = appendMessage('status', toolStatusLabel(payload.tool))
+          } else if (payload.tool && payload.status === 'done') {
+            const id = statusMessageIdRef.current
+            if (id != null) {
+              setMessages((prev) => prev.filter((m) => m.id !== id))
+              statusMessageIdRef.current = null
+            }
           } else if (payload.widget) {
             attachWidget(agentId, payload.widget)
           } else if (payload.history) {
