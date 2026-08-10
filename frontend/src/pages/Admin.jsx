@@ -44,40 +44,53 @@ export default function Admin() {
         <p className="text-sm text-slate-500 mt-1">All registered users and their activity.</p>
       </div>
 
+      {/* Real table width (measured live) came out ~44px wider than this
+          card's content box at the page's own max-w-4xl - the "View →"
+          column was silently clipped past the right edge with no visible
+          scrollbar hint, and "Signed up" wrapped its date across 3 lines,
+          stretching every row. overflow-x-auto still made it technically
+          reachable by scrolling, but nothing signaled that. Tightened cell
+          padding (px-4->px-3) and stopped the date/count columns from
+          wrapping - comfortably fits the same 8 columns without needing to
+          scroll on a standard viewport. */}
       <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase tracking-wide text-slate-500 border-b border-forest-800">
-              <th className="px-4 py-3 font-semibold">Name</th>
-              <th className="px-4 py-3 font-semibold">Email</th>
-              <th className="px-4 py-3 font-semibold">Signed up</th>
-              <th className="px-4 py-3 font-semibold text-right">Plans</th>
-              <th className="px-4 py-3 font-semibold text-right">Logs</th>
-              <th className="px-4 py-3 font-semibold text-right">Meals</th>
-              <th className="px-4 py-3 font-semibold text-right">Check-ins</th>
-              <th className="px-4 py-3" />
+              <th className="px-3 py-3 font-semibold">Name</th>
+              <th className="px-3 py-3 font-semibold">Email</th>
+              <th className="px-3 py-3 font-semibold whitespace-nowrap">Signed up</th>
+              <th className="px-3 py-3 font-semibold text-right">Plans</th>
+              <th className="px-3 py-3 font-semibold text-right">Logs</th>
+              <th className="px-3 py-3 font-semibold text-right">Meals</th>
+              <th className="px-3 py-3 font-semibold text-right">Check-ins</th>
+              <th className="px-3 py-3" />
             </tr>
           </thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id} className="border-b border-forest-800/60 last:border-0">
-                <td className="px-4 py-3 font-semibold">{u.name}</td>
-                <td className="px-4 py-3 text-slate-400">
-                  {u.email}
+                <td className="px-3 py-3 font-semibold max-w-[10rem] truncate" title={u.name}>
+                  {u.name}
+                </td>
+                <td className="px-3 py-3 text-slate-400 max-w-[14rem]">
+                  <span className="truncate inline-block max-w-full align-bottom" title={u.email}>
+                    {u.email}
+                  </span>
                   {u.signed_in_with_google && (
                     <span className="ml-2 text-xs text-emerald-400 font-semibold uppercase tracking-wide">
                       Google
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-slate-500">
+                <td className="px-3 py-3 text-slate-500 whitespace-nowrap">
                   {new Date(u.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                 </td>
-                <td className="px-4 py-3 text-right tabular-nums">{u.plan_count}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{u.log_count}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{u.meal_count}</td>
-                <td className="px-4 py-3 text-right tabular-nums">{u.checkin_count}</td>
-                <td className="px-4 py-3 text-right">
+                <td className="px-3 py-3 text-right tabular-nums">{u.plan_count}</td>
+                <td className="px-3 py-3 text-right tabular-nums">{u.log_count}</td>
+                <td className="px-3 py-3 text-right tabular-nums">{u.meal_count}</td>
+                <td className="px-3 py-3 text-right tabular-nums">{u.checkin_count}</td>
+                <td className="px-3 py-3 text-right whitespace-nowrap">
                   <Link to={`/admin/users/${u.id}`} className="text-coral-400 hover:text-coral-300 font-semibold">
                     View →
                   </Link>

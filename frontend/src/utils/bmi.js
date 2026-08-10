@@ -8,7 +8,11 @@ export const BMI_BANDS = [
 ]
 
 export function calculateBmi(heightCm, weightKg) {
-  if (!heightCm || !weightKg) return null
+  // Plain truthiness checks let a negative number through (e.g. a careless
+  // -100 kg entry, still "truthy" in JS) and produced a nonsensical "-0.0
+  // Underweight" reading instead of hiding the card - guard on sign, not
+  // just presence.
+  if (!heightCm || !weightKg || heightCm <= 0 || weightKg <= 0) return null
   const heightM = heightCm / 100
   return weightKg / (heightM * heightM)
 }

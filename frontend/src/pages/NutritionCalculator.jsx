@@ -185,6 +185,25 @@ export default function NutritionCalculator() {
       showToast('Enter your height, weight, and age first.', 'error')
       return
     }
+    // Plain number inputs don't block a typed negative/absurd value the way
+    // native form-submit validation would (this button is type="button", so
+    // the browser's min/max/step constraints never apply to it) - a
+    // careless -100 kg or 99999 cm entry silently produced a negative
+    // protein target and a six-figure calorie goal instead of an error.
+    // Same bounds the backend's own Pydantic schema already enforces on
+    // save, just surfaced here before the pointless calculation runs.
+    if (heightCm <= 0 || heightCm < 50 || heightCm > 272) {
+      showToast('Enter a realistic height (50-272 cm / ~1\'8"-8\'11").', 'error')
+      return
+    }
+    if (weightKg <= 0 || weightKg < 20 || weightKg > 450) {
+      showToast('Enter a realistic weight (20-450 kg / ~44-992 lb).', 'error')
+      return
+    }
+    if (Number(age) <= 0 || Number(age) < 10 || Number(age) > 120) {
+      showToast('Enter a realistic age (10-120).', 'error')
+      return
+    }
     const result = calculateBaselineGoals({
       heightCm,
       weightKg,
@@ -241,7 +260,20 @@ export default function NutritionCalculator() {
         </p>
       </div>
 
-      <form onSubmit={handleSaveGoals} className="card p-5 space-y-4">
+      {/* noValidate: the same silent-submit-block bug already found and
+          fixed for the Stepper's step mismatch (see units.js's stepper -
+          step="any" comment) also applies here via the height/weight/age
+          inputs' min/max attributes. Confirmed live: typing a height like
+          9999 (outside the visual 50-272 hint) and clicking "Save Goals"
+          fired ZERO network requests and showed no error at all - HTML5
+          range-constraint validation blocked the submit event entirely
+          before handleSaveGoals ever ran. The min/max attributes still work
+          as visual hints and still clamp the native up/down spinner arrows -
+          disabling constraint validation just stops them from silently
+          swallowing a real submit. The backend's own Pydantic Field(ge=/
+          le=) bounds remain the actual source of truth and already surface
+          a clear, specific toast via formatErrorDetail() on rejection. */}
+      <form onSubmit={handleSaveGoals} className="card p-5 space-y-4" noValidate>
         <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
           <div>
             <label className="block text-xs text-slate-500 mb-1" htmlFor="height">
