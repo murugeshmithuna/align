@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js'
 import { Doughnut } from 'react-chartjs-2'
 import { api } from '../api.js'
@@ -119,6 +119,8 @@ function sumIngredients(ingredients) {
 // ingredient name or quantity triggers a fresh macro lookup for that row on
 // blur, and the bottom total is a derived useMemo, so it's always in sync
 // with the ingredient rows automatically (no separate "recalculate" step).
+const ESTIMATE_DEBOUNCE_MS = 600
+
 function ReviewModal({ preview, onCancel, onSaved, userId }) {
   const { showToast } = useToast()
   const [description, setDescription] = useState(preview.description)
@@ -128,11 +130,28 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
   const [justSaved, flashSaved] = useSavedFlash()
   const totals = useMemo(() => sumIngredients(ingredients), [ingredients])
 
+  // Mirrors `ingredients` synchronously (unlike React state, which only
+  // updates on the next render) - handleSave needs to read the truly latest
+  // values right after awaiting any pending recalculation below, not
+  // whatever `ingredients`/`totals` this render's closure captured.
+  const ingredientsRef = useRef(ingredients)
+  ingredientsRef.current = ingredients
+
+  // Per-row debounce timers for auto-recalculation - see scheduleEstimate.
+  const debounceTimersRef = useRef({})
+  useEffect(() => {
+    const timers = debounceTimersRef.current
+    return () => Object.values(timers).forEach(clearTimeout)
+  }, [])
+
   function updateIngredient(index, field, value) {
     setIngredients((prev) => prev.map((ing, i) => (i === index ? { ...ing, [field]: value } : ing)))
+    scheduleEstimate(index)
   }
 
   function removeIngredient(index) {
+    clearTimeout(debounceTimersRef.current[index])
+    delete debounceTimersRef.current[index]
     setIngredients((prev) => prev.filter((_, i) => i !== index))
   }
 
@@ -140,35 +159,101 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
     setIngredients((prev) => [...prev, { name: '', quantity: '', calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }])
   }
 
-  // Fires on blur of either the name or quantity field - re-estimates that
-  // row's macros so the (read-only) numbers and the total stay accurate
-  // without a manual step. On failure, the row's last-known macros are left
-  // untouched (better than zeroing a row the user didn't ask to blank out)
-  // and a toast surfaces the failure rather than hiding it.
-  async function handleIngredientBlur(index) {
-    const ing = ingredients[index]
-    if (!ing.name?.trim() || !ing.quantity?.trim()) return
+  // Re-estimates one row's macros so the (read-only) numbers and the total
+  // stay accurate. Reads from ingredientsRef (not the `ingredients` state
+  // variable) so a debounced call firing later always sees the latest edit,
+  // not whatever was current when the timer was scheduled. On failure, the
+  // row's last-known macros are left untouched (better than zeroing a row
+  // the user didn't ask to blank out) and a toast surfaces the failure
+  // rather than hiding it.
+  async function estimateRow(index) {
+    const ing = ingredientsRef.current[index]
+    if (!ing || !ing.name?.trim() || !ing.quantity?.trim()) return
     setEstimatingIndex(index)
     try {
       const est = await api.estimateIngredient({ name: ing.name.trim(), quantity: ing.quantity.trim() })
-      setIngredients((prev) =>
-        prev.map((row, i) =>
-          i === index
-            ? { ...row, calories: est.calories, protein_g: est.protein_g, carbs_g: est.carbs_g, fat_g: est.fat_g }
-            : row,
-        ),
+      const next = ingredientsRef.current.map((row, i) =>
+        i === index
+          ? { ...row, calories: est.calories, protein_g: est.protein_g, carbs_g: est.carbs_g, fat_g: est.fat_g }
+          : row,
       )
+      ingredientsRef.current = next
+      setIngredients(next)
     } catch (err) {
       showToast(`Couldn't recalculate "${ing.name}": ${err.message}`, 'error')
     } finally {
-      setEstimatingIndex(null)
+      setEstimatingIndex((cur) => (cur === index ? null : cur))
     }
+  }
+
+  // Tracks the currently in-flight estimateRow() promise per row, however it
+  // was triggered (debounce firing, blur, or a manual flush) - critical for
+  // flushPendingEstimates below. A real bug caught via live network tracing:
+  // a plain "clear this row's debounce timer, then fire-and-forget
+  // estimateRow()" (what handleIngredientBlur and the debounce timeout both
+  // do) leaves NOTHING in debounceTimersRef once it fires - so if the user's
+  // click on "Save meal" triggers a genuine blur first (normal browsers, not
+  // just Safari's quirky button-focus behavior), the blur handler kicks off
+  // the recalculation AND clears the timer entry in the same synchronous
+  // tick, then handleSave's flush immediately after finds no pending timer
+  // left to wait for and saves the still-stale totals while that
+  // just-started network call is still in flight. This ref is what lets
+  // flushPendingEstimates await the real in-flight call instead of just
+  // checking whether a timer is still ticking.
+  const pendingEstimatesRef = useRef({})
+
+  function triggerEstimate(index) {
+    const promise = estimateRow(index).finally(() => {
+      if (pendingEstimatesRef.current[index] === promise) delete pendingEstimatesRef.current[index]
+    })
+    pendingEstimatesRef.current[index] = promise
+    return promise
+  }
+
+  // Debounced on every keystroke (not just on blur) - real bug found in
+  // production: Safari doesn't move focus to a plain <button> on click, so a
+  // user who edited an ingredient's name and clicked "Save meal" directly
+  // (without tabbing away first) never fired a blur event at all, silently
+  // saving the OLD macros for the new ingredient name. Debouncing on change
+  // fires regardless of what the user clicks next, and handleSave below
+  // flushes any still-pending/in-flight recalculation before reading totals
+  // as a final safety net.
+  function scheduleEstimate(index) {
+    clearTimeout(debounceTimersRef.current[index])
+    debounceTimersRef.current[index] = setTimeout(() => {
+      delete debounceTimersRef.current[index]
+      triggerEstimate(index)
+    }, ESTIMATE_DEBOUNCE_MS)
+  }
+
+  // Immediate on blur (tabbing/clicking away still gets an instant
+  // recalculation rather than waiting out the debounce), but only if a
+  // recalculation isn't already scheduled/in flight for this row.
+  function handleIngredientBlur(index) {
+    if (debounceTimersRef.current[index] == null) return
+    clearTimeout(debounceTimersRef.current[index])
+    delete debounceTimersRef.current[index]
+    triggerEstimate(index)
+  }
+
+  async function flushPendingEstimates() {
+    const scheduledIndexes = Object.keys(debounceTimersRef.current).map(Number)
+    for (const index of scheduledIndexes) {
+      clearTimeout(debounceTimersRef.current[index])
+      delete debounceTimersRef.current[index]
+      triggerEstimate(index)
+    }
+    // Waits for every in-flight call, not just the ones just triggered above
+    // - a blur that fired moments before this ran (see pendingEstimatesRef's
+    // note) is still in here too.
+    await Promise.all(Object.values(pendingEstimatesRef.current))
   }
 
   async function handleSave() {
     setSaving(true)
     try {
-      const finalTotals = totals
+      await flushPendingEstimates()
+      const finalTotals = sumIngredients(ingredientsRef.current)
       const saved = await api.saveMeal({
         user_id: userId,
         description,
