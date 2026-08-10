@@ -103,16 +103,16 @@ export default function Navbar() {
         <ProfileMenu profile={profile} userId={userId} onLogout={handleLogout} />
       </div>
 
-      <div className="hidden md:flex items-center gap-1.5 flex-wrap px-4 md:px-8 py-3">
+      <div className="hidden md:flex items-center gap-x-8 gap-y-2 flex-wrap px-4 md:px-8 py-4">
         {LINKS.map((link) => (
           <NavLink
             key={link.to}
             to={link.to}
             className={({ isActive }) =>
-              `text-xs md:text-sm font-semibold whitespace-nowrap pb-1 border-b-2 transition-colors ${
+              `font-heading text-sm font-bold whitespace-nowrap pb-1.5 border-b-2 transition-colors ${
                 isActive
                   ? 'text-forest-950 border-forest-950'
-                  : 'text-forest-950/60 border-transparent hover:text-forest-950 hover:border-forest-950/40'
+                  : 'text-forest-950/55 border-transparent hover:text-forest-950 hover:border-forest-950/40'
               }`
             }
           >
