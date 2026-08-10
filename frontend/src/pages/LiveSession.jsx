@@ -380,8 +380,40 @@ export default function LiveSession() {
   const location = useLocation()
   const [tab, setTab] = useState('live')
 
-  const planExercises = location.state?.planExercises || null
-  const planId = location.state?.planId || null
+  const stateExercises = location.state?.planExercises || null
+  const statePlanId = location.state?.planId || null
+
+  // Direct nav (clicking "Live Session" in the navbar, no router state) used
+  // to fall back to a fully generic Squat/Bicep Curl/Push-up picker with zero
+  // connection to the user's real plan - confusingly different from clicking
+  // "Start today's session" on the Plan page, which correctly filters to
+  // today's actual exercises. Reported live as "wrong exercise listed" when
+  // compared side-by-side with the plan-driven entry point. Auto-fetch the
+  // active plan's exercises for today here too, so both entry points show
+  // the same real data - only fall back to the fully generic picker if
+  // there's truly no active plan or nothing scheduled today.
+  const [autoPlanExercises, setAutoPlanExercises] = useState(null)
+  const [autoPlanId, setAutoPlanId] = useState(null)
+
+  useEffect(() => {
+    if (stateExercises) return
+    api
+      .listPlans(userId)
+      .then((plans) => {
+        const active = plans.find((p) => p.is_active)
+        if (!active) return
+        const today = (new Date().getDay() + 6) % 7 // JS getDay(): 0=Sun..6=Sat -> 0=Mon..6=Sun
+        const todaysExercises = active.plan_exercises.filter((pe) => pe.day_of_week === today)
+        if (todaysExercises.length > 0) {
+          setAutoPlanExercises(todaysExercises)
+          setAutoPlanId(active.id)
+        }
+      })
+      .catch(() => {})
+  }, [userId, stateExercises])
+
+  const planExercises = stateExercises || autoPlanExercises
+  const planId = statePlanId || autoPlanId
 
   return (
     <div className="max-w-3xl mx-auto px-6 py-10 font-body space-y-6">
