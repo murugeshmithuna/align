@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 
+from anthropic import BadRequestError
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -17,6 +18,28 @@ router = APIRouter(prefix="/vision", tags=["vision"])
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MB
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+def _sniff_image_media_type(data: bytes, declared: str) -> str:
+    """Determines the image's real format from its magic bytes rather than
+    trusting the browser-supplied Content-Type. Claude's vision API rejects a
+    request outright if the declared media_type doesn't match the actual
+    bytes (a strict 400, not a lenient best-effort decode) - and a browser's
+    File/Blob `type` can be wrong for reasons outside this app's control
+    (e.g. a canvas.toBlob() re-encode that silently produces different bytes
+    than the type it was asked for, a known quirk on some browsers with
+    HEIC-sourced source images). Falls back to the declared type only when
+    the bytes don't match any known signature, so a real-but-unrecognized
+    format still gets a chance rather than being rejected pre-emptively."""
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return declared
 
 
 @router.post("/analyze-squat", response_model=schemas.FormAnalysisOut)
@@ -82,13 +105,13 @@ async def analyze_meal(
     if not db.get(models.User, user_id):
         raise HTTPException(status_code=404, detail="User not found")
 
-    media_type = photo.content_type or "image/jpeg"
-    if media_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=415, detail=f"Unsupported image type: {media_type}")
-
     image_bytes = await photo.read()
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 10 MB)")
+
+    media_type = _sniff_image_media_type(image_bytes, photo.content_type or "image/jpeg")
+    if media_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=415, detail=f"Unsupported image type: {media_type}")
 
     try:
         return analyze_meal_photo(db, user_id, image_bytes, media_type)
@@ -96,6 +119,11 @@ async def analyze_meal(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except BadRequestError as exc:
+        # Claude's vision API rejected the image outright (corrupt file,
+        # unsupported color mode, etc.) - surface a clear, actionable message
+        # instead of letting this propagate as an opaque 500.
+        raise HTTPException(status_code=422, detail="Could not read this image - please try a different photo.") from exc
 
 
 @router.post("/analyze-meal-text", response_model=schemas.MealAnalysisPreviewOut)
