@@ -27,6 +27,37 @@ FATIGUE_GAIN = 2.0
 # asymmetry testing literature as worth flagging for injury-risk follow-up.
 ASYMMETRY_FLAG_THRESHOLD_PCT = 10.0
 
+# ---------------------------------------------------------------------------
+# Calories burned - standard MET formula, computed fresh from raw log rows
+# (never stored - see the module docstring's "compute on the fly" rule; the
+# same reasoning that keeps fitness/fatigue/form out of the database applies
+# here, and there's no new DB column involved either way).
+#
+#   calories = MET x weight_kg x duration_hours
+#
+# MET (Metabolic Equivalent of Task) values below are the commonly-cited
+# range for resistance/weight training from the Compendium of Physical
+# Activities: ~3.5 at light/moderate effort up to ~6.0 at vigorous free-weight
+# effort. This app already logs a real, optional per-set RPE (0-10) - when
+# it's present, MET is scaled linearly across that range by RPE (RPE <= 5 ->
+# light/moderate, RPE >= 9 -> vigorous) instead of guessing a single number,
+# so the estimate is grounded in a real user input. When RPE wasn't logged,
+# fall back to a flat mid-range MET rather than fabricating an intensity.
+MET_LIGHT_MODERATE = 3.5
+MET_VIGOROUS = 6.0
+MET_RPE_FLOOR = 5.0  # RPE at/below this maps to MET_LIGHT_MODERATE
+MET_RPE_CEILING = 9.0  # RPE at/above this maps to MET_VIGOROUS
+MET_DEFAULT_NO_RPE = 5.0  # flat fallback when a log has no RPE at all
+
+# Manual logs don't record how long a set actually took. A commonly-cited
+# rough average for one working set of resistance training - including the
+# rest interval that follows it, since that's still part of the same working
+# period - is about 2.5 minutes. Picked as a single defensible middle value
+# in the ~2-3 minute range this is usually quoted at, rather than modeling
+# rest time separately from lift time for a manual log with no timestamps to
+# base that split on.
+MINUTES_PER_SET_ESTIMATE = 2.5
+
 
 def session_load(sets: int | None, reps: int | None, weight: float | None, rpe: float | None) -> float:
     """Single-log training load proxy, session-RPE style: volume * (RPE / 10).
@@ -44,6 +75,70 @@ def daily_loads(logs: list[dict]) -> dict[date, float]:
         performed_at = log["performed_at"]
         day = performed_at.date() if isinstance(performed_at, datetime) else performed_at
         totals[day] += session_load(log.get("sets"), log.get("reps"), log.get("weight"), log.get("rpe"))
+    return dict(totals)
+
+
+def _met_for_rpe(rpe: float | None) -> float:
+    """Linear MET scale between the light/moderate and vigorous resistance-
+    training benchmarks, driven by the real logged RPE when present."""
+    if rpe is None:
+        return MET_DEFAULT_NO_RPE
+    if rpe <= MET_RPE_FLOOR:
+        return MET_LIGHT_MODERATE
+    if rpe >= MET_RPE_CEILING:
+        return MET_VIGOROUS
+    fraction = (rpe - MET_RPE_FLOOR) / (MET_RPE_CEILING - MET_RPE_FLOOR)
+    return MET_LIGHT_MODERATE + fraction * (MET_VIGOROUS - MET_LIGHT_MODERATE)
+
+
+def estimate_calories_burned(
+    sets: int | None,
+    reps: int | None,
+    weight_kg_user: float | None,
+    rpe: float | None = None,
+    duration_minutes: float | None = None,
+) -> float | None:
+    """Standard MET formula: calories = MET * weight_kg_user * duration_hours.
+
+    `weight_kg_user` is the user's real body weight (`User.weight_kg`) - the
+    formula is undefined without it, so this returns None (never a fabricated
+    number) rather than guessing a default body weight.
+
+    `duration_minutes`: pass the real elapsed time when it's actually known
+    (e.g. Live Session's tracked session duration). Otherwise it's estimated
+    from `sets` via MINUTES_PER_SET_ESTIMATE, since a manual log has no
+    timestamps to derive a real duration from. `reps` isn't used in the
+    duration estimate itself (the per-set constant already accounts for a
+    typical rep range within a working set) - kept as a parameter for symmetry
+    with the other log-derived functions in this module and in case a future
+    revision wants to factor it in.
+    """
+    if not weight_kg_user or weight_kg_user <= 0:
+        return None
+
+    if duration_minutes is None:
+        duration_minutes = (sets or 0) * MINUTES_PER_SET_ESTIMATE
+
+    met = _met_for_rpe(rpe)
+    duration_hours = duration_minutes / 60.0
+    return round(met * weight_kg_user * duration_hours, 1)
+
+
+def calories_by_day(logs: list[dict], weight_kg_user: float | None) -> dict[date, float]:
+    """logs: [{performed_at, sets, reps, weight, rpe}, ...] -> {date: total_calories}.
+    Mirrors daily_loads()'s exact shape/pattern - per-log estimate summed per
+    calendar day. Skips (not zeroes) days entirely when weight_kg_user is
+    unknown, since a per-day total of None values isn't a meaningful zero."""
+    if not weight_kg_user:
+        return {}
+    totals: dict[date, float] = defaultdict(float)
+    for log in logs:
+        performed_at = log["performed_at"]
+        day = performed_at.date() if isinstance(performed_at, datetime) else performed_at
+        estimate = estimate_calories_burned(
+            log.get("sets"), log.get("reps"), weight_kg_user, log.get("rpe")
+        )
+        totals[day] += estimate or 0.0
     return dict(totals)
 
 

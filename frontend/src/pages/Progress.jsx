@@ -263,6 +263,39 @@ function buildVolumeChartData(volumeByDate) {
   }
 }
 
+// Same shape/style as buildVolumeChartData - Calories Burned is a second
+// single-series chart sourced from calories_by_date (MET-formula estimate,
+// see backend/app/agent/fatigue.py), not a different visual language.
+function buildCaloriesChartData(caloriesByDate) {
+  return {
+    labels: caloriesByDate.map((p) => p.date),
+    datasets: [
+      {
+        label: 'Calories Burned (est.)',
+        data: caloriesByDate.map((p) => p.total_calories),
+        borderColor: CORAL,
+        borderWidth: 2,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: CORAL,
+        pointHoverBorderColor: '#0c0c0f',
+        pointHoverBorderWidth: 2,
+        tension: 0.25,
+        fill: true,
+        backgroundColor: (ctx) => {
+          const { chart } = ctx
+          const { ctx: canvasCtx, chartArea } = chart
+          if (!chartArea) return 'rgba(198, 255, 61, 0.12)'
+          const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+          gradient.addColorStop(0, 'rgba(198, 255, 61, 0.28)')
+          gradient.addColorStop(1, 'rgba(198, 255, 61, 0.02)')
+          return gradient
+        },
+      },
+    ],
+  }
+}
+
 function buildExerciseChartData(history) {
   return {
     labels: history.map((p) => new Date(p.performed_at).toLocaleDateString()),
@@ -383,6 +416,7 @@ export default function Progress() {
   const [nutritionReviewLoading, setNutritionReviewLoading] = useState(false)
   const [nutritionReviewError, setNutritionReviewError] = useState('')
   const [showVolumeTable, setShowVolumeTable] = useState(false)
+  const [showCaloriesTable, setShowCaloriesTable] = useState(false)
   const [showExerciseTable, setShowExerciseTable] = useState(false)
   const [fatigue, setFatigue] = useState(null)
   const [asymmetryForm, setAsymmetryForm] = useState({ metricName: '', left: '', right: '' })
@@ -397,7 +431,7 @@ export default function Progress() {
         setProgress(data)
         if (data.exercises.length > 0) setSelectedExerciseId(data.exercises[0].exercise_id)
       })
-      .catch(() => setProgress({ volume_by_date: [], exercises: [] }))
+      .catch(() => setProgress({ volume_by_date: [], calories_by_date: [], exercises: [] }))
       .finally(() => setLoading(false))
 
     api
@@ -486,6 +520,7 @@ export default function Progress() {
   }
 
   const hasVolume = progress.volume_by_date.length > 0
+  const hasCalories = (progress.calories_by_date || []).length > 0
   const hasExercises = progress.exercises.length > 0
 
   return (
@@ -664,7 +699,7 @@ export default function Progress() {
       )}
 
       {activeTab === 'performance' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div className="card py-3 px-4">
             <h2 className="font-heading font-semibold text-sm mb-1">Training Volume</h2>
             <p className="text-xs text-slate-500 mb-3">Total sets × reps × weight, per day.</p>
@@ -701,6 +736,50 @@ export default function Progress() {
             ) : (
               <p className="text-sm text-slate-500">
                 No workouts logged yet - once you log a few sessions, your volume trend shows up here.
+              </p>
+            )}
+          </div>
+
+          <div className="card py-3 px-4">
+            <h2 className="font-heading font-semibold text-sm mb-1">Calories Burned</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              MET-formula estimate per day (est.), from your logged sets/reps/weight/RPE and body weight.
+            </p>
+            {hasCalories ? (
+              <>
+                <div className="h-56">
+                  <Line data={buildCaloriesChartData(progress.calories_by_date)} options={baseChartOptions} />
+                </div>
+                <button
+                  onClick={() => setShowCaloriesTable((v) => !v)}
+                  className="text-xs text-slate-500 hover:text-slate-300 mt-3"
+                >
+                  {showCaloriesTable ? 'Hide' : 'View'} as table
+                </button>
+                {showCaloriesTable && (
+                  <table className="w-full text-xs mt-2 text-slate-400">
+                    <thead>
+                      <tr className="text-left border-b border-forest-700">
+                        <th className="py-1">Date</th>
+                        <th className="py-1">Calories (est.)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {progress.calories_by_date.map((p) => (
+                        <tr key={p.date} className="border-b border-forest-800">
+                          <td className="py-1">{p.date}</td>
+                          <td className="py-1 tabular-nums">~{Math.round(p.total_calories).toLocaleString()} kcal</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                {hasVolume
+                  ? 'Set your weight on your profile to see a calorie-burned estimate here.'
+                  : 'No workouts logged yet - once you log a few sessions, your calories-burned trend shows up here.'}
               </p>
             )}
           </div>
