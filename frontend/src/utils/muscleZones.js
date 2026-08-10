@@ -32,6 +32,26 @@ export const MUSCLE_ZONES = [
   'calves',
 ]
 
+// Human-readable labels for the checklist UI (ExerciseMuscleModal.jsx) -
+// the raw zone keys are library/internal identifiers (kebab-case, plural
+// inconsistently), not fit to show a user directly.
+export const MUSCLE_ZONE_LABELS = {
+  chest: 'Chest',
+  shoulders: 'Shoulders',
+  biceps: 'Biceps',
+  triceps: 'Triceps',
+  forearm: 'Forearms',
+  abs: 'Abs',
+  obliques: 'Obliques',
+  trapezius: 'Traps',
+  'upper-back': 'Upper Back',
+  'lower-back': 'Lower Back',
+  gluteal: 'Glutes',
+  quadriceps: 'Quads',
+  hamstring: 'Hamstrings',
+  calves: 'Calves',
+}
+
 // Ordered most-specific-first so e.g. "lower back" matches lower-back before
 // a looser "back" keyword (checked last) could grab it as upper-back.
 const KEYWORD_RULES = [
