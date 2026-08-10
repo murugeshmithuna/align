@@ -232,10 +232,17 @@ export default function WorkoutLog() {
                     {new Date(log.performed_at).toLocaleDateString()}
                   </span>
                 </div>
-                <div className="text-slate-300 tabular-nums">
-                  {log.sets}×{log.reps}
-                  {log.weight ? ` @ ${log.weight}` : ''}
-                  {log.rpe ? ` (RPE ${log.rpe})` : ''}
+                <div className="text-right">
+                  <div className="text-slate-300 tabular-nums">
+                    {log.sets}×{log.reps}
+                    {log.weight ? ` @ ${log.weight}` : ''}
+                    {log.rpe ? ` (RPE ${log.rpe})` : ''}
+                  </div>
+                  {log.estimated_calories != null && (
+                    <div className="text-xs text-coral-400 tabular-nums">
+                      ~{Math.round(log.estimated_calories)} kcal (est.)
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

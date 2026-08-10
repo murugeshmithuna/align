@@ -187,6 +187,12 @@ class LogOut(BaseModel):
     weight: float | None
     rpe: float | None
     notes: str | None
+    # Computed on the fly at response time (app/agent/fatigue.py's
+    # estimate_calories_burned - MET x weight_kg x duration_hours), not a
+    # stored column - None if the user has no weight_kg set yet, never a
+    # fabricated number. Set as a transient attribute on the ORM object
+    # before serialization (see routers/logs.py).
+    estimated_calories: float | None = None
 
 
 # ---------- Progress ----------
@@ -195,6 +201,11 @@ class LogOut(BaseModel):
 class VolumePoint(BaseModel):
     date: date
     total_volume: float
+
+
+class CaloriePoint(BaseModel):
+    date: date
+    total_calories: float
 
 
 class ExerciseHistoryPoint(BaseModel):
@@ -213,6 +224,11 @@ class ExerciseProgress(BaseModel):
 
 class ProgressOut(BaseModel):
     volume_by_date: list[VolumePoint]
+    # Estimated calories burned per day (MET formula, see
+    # app/agent/fatigue.py's estimate_calories_burned) - empty when the
+    # user's weight_kg isn't set, same "don't fabricate" rule as everywhere
+    # else in this app rather than assuming a default body weight.
+    calories_by_date: list[CaloriePoint]
     exercises: list[ExerciseProgress]
 
 

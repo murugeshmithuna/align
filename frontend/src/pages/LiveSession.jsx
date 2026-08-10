@@ -4,6 +4,7 @@ import { DrawingUtils, FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-
 import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
+import { estimateCaloriesBurned } from '../utils/calories.js'
 
 // Same model bundle used server-side for batch analysis
 // (backend/app/vision/pose_analysis.py) - one model, two runtimes.
@@ -246,7 +247,7 @@ function tabClass(active) {
 // exercise list, a few numbers), so rendering it as real vector text keeps
 // the file small and the text selectable/searchable, instead of rasterizing
 // a DOM snapshot into an oversized embedded image.
-function buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, aiNote }) {
+function buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, caloriesBurned, aiNote }) {
   const doc = new jsPDF()
   // Print-safe olive-lime (see Progress.jsx's identical PDF color note) -
   // the on-screen neon lime is unreadable on a white PDF page.
@@ -316,6 +317,7 @@ function buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, aiNote }) 
     ['Total Volume', `${totalVolume.toLocaleString()}`],
     ['Form Accuracy Score', formAccuracyPct == null ? 'n/a' : `${formAccuracyPct}%`],
     ['Workout Duration', durationLabel],
+    ['Calories Burned (est.)', caloriesBurned == null ? 'n/a - set your weight in Profile' : `~${caloriesBurned} kcal`],
   ]
   for (const [label, value] of metrics) {
     doc.setTextColor(...SLATE)
@@ -482,6 +484,41 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   // and not yet resumed or discarded.
   const [paused, setPaused] = useState(false)
   const pausedDraftRef = useRef(null)
+  // Real profile body weight - fetched once so the calorie estimate below
+  // (and the PDF's copy of it) uses the user's actual weight_kg, never a
+  // guessed default. Null until loaded or if the user hasn't set one yet.
+  const [weightKg, setWeightKg] = useState(null)
+  // Snapshot of session-end stats (duration/form accuracy/calories), taken
+  // once at the moment the workout actually completes - see
+  // computeSessionStats() below - so the on-screen summary and the PDF both
+  // report the same numbers instead of drifting if the PDF is exported later.
+  const [sessionStats, setSessionStats] = useState(null)
+
+  useEffect(() => {
+    if (!userId) return
+    api
+      .getProfile(userId)
+      .then((profile) => setWeightKg(profile.weight_kg ?? null))
+      .catch(() => {})
+  }, [userId])
+
+  // Real elapsed duration (sessionStartedAtRef -> now) x the user's real
+  // weight_kg via the standard MET formula (see utils/calories.js) - RPE
+  // isn't tracked per rep in a live session, so this uses the same flat
+  // fallback MET the backend formula uses when RPE is unset, rather than
+  // inventing a separate constant just for this surface.
+  function computeSessionStats() {
+    const counts = formFrameCountsRef.current
+    const formAccuracyPct = counts.total > 0 ? Math.round((counts.ok / counts.total) * 100) : null
+    const elapsedSeconds = sessionStartedAtRef.current
+      ? Math.round((Date.now() - sessionStartedAtRef.current) / 1000)
+      : 0
+    const minutes = Math.floor(elapsedSeconds / 60)
+    const seconds = elapsedSeconds % 60
+    const durationLabel = `${minutes}m ${seconds}s`
+    const caloriesBurned = estimateCaloriesBurned({ weightKgUser: weightKg, durationMinutes: elapsedSeconds / 60 })
+    return { formAccuracyPct, durationLabel, caloriesBurned }
+  }
 
   function toggleVoice() {
     const next = !voiceEnabledRef.current
@@ -506,14 +543,10 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     setExportError('')
     try {
       const exercises = completedExercisesRef.current
-      const counts = formFrameCountsRef.current
-      const formAccuracyPct = counts.total > 0 ? Math.round((counts.ok / counts.total) * 100) : null
-      const elapsedSeconds = sessionStartedAtRef.current
-        ? Math.round((Date.now() - sessionStartedAtRef.current) / 1000)
-        : 0
-      const minutes = Math.floor(elapsedSeconds / 60)
-      const seconds = elapsedSeconds % 60
-      const durationLabel = `${minutes}m ${seconds}s`
+      // Reuse the stats snapshot taken when the session completed rather than
+      // recomputing elapsed time again here - keeps the on-screen summary and
+      // the PDF reporting the exact same numbers.
+      const { formAccuracyPct, durationLabel, caloriesBurned } = sessionStats || computeSessionStats()
 
       let aiNote = ''
       if (userId && exercises.length > 0) {
@@ -531,7 +564,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         }
       }
 
-      buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, aiNote })
+      buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, caloriesBurned, aiNote })
     } catch (err) {
       setExportError(err.message || 'Could not generate the PDF')
     } finally {
@@ -732,6 +765,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     const hasTrackedReps = Object.values(repFormLogRef.current).some((reps) => reps.length > 0)
     if (completedExercisesRef.current.length > 0 || hasTrackedReps || s.repCount > 0) {
       setComplete(true)
+      setSessionStats(computeSessionStats())
       await submitFormFeedback()
     }
 
@@ -760,6 +794,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
         sessionFinalizedRef.current = true
         clearDraft()
         setComplete(true)
+        setSessionStats(computeSessionStats())
         stop()
         submitFormFeedback()
       }
@@ -965,6 +1000,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     setStatus('loading')
     setError('')
     setComplete(false)
+    setSessionStats(null)
     // `paused` stays true (showing the paused prompt, now mid-"Resuming…")
     // until the camera/model actually finish loading below - clearing it
     // immediately would flash a generic "Camera off" state if acquisition
@@ -1181,6 +1217,19 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
             <span className="text-3xl">🎉</span>
             <p className="font-heading font-bold text-lg">Workout complete!</p>
             <p className="text-sm text-slate-400">Nice work - logged to your history.</p>
+
+            {sessionStats && (
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-slate-300">
+                <span>⏱ {sessionStats.durationLabel}</span>
+                {sessionStats.formAccuracyPct != null && <span>🎯 {sessionStats.formAccuracyPct}% form</span>}
+                <span className="text-coral-400 font-semibold">
+                  🔥{' '}
+                  {sessionStats.caloriesBurned != null
+                    ? `~${sessionStats.caloriesBurned} kcal (est.)`
+                    : 'Set your weight in Profile for a calorie estimate'}
+                </span>
+              </div>
+            )}
 
             {formFeedback === null ? (
               <p className="text-xs text-slate-500 flex items-center gap-2">
