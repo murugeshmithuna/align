@@ -1050,11 +1050,47 @@ FORM_FEEDBACK_TOOL = {
                     "plateauing, or declining - and why, grounded in the numbers given."
                 ),
             },
+            "injury_risk_flagged": {
+                "type": "boolean",
+                "description": (
+                    "True ONLY if the real numbers given show a genuine injury-risk pattern - a "
+                    "longest-bad-form-streak of 3 or more consecutive reps, or good_form_pct below 50% "
+                    "across a meaningful rep count. False if form was generally sound even with an "
+                    "isolated miss here or there - do not flag a single bad rep in an otherwise clean set."
+                ),
+            },
+            "injury_risk_note": {
+                "type": "string",
+                "description": (
+                    "If injury_risk_flagged is true: one direct sentence naming the specific risk pattern "
+                    "for this exercise's own form check (e.g. repeated knee valgus, hip sag, elbow drift) "
+                    "and a concrete next step (stop and reset, reduce load, review the cue) - a real safety "
+                    "note, not a technique nitpick. If injury_risk_flagged is false: state plainly that no "
+                    "injury-risk pattern was observed this session. Never invent a risk the numbers don't "
+                    "support, and phrase this as a movement-pattern observation, never a medical diagnosis."
+                ),
+            },
         },
-        "required": ["focus_areas", "trend", "overall_insight"],
+        "required": ["focus_areas", "trend", "overall_insight", "injury_risk_flagged", "injury_risk_note"],
         "additionalProperties": False,
     },
 }
+
+
+def _max_consecutive_bad_form(reps: list[dict]) -> int:
+    """Deterministic, LLM-free - the longest run of back-to-back reps with
+    failed form is exactly the kind of number that should never be left to
+    the model's own arithmetic (same philosophy as the Banister model/
+    calorie estimates elsewhere in this app: compute real numbers in Python,
+    let the model narrate them, never invent them)."""
+    streak = max_streak = 0
+    for rep in reps:
+        if not rep.get("form_ok", True):
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
+    return max_streak
 
 
 def _run_form_feedback(client, prompt: str) -> dict:
@@ -1089,6 +1125,7 @@ def generate_live_session_form_feedback(
     good_form = sum(1 for r in reps if r["form_ok"])
     good_depth_pct = round((good_depth / rep_count) * 100, 1) if rep_count else 0.0
     good_form_pct = round((good_form / rep_count) * 100, 1) if rep_count else 0.0
+    max_bad_form_streak = _max_consecutive_bad_form(reps)
 
     prior_sessions = db.scalars(
         select(models.LiveSessionForm)
@@ -1102,14 +1139,17 @@ def generate_live_session_form_feedback(
 
     current_summary = (
         f"This session: {rep_count} reps, {good_depth}/{rep_count} good depth ({good_depth_pct}%), "
-        f"{good_form}/{rep_count} good form ({good_form_pct}%)."
+        f"{good_form}/{rep_count} good form ({good_form_pct}%). Longest streak of consecutive reps with "
+        f"failed form: {max_bad_form_streak}."
     )
 
     if not prior_sessions:
         prompt = (
             f"The user just finished a live-tracked {exercise_name} session. There is no previous session "
             f"on this exercise to compare against - say that plainly in `trend`, and use `overall_insight` "
-            f"to note this is their baseline. Each field is ONE specific sentence, no fluff.\n\n"
+            f"to note this is their baseline. Set injury_risk_flagged/injury_risk_note per their field "
+            f"instructions, grounded only in the numbers below. Each field is ONE specific sentence, no "
+            f"fluff.\n\n"
             f"{current_summary}"
         )
         result = _run_form_feedback(client, prompt)
@@ -1117,6 +1157,7 @@ def generate_live_session_form_feedback(
             rep_count=rep_count,
             good_depth_pct=good_depth_pct,
             good_form_pct=good_form_pct,
+            max_bad_form_streak=max_bad_form_streak,
             previous_rep_count=None,
             previous_good_depth_pct=None,
             previous_good_form_pct=None,
@@ -1141,8 +1182,9 @@ def generate_live_session_form_feedback(
 
     prompt = (
         f"The user just finished a live-tracked {exercise_name} session. Compare it against their most "
-        f"recent previous session on this exercise and the short history below. Each field is ONE "
-        f"specific sentence citing real numbers - no fluff, no generic advice.\n\n"
+        f"recent previous session on this exercise and the short history below. Set injury_risk_flagged/ "
+        f"injury_risk_note per their field instructions, grounded only in THIS session's numbers (not the "
+        f"history). Each field is ONE specific sentence citing real numbers - no fluff, no generic advice.\n\n"
         f"{current_summary}\n\n"
         f"Previous session ({previous.session_at.strftime('%b %d')}): {previous_rep_count} reps, "
         f"{previous.reps_with_good_depth}/{previous_rep_count} good depth ({previous_good_depth_pct}%), "
@@ -1154,6 +1196,7 @@ def generate_live_session_form_feedback(
         rep_count=rep_count,
         good_depth_pct=good_depth_pct,
         good_form_pct=good_form_pct,
+        max_bad_form_streak=max_bad_form_streak,
         previous_rep_count=previous_rep_count,
         previous_good_depth_pct=previous_good_depth_pct,
         previous_good_form_pct=previous_good_form_pct,
