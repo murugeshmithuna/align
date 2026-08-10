@@ -41,40 +41,47 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="flex items-center justify-between gap-3 px-4 md:px-8 py-3 border-b border-forest-800 flex-wrap">
-      <div className="flex items-center gap-2 shrink-0">
-        <span className="w-2.5 h-2.5 rounded-full bg-coral-500 pulse-dot" />
-        <span className="font-heading font-bold tracking-tight hidden sm:inline">AI Fitness Agent</span>
-      </div>
+    <nav className="bg-coral-500">
+      <div className="flex items-center justify-between gap-3 px-4 md:px-8 py-3 flex-wrap">
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="w-2.5 h-2.5 rounded-full bg-forest-950" />
+          <span className="font-heading font-bold tracking-tight hidden sm:inline">AI Fitness Agent</span>
+        </div>
 
-      <div className="hidden md:flex items-center gap-1 flex-wrap">
-        {LINKS.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) =>
-              `px-2.5 py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors whitespace-nowrap ${
-                isActive ? 'bg-forest-800 text-coral-300' : 'text-slate-300 hover:text-coral-300'
-              }`
-            }
-          >
-            {link.label}
-          </NavLink>
-        ))}
-      </div>
+        <div className="hidden md:flex items-center gap-1.5 flex-wrap">
+          {LINKS.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                `px-3 py-1.5 rounded-full bg-forest-950 text-xs md:text-sm font-semibold transition-colors whitespace-nowrap ${
+                  isActive ? 'text-coral-400' : 'text-slate-300 hover:text-coral-300'
+                }`
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
+        </div>
 
-      <div className="flex items-center gap-3 shrink-0">
-        {profile?.photo_url ? (
-          <img src={profile.photo_url} alt={profile.name} className="w-7 h-7 rounded-full object-cover" />
-        ) : (
-          <div className="w-7 h-7 rounded-full bg-forest-800 text-coral-300 flex items-center justify-center text-xs font-semibold">
-            {profile?.name ? profile.name[0].toUpperCase() : '?'}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 bg-forest-950 rounded-full pl-1 pr-3 py-1">
+            {profile?.photo_url ? (
+              <img src={profile.photo_url} alt={profile.name} className="w-6 h-6 rounded-full object-cover" />
+            ) : (
+              <div className="w-6 h-6 rounded-full bg-coral-500 text-forest-950 flex items-center justify-center text-xs font-bold">
+                {profile?.name ? profile.name[0].toUpperCase() : '?'}
+              </div>
+            )}
+            <span className="text-sm text-slate-200 hidden md:inline">{profile?.name ?? `User #${userId}`}</span>
           </div>
-        )}
-        <span className="text-sm text-slate-400 hidden md:inline">{profile?.name ?? `User #${userId}`}</span>
-        <button onClick={handleLogout} className="text-sm text-slate-400 hover:text-coral-300 transition-colors">
-          Log out
-        </button>
+          <button
+            onClick={handleLogout}
+            className="px-3 py-1.5 rounded-full bg-forest-950 text-xs md:text-sm font-semibold text-slate-300 hover:text-coral-300 transition-colors"
+          >
+            Log out
+          </button>
+        </div>
       </div>
     </nav>
   )
