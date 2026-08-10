@@ -523,6 +523,19 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
     return "".join(block.text for block in response.content if block.type == "text")
 
 
+# Field descriptions were tightened from "specific, one sentence" to an
+# explicit word cap + fragment framing (verified live: this measurably
+# shortened real responses, see CLAUDE.md/session notes) - a card rendering
+# these as short stat-first chips reads as "childish" prose otherwise, not
+# because the underlying data was wrong, but because full sentences read as
+# padding next to a number. Same tool name/field names as before, so nothing
+# downstream (DB, other consumers) needed to change.
+FRAGMENT_STYLE_NOTE = (
+    "3-6 words, a stat-first fragment, not a sentence - no articles ('the'/'a'), no filler "
+    "('was able to', 'in terms of'), no trailing period. Lead with the number or the noun, e.g. "
+    "'205 lb squat PR', 'Protein hit 160g', 'Best day: Friday' - never 'Your best day this week was...'."
+)
+
 WEEKLY_DIGEST_TOOL = {
     "name": "report_weekly_digest",
     "description": "Report the three-bullet weekly training/nutrition digest.",
@@ -532,15 +545,15 @@ WEEKLY_DIGEST_TOOL = {
         "properties": {
             "biggest_win": {
                 "type": "string",
-                "description": "The single most notable positive from this week - specific, one sentence.",
+                "description": f"The single most notable positive from this week. {FRAGMENT_STYLE_NOTE}",
             },
             "recovery_note": {
                 "type": "string",
-                "description": "One recovery, form, or readiness concern worth flagging - specific, one sentence.",
+                "description": f"One recovery, form, or readiness concern worth flagging. {FRAGMENT_STYLE_NOTE}",
             },
             "next_week_focus": {
                 "type": "string",
-                "description": "One concrete, specific target for next week - one sentence.",
+                "description": f"One concrete, specific target for next week. {FRAGMENT_STYLE_NOTE}",
             },
         },
         "required": ["biggest_win", "recovery_note", "next_week_focus"],
@@ -582,9 +595,9 @@ def generate_weekly_digest(db: Session, user_id: int) -> dict:
 
     if not log_rows and not checkins and not meals:
         return {
-            "biggest_win": "No activity logged yet this week.",
-            "recovery_note": "Nothing to flag - there's no data yet.",
-            "next_week_focus": "Log a few workouts and check in daily so next week's digest has something to work with.",
+            "biggest_win": "No activity yet",
+            "recovery_note": "Nothing to flag",
+            "next_week_focus": "Log workouts + check in daily",
         }
 
     log_lines = (
@@ -609,8 +622,8 @@ def generate_weekly_digest(db: Session, user_id: int) -> dict:
 
     prompt = (
         "Synthesize this user's past 7 days of training, readiness, and nutrition into a three-bullet "
-        "digest. Each field is ONE specific, concrete sentence - no fluff, no generic advice, reference "
-        "actual numbers/trends from the data below wherever possible.\n\n"
+        "digest. Each field is a short fragment (see field instructions - a few words, not a sentence), "
+        "no generic advice, reference actual numbers/trends from the data below wherever possible.\n\n"
         f"Workout logs (last 7 days):\n{log_lines}\n\n"
         f"Daily readiness check-ins (last 7 days):\n{checkin_lines}\n\n"
         f"Meal photo analyses (last 7 days):\n{meal_lines}"
@@ -637,20 +650,21 @@ NUTRITION_REVIEW_TOOL = {
             "macro_status": {
                 "type": "string",
                 "description": (
-                    "One sentence comparing actual macros to the user's targets - cite real numbers "
-                    "(e.g. 'Hit 140g/160g protein, carbs ran high at 310g'). If no targets are set, say so."
+                    "Actual macros vs. targets, as a stat-first fragment (e.g. 'Protein 140g/160g, "
+                    "carbs high at 310g'). If no targets are set, say so in 3-6 words. "
+                    f"{FRAGMENT_STYLE_NOTE}"
                 ),
             },
             "key_pattern": {
                 "type": "string",
                 "description": (
-                    "One sentence naming a specific, concrete pattern in what was actually eaten - a "
-                    "particular meal, a timing pattern, a recurring choice. Not generic advice."
+                    "A specific, concrete pattern in what was actually eaten - a particular meal, a "
+                    f"timing pattern, a recurring choice. Not generic advice. {FRAGMENT_STYLE_NOTE}"
                 ),
             },
             "recommendation": {
                 "type": "string",
-                "description": "One concrete, specific, actionable adjustment tied to the pattern above.",
+                "description": f"One concrete, actionable adjustment tied to the pattern above. {FRAGMENT_STYLE_NOTE}",
             },
         },
         "required": ["macro_status", "key_pattern", "recommendation"],
@@ -705,9 +719,9 @@ def generate_daily_nutrition_review(db: Session, user_id: int) -> dict:
 
     if not meals:
         return {
-            "macro_status": "No meals logged today yet.",
-            "key_pattern": "Nothing to analyze - log a meal to get today's review.",
-            "recommendation": "Log at least one meal today so this review has real data to work with.",
+            "macro_status": "No meals logged today",
+            "key_pattern": "Nothing to analyze yet",
+            "recommendation": "Log a meal to get today's review",
         }
 
     totals = {
@@ -723,8 +737,8 @@ def generate_daily_nutrition_review(db: Session, user_id: int) -> dict:
     )
 
     prompt = (
-        "Review this user's meals logged TODAY against their daily targets. Each field is ONE specific, "
-        "concrete sentence citing real numbers - no fluff, no generic advice.\n\n"
+        "Review this user's meals logged TODAY against their daily targets. Each field is a short "
+        "fragment citing real numbers (see field instructions) - no generic advice.\n\n"
         f"{_build_target_context(user)}\n\n"
         f"Today's totals so far: {totals['calories']} kcal, {totals['protein_g']}g protein, "
         f"{totals['carbs_g']}g carbs, {totals['fat_g']}g fat.\n\n"
@@ -749,9 +763,9 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
 
     if not meals:
         return {
-            "macro_status": "No meals logged in the past 7 days.",
-            "key_pattern": "Nothing to analyze yet this week.",
-            "recommendation": "Log meals throughout the week so next week's audit has real data to work with.",
+            "macro_status": "No meals logged this week",
+            "key_pattern": "Nothing to analyze yet",
+            "recommendation": "Log meals throughout the week",
             "days_logged": 0,
             "calorie_target": user.daily_calorie_target,
             "protein_target": user.daily_protein_target,
@@ -792,8 +806,8 @@ def generate_weekly_nutrition_review(db: Session, user_id: int) -> dict:
     prompt = (
         "Audit this user's past 7 days of nutrition logging against their daily targets. Analyze "
         "consistency (how many of the last 7 days actually have a logged meal), whether protein targets "
-        "are being hit on average, and the calorie average/trend over the week. Each field is ONE "
-        "specific, concrete sentence citing real numbers - no fluff, no generic advice.\n\n"
+        "are being hit on average, and the calorie average/trend over the week. Each field is a short "
+        "fragment citing real numbers (see field instructions) - no generic advice.\n\n"
         f"{_build_target_context(user)}\n\n"
         f"Logged meals on {days_logged} of the last 7 days. Daily averages on days logged: "
         f"{avg_calories} kcal, {avg_protein}g protein, {avg_carbs}g carbs, {avg_fat}g fat.\n\n"

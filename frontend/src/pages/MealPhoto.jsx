@@ -1,8 +1,37 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js'
+import { Doughnut } from 'react-chartjs-2'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useSavedFlash } from '../utils/useSavedFlash.js'
+
+ChartJS.register(ArcElement, Tooltip)
+
+// Same P/C/F colors already used elsewhere on this page (the emerald/sky/
+// amber badges below) and in Dashboard.jsx/MacroBar.jsx - reused exactly,
+// not a new triad for the same three quantities.
+const PROTEIN_COLOR = '#10b981'
+const CARBS_COLOR = '#0ea5e9'
+const FAT_COLOR = '#f59e0b'
+
+const macroDonutOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  cutout: '68%',
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#17171b',
+      borderColor: 'rgba(198, 255, 61, 0.35)',
+      borderWidth: 1,
+      titleColor: '#e2e8f0',
+      bodyColor: '#e2e8f0',
+      padding: 8,
+      callbacks: { label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}g` },
+    },
+  },
+}
 
 const MAX_DIMENSION_PX = 800
 const JPEG_QUALITY = 0.7
@@ -417,6 +446,20 @@ export default function MealPhoto() {
 
   useEffect(loadHistory, [userId])
 
+  // Real, already-fetched data (today's slice of `history`) - not a second
+  // API call - powers a compact "Today's macros" donut next to the Daily
+  // review card, same no-fabrication rule as everywhere else in this app.
+  const todaysTotals = useMemo(() => {
+    const todaysMeals = history.filter((m) => new Date(m.analyzed_at).toDateString() === new Date().toDateString())
+    return {
+      count: todaysMeals.length,
+      calories: todaysMeals.reduce((sum, m) => sum + m.estimated_calories, 0),
+      protein: todaysMeals.reduce((sum, m) => sum + m.protein_g, 0),
+      carbs: todaysMeals.reduce((sum, m) => sum + m.carbs_g, 0),
+      fat: todaysMeals.reduce((sum, m) => sum + m.fat_g, 0),
+    }
+  }, [history])
+
   function handleSaved() {
     setReviewData(null)
     loadHistory()
@@ -462,46 +505,91 @@ export default function MealPhoto() {
       )}
 
       <div className="card p-6">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="font-heading font-semibold">Daily review</h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-heading font-semibold">Today</h2>
           <button
             onClick={generateDailyReview}
             disabled={dailyReviewLoading}
-            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold"
+            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
           >
-            {dailyReviewLoading ? 'Reviewing…' : dailyReview ? 'Regenerate' : 'Generate End-of-Day Review'}
+            {dailyReviewLoading ? 'Reviewing…' : dailyReview ? 'Regenerate' : 'Generate review'}
           </button>
         </div>
-        {dailyReviewError && <p className="text-sm text-red-400">{dailyReviewError}</p>}
-        {dailyReviewLoading ? (
-          <p className="text-sm text-slate-500 flex items-center gap-2">
-            <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
-            Reviewing today's meals…
-          </p>
-        ) : dailyReview ? (
-          <ul className="space-y-2 text-sm text-slate-200">
-            <li className="flex gap-2">
-              <span>📊</span>
-              <span>
-                <span className="font-semibold">Macro Status:</span> {dailyReview.macro_status}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>💡</span>
-              <span>
-                <span className="font-semibold">Key Pattern:</span> {dailyReview.key_pattern}
-              </span>
-            </li>
-            <li className="flex gap-2">
-              <span>🎯</span>
-              <span>
-                <span className="font-semibold">Adjustment for Tomorrow:</span> {dailyReview.recommendation}
-              </span>
-            </li>
-          </ul>
-        ) : (
-          <p className="text-sm text-slate-500">Aggregates all of today's logged meals into a 3-line review.</p>
-        )}
+
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Real, already-fetched totals - no AI call needed for this half. */}
+          <div className="flex items-center gap-3 sm:pr-4 sm:border-r sm:border-forest-800 shrink-0">
+            {todaysTotals.count > 0 ? (
+              <>
+                <div className="w-14 h-14 shrink-0">
+                  <Doughnut
+                    data={{
+                      labels: ['Protein', 'Carbs', 'Fat'],
+                      datasets: [
+                        {
+                          data: [todaysTotals.protein, todaysTotals.carbs, todaysTotals.fat],
+                          backgroundColor: [PROTEIN_COLOR, CARBS_COLOR, FAT_COLOR],
+                          borderColor: '#0c0c0f',
+                          borderWidth: 2,
+                        },
+                      ],
+                    }}
+                    options={macroDonutOptions}
+                  />
+                </div>
+                <div>
+                  <p className="font-heading font-bold text-xl leading-none">
+                    {Math.round(todaysTotals.calories).toLocaleString()}
+                    <span className="text-xs text-slate-400 font-normal ml-1">kcal today</span>
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400 whitespace-nowrap">
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: PROTEIN_COLOR }} />P{' '}
+                      {Math.round(todaysTotals.protein)}g
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: CARBS_COLOR }} />C{' '}
+                      {Math.round(todaysTotals.carbs)}g
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: FAT_COLOR }} />F{' '}
+                      {Math.round(todaysTotals.fat)}g
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500 sm:max-w-[9rem]">No meals logged today yet.</p>
+            )}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            {dailyReviewError && <p className="text-sm text-red-400">{dailyReviewError}</p>}
+            {dailyReviewLoading ? (
+              <p className="text-sm text-slate-500 flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                Reviewing today's meals…
+              </p>
+            ) : dailyReview ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">📊 Macros</p>
+                  <p className="text-sm font-semibold text-slate-100">{dailyReview.macro_status}</p>
+                </div>
+                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">💡 Pattern</p>
+                  <p className="text-sm font-semibold text-slate-100">{dailyReview.key_pattern}</p>
+                </div>
+                <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">🎯 Tomorrow</p>
+                  <p className="text-sm font-semibold text-slate-100">{dailyReview.recommendation}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Short AI notes on today's macros.</p>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="card p-6">
