@@ -16,8 +16,32 @@ is just a free-text unique column with no format constraint. Real user report:
 is also mandatory."
 """
 
+import re
+
 from app.agent.orchestrator import _get_client
 from app.config import FAST_MODEL
+
+# Deterministic format backstop, checked BEFORE the LLM semantic check below -
+# same "hard backstop underneath judgment-call reasoning" philosophy as
+# tools.py's _out_of_bounds_fields (sets/reps/weight bounds under the
+# SYSTEM_PROMPT's SAFETY CHECK). Real bug this catches: the LLM validator
+# judges semantic plausibility ("does this name a real exercise?"), which is
+# generous by design so slang/abbreviations pass - but that means a real
+# exercise word merely EMBEDDED in decorative junk (e.g. "\U0001F3CB️‍♂️ Squat!! @@@ ###")
+# still reads as "plausibly names a real exercise" to the model and gets
+# created verbatim, junk symbols and all, into the shared catalog every user
+# then sees in their own picker forever. Confirmed live: that exact emoji
+# string was accepted with is_valid=true. Allowlists letters/digits/spaces and
+# the punctuation real exercise names actually use (hyphens, apostrophes,
+# slashes for e.g. "3/4 Sit-Up", parens, periods, commas, ampersands) -
+# anything outside that (emoji, @ # $ % etc.) is rejected before ever
+# spending an LLM call on it.
+_ALLOWED_NAME_CHARS = re.compile(r"^[\w\s\-'/().,&]+$", re.UNICODE)
+
+
+def _has_disallowed_characters(name: str) -> bool:
+    return not _ALLOWED_NAME_CHARS.match(name)
+
 
 EXERCISE_VALIDATION_TOOL = {
     "name": "report_exercise_validation",
@@ -56,6 +80,16 @@ def validate_exercise_name(name: str) -> dict:
     the extra round-trip is an acceptable cost for keeping the shared
     exercise catalog from filling up with nonsense every user then sees in
     their own exercise picker."""
+    trimmed = name.strip()
+    if not trimmed:
+        return {"is_valid": False, "reason": "Exercise name can't be empty."}
+    if _has_disallowed_characters(trimmed):
+        return {
+            "is_valid": False,
+            "reason": "Exercise names can only use letters, numbers, spaces, and basic punctuation "
+            "(- ' / ( ) . , &) - no emoji or special symbols.",
+        }
+
     client = _get_client()
     response = client.messages.create(
         model=FAST_MODEL,

@@ -285,6 +285,20 @@ class AgentChatRequest(BaseModel):
     # can be resolved against the prior turn instead of looking like a
     # non-sequitur. Opaque to the caller - just persist and replay verbatim.
     history: list[dict] = []
+    # The browser's own local calendar date ("2026-08-11"), NOT UTC - real
+    # bug found live: the orchestrator's day-of-week grounding used the
+    # server's UTC date exclusively, while every frontend page (Calendar.jsx,
+    # WorkoutLog.jsx, Dashboard's "Today's workout") computes "today" from
+    # local browser time. For any user ahead of UTC, near local midnight the
+    # two disagree about which calendar day it is - reproduced live in IST
+    # (UTC+5:30): asked to "add X to today", the coach correctly grounded on
+    # its own (UTC) Monday, but the user's actual local day was already
+    # Tuesday, so the change landed on a day the user wasn't looking at. This
+    # is the same root-cause *shape* as the earlier "coach guesses the wrong
+    # day" bug, just from a UTC/local mismatch instead of the model guessing.
+    # Optional and defaults to the server's own UTC date when absent (e.g. a
+    # non-browser caller) - see orchestrator.py's _resolve_today().
+    client_date: str | None = None
 
 
 class AgentToolCall(BaseModel):
