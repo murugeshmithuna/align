@@ -245,7 +245,7 @@ function buildVolumeChartData(volumeByDate) {
         pointRadius: 0,
         pointHoverRadius: 5,
         pointHoverBackgroundColor: CORAL,
-        pointHoverBorderColor: '#050506',
+        pointHoverBorderColor: '#0c0c0f',
         pointHoverBorderWidth: 2,
         tension: 0.25,
         fill: true,
@@ -279,7 +279,7 @@ function buildExerciseChartData(history) {
         pointRadius: history.map((p) => (p.is_pr ? 6 : 2)),
         pointHoverRadius: history.map((p) => (p.is_pr ? 8 : 5)),
         pointBackgroundColor: CORAL,
-        pointBorderColor: '#050506',
+        pointBorderColor: '#0c0c0f',
         pointBorderWidth: history.map((p) => (p.is_pr ? 2 : 1)),
       },
     ],
@@ -329,7 +329,7 @@ const baseChartOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#0a0a0d',
+      backgroundColor: '#17171b',
       borderColor: 'rgba(198, 255, 61, 0.35)',
       borderWidth: 1,
       titleColor: '#e2e8f0',
