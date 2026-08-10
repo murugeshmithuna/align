@@ -139,7 +139,12 @@ export default function Dashboard() {
         </div>
 
         <div className="card p-6">
-          <h2 className="font-heading font-semibold mb-2">Today's readiness</h2>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-heading font-semibold">Today's readiness</h2>
+            <Link to="/calendar" className="text-xs font-semibold text-coral-400 hover:text-coral-300 whitespace-nowrap">
+              📅 Calendar & weekly analysis →
+            </Link>
+          </div>
           {checkinLoading ? (
             <p className="text-sm text-slate-500">Loading…</p>
           ) : checkin ? (

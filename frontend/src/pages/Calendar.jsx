@@ -157,6 +157,82 @@ function DayDetailPanel({ date, dayData, onClose }) {
   )
 }
 
+function WeeklyAnalysisCard({ distinctDaysLogged }) {
+  const [digest, setDigest] = useState(null)
+  const [nutrition, setNutrition] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [requested, setRequested] = useState(false)
+  const { userId } = useSession()
+
+  // A full week's worth of data is what makes generate_weekly_digest's
+  // "biggest win" / "next week focus" framing meaningful rather than a
+  // near-empty canned response - gated on real distinct logged days, not
+  // just the calendar date crossing a week boundary.
+  const weekReady = distinctDaysLogged >= 7
+
+  async function handleGenerate() {
+    setRequested(true)
+    setLoading(true)
+    try {
+      const [digestData, nutritionData] = await Promise.all([
+        api.getWeeklyDigest(userId),
+        api.getWeeklyNutritionReview(userId),
+      ])
+      setDigest(digestData)
+      setNutrition(nutritionData)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="card p-4 md:p-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="font-heading font-semibold">This week's analysis</h2>
+        {!requested && (
+          <button
+            onClick={handleGenerate}
+            disabled={!weekReady}
+            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-heading font-semibold whitespace-nowrap"
+          >
+            Generate report
+          </button>
+        )}
+      </div>
+
+      {!weekReady && !requested && (
+        <p className="text-sm text-slate-500">
+          {distinctDaysLogged}/7 days logged so far - once a full week of activity is in, a detailed
+          report unlocks here.
+        </p>
+      )}
+
+      {weekReady && !requested && (
+        <p className="text-sm text-slate-400">A full week of activity is logged - generate the report whenever you're ready.</p>
+      )}
+
+      {loading && <p className="text-sm text-slate-400">Synthesizing this week's performance…</p>}
+
+      {digest && nutrition && !loading && (
+        <div className="space-y-4 mt-2">
+          <div>
+            <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Training digest</h3>
+            <p className="text-sm mb-1">🚀 {digest.biggest_win}</p>
+            <p className="text-sm mb-1">⚠️ {digest.recovery_note}</p>
+            <p className="text-sm">🎯 {digest.next_week_focus}</p>
+          </div>
+          <div className="border-t border-forest-800 pt-4">
+            <h3 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Nutrition audit</h3>
+            <p className="text-sm mb-1">📊 {nutrition.macro_status}</p>
+            <p className="text-sm mb-1">💡 {nutrition.key_pattern}</p>
+            <p className="text-sm">🎯 {nutrition.recommendation}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function CalendarPage() {
   const { userId } = useSession()
   const [loading, setLoading] = useState(true)
@@ -204,6 +280,11 @@ export default function CalendarPage() {
     () => buildMonthGrid(cursor.getFullYear(), cursor.getMonth()),
     [cursor]
   )
+
+  const distinctDaysLogged = useMemo(() => {
+    const days = new Set([...Object.keys(logsByDate), ...Object.keys(mealsByDate), ...Object.keys(checkinsByDate)])
+    return days.size
+  }, [logsByDate, mealsByDate, checkinsByDate])
 
   function dayDataFor(key) {
     return {
@@ -309,6 +390,8 @@ export default function CalendarPage() {
           </>
         )}
       </div>
+
+      {!loading && <WeeklyAnalysisCard distinctDaysLogged={distinctDaysLogged} />}
 
       {selectedDate && (
         <DayDetailPanel
