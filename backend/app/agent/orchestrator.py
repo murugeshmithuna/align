@@ -167,12 +167,18 @@ def _build_plan_context(db: Session, user_id: int) -> str:
     by_day: dict[str, list[str]] = {}
     for pe in plan.plan_exercises:
         day = _DAY_NAMES[pe.day_of_week] if pe.day_of_week is not None else "unscheduled"
-        by_day.setdefault(day, []).append(f"{pe.exercise.name} ({pe.sets}x{pe.reps})")
+        # plan_exercise_id is included here specifically because adjust_plan's
+        # `updates` require it per-item - without it, the model has no real ID
+        # to reference and either can't call the tool at all or has to guess
+        # one, which fails (or worse, silently updates the wrong exercise).
+        by_day.setdefault(day, []).append(f"{pe.exercise.name} ({pe.sets}x{pe.reps}, plan_exercise_id={pe.id})")
     schedule = "\n".join(f"- {day}: {', '.join(exs)}" for day, exs in by_day.items()) or "no exercises yet"
 
     return (
         f'Active plan (do not ask the user to restate any of this): "{plan.name}" (plan_id={plan.id}).\n'
-        f"Weekly schedule:\n{schedule}"
+        f"Weekly schedule:\n{schedule}\n"
+        f"When calling adjust_plan, only ever reference plan_exercise_id values listed above - never invent "
+        f"one, and never describe or act on an exercise that isn't in this exact list."
     )
 
 
@@ -211,7 +217,22 @@ def _get_user_or_raise(db: Session, user_id: int) -> models.User:
 
 def _run_tool(db: Session, user_id: int, block) -> dict:
     executor = TOOL_EXECUTORS.get(block.name)
-    return executor(db, user_id, block.input) if executor is not None else {"error": f"unknown tool {block.name}"}
+    if executor is None:
+        return {"error": f"unknown tool {block.name}"}
+    try:
+        return executor(db, user_id, block.input)
+    except Exception as exc:
+        # A malformed tool call (e.g. a model-invented plan_exercise_id that
+        # doesn't match the schema's expected shape, or any other executor
+        # bug) used to propagate straight out of this generator - in the
+        # streaming path that silently kills the SSE connection with no
+        # {"error": ...} or {"done": true} frame ever sent, so the frontend
+        # sits on "Running <tool>..." forever with no way to know the turn
+        # ended. Converting it into a normal tool_result the model can see
+        # and react to (e.g. by explaining the failure or retrying) keeps
+        # the conversation loop alive either way.
+        db.rollback()
+        return {"error": f"{block.name} failed: {exc}"}
 
 
 def _serialize_content(content) -> list[dict]:
