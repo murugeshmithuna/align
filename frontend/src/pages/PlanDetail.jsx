@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api.js'
 import { useToast } from '../context/ToastContext.jsx'
+import MuscleBodyMap from '../components/MuscleBodyMap.jsx'
+import { classifyMuscleGroup } from '../utils/muscleZones.js'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -21,6 +23,25 @@ function groupByDay(planExercises) {
   return groups
 }
 
+// Gathers this plan's real muscle_group strings (free text, written by the
+// LLM's generate_workout_plan tool - no fixed catalog) and classifies each
+// into a fixed internal zone key for MuscleBodyMap - see utils/muscleZones.js.
+// Keeps both the zone keys (for the diagram) and the original distinct raw
+// strings (for a traceable legend) since the diagram alone loses the exact
+// wording behind each highlighted zone.
+function collectMuscleGroups(planExercises) {
+  const rawGroups = new Set()
+  const targetedZones = new Set()
+  for (const pe of planExercises) {
+    const raw = pe.exercise?.muscle_group
+    if (!raw) continue
+    rawGroups.add(raw)
+    const zone = classifyMuscleGroup(raw)
+    if (zone) targetedZones.add(zone)
+  }
+  return { rawGroups: [...rawGroups].sort(), targetedZones }
+}
+
 export default function PlanDetail() {
   const { planId } = useParams()
   const navigate = useNavigate()
@@ -30,6 +51,14 @@ export default function PlanDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activating, setActivating] = useState(false)
+
+  // Computed before the loading/error early returns below so this hook is
+  // always called on every render (Rules of Hooks) - falls back to an empty
+  // list until the plan has actually loaded.
+  const { rawGroups, targetedZones } = useMemo(
+    () => collectMuscleGroups(plan?.plan_exercises || []),
+    [plan],
+  )
 
   useEffect(() => {
     setLoading(true)
@@ -96,6 +125,23 @@ export default function PlanDetail() {
           </button>
         )}
       </div>
+
+      {targetedZones.size > 0 && (
+        <div className="card p-6">
+          <h2 className="font-heading font-semibold mb-4">Muscles Targeted</h2>
+          <MuscleBodyMap targetedZones={targetedZones} />
+          <div className="mt-4 flex flex-wrap gap-2 justify-center">
+            {rawGroups.map((group) => (
+              <span
+                key={group}
+                className="text-xs text-slate-300 bg-forest-900 border border-forest-700 rounded-full px-3 py-1"
+              >
+                {group}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {plan.plan_exercises.length === 0 ? (
         <p className="text-sm text-slate-500">This plan has no exercises yet.</p>
