@@ -223,6 +223,29 @@ TOOL_SCHEMAS = [
 ]
 
 
+def _in_bounds(value, bounds: dict) -> bool:
+    return bounds["ge"] <= value <= bounds["le"]
+
+
+def _out_of_bounds_fields(payload: dict) -> list[str]:
+    """generate_workout_plan and adjust_plan previously wrote sets/reps/
+    target_weight straight into the database with NO validation at all -
+    unlike logs, which always go through LogCreate's bounds. A truly
+    implausible value (e.g. a 5000kg target weight) would be silently
+    persisted and rendered on the plan as if it were fact. This is a hard
+    backstop underneath the SYSTEM_PROMPT's SAFETY CHECK instruction, not a
+    replacement for it - the prompt handles judgment calls relative to a
+    specific user's actual profile (bodyweight, experience level, noted
+    limitations/soreness), while this catches values that are absurd for
+    anyone regardless of profile."""
+    bad = []
+    for field, bounds in (("sets", SETS_BOUNDS), ("reps", REPS_BOUNDS), ("target_weight", WEIGHT_BOUNDS)):
+        value = payload.get(field)
+        if value is not None and not _in_bounds(value, bounds):
+            bad.append(field)
+    return bad
+
+
 def execute_generate_workout_plan(db: Session, user_id: int, tool_input: dict) -> dict:
     # A new plan must become the user's ONE AND ONLY active plan - Dashboard,
     # PlanDetail, Calendar, and the orchestrator's own _build_plan_context()
@@ -243,7 +266,12 @@ def execute_generate_workout_plan(db: Session, user_id: int, tool_input: dict) -
         notes=tool_input.get("notes"),
         is_active=True,
     )
+    skipped_exercises = []
     for ex in tool_input.get("exercises", []):
+        bad_fields = _out_of_bounds_fields(ex)
+        if bad_fields:
+            skipped_exercises.append(f"{ex.get('name', '?')} ({', '.join(bad_fields)})")
+            continue
         exercise = db.scalar(select(models.Exercise).where(models.Exercise.name == ex["name"]))
         if not exercise:
             exercise = models.Exercise(name=ex["name"], muscle_group=ex.get("muscle_group"))
@@ -261,11 +289,19 @@ def execute_generate_workout_plan(db: Session, user_id: int, tool_input: dict) -
     db.add(plan)
     db.commit()
     db.refresh(plan)
-    return {
+    result = {
         "plan_id": plan.id,
         "name": plan.name,
         "exercise_count": len(plan.plan_exercises),
     }
+    if skipped_exercises:
+        result["warning"] = (
+            f"Skipped {len(skipped_exercises)} exercise(s) with implausible values: "
+            f"{'; '.join(skipped_exercises)}. Sets must be {SETS_BOUNDS['ge']}-{SETS_BOUNDS['le']}, reps "
+            f"{REPS_BOUNDS['ge']}-{REPS_BOUNDS['le']}, weight {WEIGHT_BOUNDS['ge']}-{WEIGHT_BOUNDS['le']} "
+            "(kg or lb) - tell the user plainly rather than silently omitting these."
+        )
+    return result
 
 
 def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
@@ -278,10 +314,15 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
 
     updated_ids = []
     skipped_updates = 0
+    invalid_updates = []
     for upd in tool_input.get("updates", []):
         plan_exercise = db.get(models.PlanExercise, upd["plan_exercise_id"])
         if not plan_exercise or plan_exercise.plan_id != plan.id:
             skipped_updates += 1
+            continue
+        bad_fields = _out_of_bounds_fields(upd)
+        if bad_fields:
+            invalid_updates.append(f"plan_exercise_id={upd['plan_exercise_id']} ({', '.join(bad_fields)})")
             continue
         # Skip explicit nulls, not just absent keys - a client that echoes
         # back a full adjustment object (e.g. the Coach Resolution "Apply"
@@ -301,9 +342,14 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
     # Reuses the exact find-or-create Exercise pattern execute_generate_
     # workout_plan already uses, so exercise naming/catalog behavior matches.
     added_ids = []
+    invalid_additions = []
     existing_order_indexes = [pe.order_index for pe in plan.plan_exercises]
     next_order_index = (max(existing_order_indexes) + 1) if existing_order_indexes else 0
     for addition in tool_input.get("additions", []):
+        bad_fields = _out_of_bounds_fields(addition)
+        if bad_fields:
+            invalid_additions.append(f"{addition.get('name', '?')} ({', '.join(bad_fields)})")
+            continue
         exercise = db.scalar(select(models.Exercise).where(models.Exercise.name == addition["name"]))
         if not exercise:
             exercise = models.Exercise(name=addition["name"], muscle_group=addition.get("muscle_group"))
@@ -364,6 +410,17 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
             f"{skipped_removals} removal(s) referenced a plan_exercise_id not found on this plan and were "
             "skipped - never tell the user something was removed unless its ID actually appears in "
             "removed_plan_exercise_ids above."
+        )
+    if invalid_updates:
+        warnings.append(
+            f"Skipped update(s) with implausible values: {'; '.join(invalid_updates)}. Sets must be "
+            f"{SETS_BOUNDS['ge']}-{SETS_BOUNDS['le']}, reps {REPS_BOUNDS['ge']}-{REPS_BOUNDS['le']}, weight "
+            f"{WEIGHT_BOUNDS['ge']}-{WEIGHT_BOUNDS['le']} (kg or lb) - tell the user plainly."
+        )
+    if invalid_additions:
+        warnings.append(
+            f"Skipped addition(s) with implausible values: {'; '.join(invalid_additions)}. Same bounds as "
+            "above - tell the user plainly rather than silently omitting these."
         )
     if warnings:
         result["warning"] = " ".join(warnings)
@@ -552,10 +609,6 @@ def execute_log_workout(db: Session, user_id: int, tool_input: dict) -> dict:
         "rpe": log.rpe,
         "performed_at": log.performed_at.isoformat(),
     }
-
-
-def _in_bounds(value, bounds: dict) -> bool:
-    return bounds["ge"] <= value <= bounds["le"]
 
 
 def execute_update_log(db: Session, user_id: int, tool_input: dict) -> dict:
