@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { streamAgentChat } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
+import { notifyIfMutating } from '../utils/coachEvents.js'
 
 let nextId = 1
 
@@ -244,6 +245,11 @@ export default function AIMessageBar() {
               setMessages((prev) => prev.filter((m) => m.id !== id))
               statusMessageIdRef.current = null
             }
+            // Tells any currently-open page (Dashboard, PlanDetail, etc.) to
+            // refetch - without this, a real, successful database change
+            // just sits there until the user manually reloads, which is
+            // exactly the "said added but can't see it" report this fixes.
+            notifyIfMutating(payload.tool)
           } else if (payload.widget) {
             attachWidget(agentId, payload.widget)
           } else if (payload.history) {

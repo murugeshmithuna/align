@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
 
 export default function WorkoutLog() {
   const { userId } = useSession()
@@ -21,6 +22,10 @@ export default function WorkoutLog() {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const loadLogs = useCallback(() => {
+    api.listLogs(userId).then(setLogs).catch(() => {})
+  }, [userId])
+
   useEffect(() => {
     Promise.all([api.listExercises(), api.listLogs(userId)])
       .then(([exerciseList, logList]) => {
@@ -31,6 +36,15 @@ export default function WorkoutLog() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [userId])
+
+  // The AI Coach can log/correct/delete entries from its own floating
+  // drawer, mounted separately from this page - refetch the recent-logs
+  // list whenever that happens so a chat-confirmed change is actually
+  // visible here without a manual reload (reproduced live as a real bug).
+  useEffect(() => {
+    window.addEventListener(COACH_DATA_CHANGED_EVENT, loadLogs)
+    return () => window.removeEventListener(COACH_DATA_CHANGED_EVENT, loadLogs)
+  }, [loadLogs])
 
   async function handleSubmit(event) {
     event.preventDefault()

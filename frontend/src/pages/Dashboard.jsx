@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import CheckinModal from '../components/CheckinModal.jsx'
@@ -6,6 +6,7 @@ import MacroBar from '../components/MacroBar.jsx'
 import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
+import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -40,7 +41,7 @@ export default function Dashboard() {
   const [meals, setMeals] = useState([])
   const [activityLoading, setActivityLoading] = useState(true)
 
-  useEffect(() => {
+  const loadPlan = useCallback(() => {
     api
       .listPlans(userId)
       .then((plans) => {
@@ -49,6 +50,19 @@ export default function Dashboard() {
       })
       .catch(() => setPlan(null))
       .finally(() => setPlanLoading(false))
+  }, [userId])
+
+  const loadActivity = useCallback(() => {
+    Promise.all([api.listLogs(userId).catch(() => []), api.listMealAnalyses(userId).catch(() => [])])
+      .then(([logData, mealData]) => {
+        setLogs(logData)
+        setMeals(mealData)
+      })
+      .finally(() => setActivityLoading(false))
+  }, [userId])
+
+  useEffect(() => {
+    loadPlan()
 
     api
       .getTodaysCheckin(userId)
@@ -58,13 +72,21 @@ export default function Dashboard() {
 
     api.getProfile(userId).then(setProfile).catch(() => setProfile(null))
 
-    Promise.all([api.listLogs(userId).catch(() => []), api.listMealAnalyses(userId).catch(() => [])])
-      .then(([logData, mealData]) => {
-        setLogs(logData)
-        setMeals(mealData)
-      })
-      .finally(() => setActivityLoading(false))
-  }, [userId])
+    loadActivity()
+  }, [userId, loadPlan, loadActivity])
+
+  // The AI Coach's floating drawer is mounted separately from this page - a
+  // confirmed "Added X to your plan"/"Logged Y" reply otherwise left the
+  // Dashboard showing pre-change data until a manual reload (reproduced
+  // live). Refetches silently in the background, no loading-state flash.
+  useEffect(() => {
+    function handleCoachChange() {
+      loadPlan()
+      loadActivity()
+    }
+    window.addEventListener(COACH_DATA_CHANGED_EVENT, handleCoachChange)
+    return () => window.removeEventListener(COACH_DATA_CHANGED_EVENT, handleCoachChange)
+  }, [loadPlan, loadActivity])
 
   function handleCheckinSubmitted(result) {
     setCheckin(result)
