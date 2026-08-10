@@ -109,8 +109,10 @@ export default function Navbar() {
             key={link.to}
             to={link.to}
             className={({ isActive }) =>
-              `px-3 py-1.5 rounded-full bg-forest-950 text-xs md:text-sm font-semibold transition-colors whitespace-nowrap ${
-                isActive ? 'text-coral-400' : 'text-slate-300 hover:text-coral-300'
+              `text-xs md:text-sm font-semibold whitespace-nowrap pb-1 border-b-2 transition-colors ${
+                isActive
+                  ? 'text-forest-950 border-forest-950'
+                  : 'text-forest-950/60 border-transparent hover:text-forest-950 hover:border-forest-950/40'
               }`
             }
           >
