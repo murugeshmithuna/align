@@ -1,4 +1,5 @@
 import json
+import logging
 from collections.abc import Iterator
 from datetime import datetime, time, timedelta
 
@@ -11,17 +12,21 @@ from app.agent.tools import TOOL_EXECUTORS, TOOL_SCHEMAS
 from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, FAST_MODEL
 from app.models import _today, _utcnow
 
+logger = logging.getLogger(__name__)
+
 SYSTEM_PROMPT = """You are the orchestrator agent for the AI Fitness Agent, a coach that watches, \
 listens, and adapts.
 
 ROLE: The user's baseline training plan is generated automatically from their profile settings - you \
 are a fine-tuning assistant and Q&A expert, not the primary plan generator in normal conversation. Use \
-adjust_plan when the user wants to tweak their existing plan, generate_workout_plan only when there's \
-no active plan yet or they explicitly want a full replacement, ask_schedule for grounded scheduling \
-questions ("when should I train legs again?", "what's next?"), suggest_supplements for supplement \
-questions, analyze_form for squat-form questions ("how was my squat form?", "what should I work on?"), \
-ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating enough?"), and plain \
-conversation for everything else.
+adjust_plan when the user wants to tweak their existing plan's future structure/prescription, \
+log_workout when the user reports a workout they ALREADY did (e.g. "log 3x10 squats at 135lb") so it's \
+recorded in their real history rather than changing what's planned next, generate_workout_plan only \
+when there's no active plan yet or they explicitly want a full replacement, ask_schedule for grounded \
+scheduling questions ("when should I train legs again?", "what's next?"), suggest_supplements for \
+supplement questions, analyze_form for squat-form questions ("how was my squat form?", "what should I \
+work on?"), ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating enough?"), \
+and plain conversation for everything else.
 
 ask_schedule, analyze_form, and ask_nutrition return facts only (the user's training history, most \
 recent squat video analysis, or recent meal-photo analyses) - compose the actual answer yourself from \
@@ -56,14 +61,16 @@ asks about today's session, reflect that status, and if they want the specifics 
 apply the actual reduced sets/reps/intensity. A high score (4-5) means the planned volume/intensity is \
 fine, or can be nudged up if the user wants to push.
 
-Only call a domain tool (generate_workout_plan, adjust_plan, suggest_supplements, ask_schedule, \
-analyze_form, ask_nutrition) when the request requires a database change or grounded data lookup. For \
-general conversation, respond directly without calling a tool. Every tool call is automatically scoped \
-to the current user - never ask the user for their user_id.
+Only call a domain tool (generate_workout_plan, adjust_plan, log_workout, suggest_supplements, \
+ask_schedule, analyze_form, ask_nutrition) when the request requires a database change or grounded data \
+lookup. For general conversation, respond directly without calling a tool. Every tool call is \
+automatically scoped to the current user - never ask the user for their user_id.
 
 OUTPUT FORMAT: at most 2 short sentences of explanation, then the result (the plan/adjustment, or a \
 present_choice widget) immediately after - no greetings, no "I'd be happy to help!", no "Here is your \
-tailored plan", no restating the user's question back to them."""
+tailored plan", no restating the user's question back to them. NEVER mention an internal tool/function \
+name in your reply (e.g. never say "adjust_plan" or "log_workout" to the user) - describe what you did \
+in plain language instead (e.g. "updated your plan", "logged that workout")."""
 
 MAX_TURNS = 6
 
@@ -113,7 +120,7 @@ PRESENT_CHOICE_TOOL = {
 ROUTING_TOOL = {
     "name": "route_to_tool",
     "description": (
-        "Call this ONLY if the user's request requires generate_workout_plan, adjust_plan, "
+        "Call this ONLY if the user's request requires generate_workout_plan, adjust_plan, log_workout, "
         "suggest_supplements, ask_schedule, analyze_form, or ask_nutrition - i.e. it needs a database "
         "change or a grounded data lookup. For general conversation, questions, or advice that doesn't "
         "need one of those, do not call this - just answer directly with text instead."
@@ -126,6 +133,7 @@ ROUTING_TOOL = {
                 "enum": [
                     "generate_workout_plan",
                     "adjust_plan",
+                    "log_workout",
                     "suggest_supplements",
                     "ask_schedule",
                     "analyze_form",
@@ -198,6 +206,18 @@ def _build_checkin_context(db: Session, user_id: int) -> str:
     )
 
 
+# The SDK's own default is a 600s read timeout (anthropic._constants.
+# DEFAULT_TIMEOUT) - a hung/slow upstream response (the Manifest proxy this
+# project routes through, or Anthropic's API itself) could leave a call
+# blocking for up to 10 minutes with nothing coming back, which is exactly
+# consistent with a real production report of "5-7 minutes and still no
+# reply" (the user gave up before the SDK's own default would have ever
+# fired). Real measured Opus latency elsewhere in this app is ~15-30s
+# (see CLAUDE.md) - 60s gives generous headroom above that without leaving
+# the user staring at a frozen UI for anywhere near 10 minutes.
+REQUEST_TIMEOUT_SECONDS = 60.0
+
+
 def _get_client() -> anthropic.Anthropic:
     if not ANTHROPIC_API_KEY:
         raise RuntimeError(
@@ -205,7 +225,14 @@ def _get_client() -> anthropic.Anthropic:
         )
     # The Manifest proxy expects `Authorization: Bearer <key>` rather than
     # Anthropic's default `x-api-key` header, hence `auth_token` instead of `api_key`.
-    return anthropic.Anthropic(auth_token=ANTHROPIC_API_KEY)
+    return anthropic.Anthropic(auth_token=ANTHROPIC_API_KEY, timeout=REQUEST_TIMEOUT_SECONDS)
+
+
+# User-facing message for any Claude-call failure (timeout, connection drop,
+# malformed response, etc.) - deliberately generic and jargon-free, never the
+# raw exception/class name, per this app's "no raw identifiers surfaced to
+# the user" rule. The real exception is logged server-side instead.
+_AGENT_CALL_FAILURE_MESSAGE = "The coach is taking too long to respond - please try again in a moment."
 
 
 def _get_user_or_raise(db: Session, user_id: int) -> models.User:
@@ -272,13 +299,17 @@ def run_agent_turn(db: Session, user_id: int, message: str, history: list[dict] 
         # model. Only applies to a brand-new conversation - once there's
         # history, a short reply needs the full context to interpret, so
         # continuing threads always go straight to the reasoning model below.
-        router_response = client.messages.create(
-            model=FAST_MODEL,
-            max_tokens=1024,
-            system=system_prompt,
-            tools=[ROUTING_TOOL],
-            messages=[{"role": "user", "content": message}],
-        )
+        try:
+            router_response = client.messages.create(
+                model=FAST_MODEL,
+                max_tokens=1024,
+                system=system_prompt,
+                tools=[ROUTING_TOOL],
+                messages=[{"role": "user", "content": message}],
+            )
+        except anthropic.APIError:
+            logger.exception("Routing-pass Claude call failed")
+            raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
         if router_response.stop_reason != "tool_use":
             reply = "".join(block.text for block in router_response.content if block.type == "text")
             new_history = [
@@ -294,13 +325,17 @@ def run_agent_turn(db: Session, user_id: int, message: str, history: list[dict] 
     tool_call_log: list[dict] = []
 
     for _ in range(MAX_TURNS):
-        response = client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
-            system=system_prompt,
-            tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
-            messages=messages,
-        )
+        try:
+            response = client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
+                messages=messages,
+            )
+        except anthropic.APIError:
+            logger.exception("Tool-loop Claude call failed")
+            raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         if response.stop_reason != "tool_use":
@@ -385,16 +420,31 @@ def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dic
     if not history:
         # Fast routing pass: stream the cheap model's tokens immediately. If it
         # answers directly (no tool needed) that IS the final response.
-        with client.messages.stream(
-            model=FAST_MODEL,
-            max_tokens=1024,
-            system=system_prompt,
-            tools=[ROUTING_TOOL],
-            messages=[{"role": "user", "content": message}],
-        ) as stream:
-            for text in stream.text_stream:
-                yield _sse({"content": text})
-            router_response = stream.get_final_message()
+        try:
+            with client.messages.stream(
+                model=FAST_MODEL,
+                max_tokens=1024,
+                system=system_prompt,
+                tools=[ROUTING_TOOL],
+                messages=[{"role": "user", "content": message}],
+            ) as stream:
+                for text in stream.text_stream:
+                    yield _sse({"content": text})
+                router_response = stream.get_final_message()
+        except anthropic.APIError:
+            # A hung/slow upstream response (the Manifest proxy this project
+            # routes through, or Anthropic's API itself) used to leave this
+            # `with` block blocking for up to the SDK's own 600s default
+            # timeout with no handling here at all, so the frontend sat
+            # frozen with no error/done frame ever sent - the same class of
+            # bug 06d2010 fixed for tool execution (_run_tool), just for the
+            # Claude call itself. REQUEST_TIMEOUT_SECONDS bounds how long
+            # this can possibly block; this except is what turns that bound
+            # into a clean, terminal SSE frame instead of a silent hang.
+            logger.exception("Routing-pass Claude stream failed")
+            yield _sse({"error": _AGENT_CALL_FAILURE_MESSAGE})
+            yield _sse({"done": True})
+            return
 
         if router_response.stop_reason != "tool_use":
             new_history = [
@@ -410,16 +460,30 @@ def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dic
     messages: list[dict] = history + [{"role": "user", "content": message}]
 
     for _ in range(MAX_TURNS):
-        with client.messages.stream(
-            model=CLAUDE_MODEL,
-            max_tokens=4096,
-            system=system_prompt,
-            tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
-            messages=messages,
-        ) as stream:
-            for text in stream.text_stream:
-                yield _sse({"content": text})
-            response = stream.get_final_message()
+        try:
+            with client.messages.stream(
+                model=CLAUDE_MODEL,
+                max_tokens=4096,
+                system=system_prompt,
+                tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
+                messages=messages,
+            ) as stream:
+                for text in stream.text_stream:
+                    yield _sse({"content": text})
+                response = stream.get_final_message()
+        except anthropic.APIError:
+            # Same failure mode as the routing-pass stream above, but this is
+            # the call that actually reproduces the reported bug: a real
+            # first reply streams successfully, then the *next* iteration's
+            # stream (e.g. right after a tool call) hangs on a slow/hung
+            # upstream response with nothing coming back. Without this
+            # except, that exception would propagate straight out of this
+            # generator and silently kill the SSE connection - exactly what
+            # left the frontend stuck on "Running adjust_plan..." forever.
+            logger.exception("Tool-loop Claude stream failed")
+            yield _sse({"error": _AGENT_CALL_FAILURE_MESSAGE})
+            yield _sse({"done": True})
+            return
 
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
