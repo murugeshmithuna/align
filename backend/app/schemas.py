@@ -457,6 +457,18 @@ class FormFeedbackOut(BaseModel):
     trend: str
     # One short sentence: improving / plateauing / declining, with why.
     overall_insight: str
+    # True only for a genuine sustained bad-form pattern (see
+    # orchestrator.py's FORM_FEEDBACK_TOOL field description) - already
+    # computed by generate_live_session_form_feedback() and required on its
+    # forced tool call, but silently dropped from every /vision/live-session-
+    # form response before this fix since this response_model didn't declare
+    # them (FastAPI's response_model filters out any field not listed here,
+    # even if the underlying dict/object actually has it). Found live-testing
+    # LiveSession.jsx's post-session injury-risk callout (already correctly
+    # coded on the frontend) against this endpoint - it never had the data to
+    # render.
+    injury_risk_flagged: bool
+    injury_risk_note: str
     rep_count: int
     good_depth_pct: float
     good_form_pct: float
