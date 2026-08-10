@@ -52,11 +52,16 @@ TOOL_SCHEMAS = [
         "description": (
             "Modify an existing plan for the current user: `updates` changes sets/reps/weight/day for "
             "exercises ALREADY on the plan (e.g. reduce volume after a hard week, progress load after "
-            "consistent completion), and `additions` inserts brand-new exercises onto the plan (e.g. "
-            "'add a glute exercise to today'). These are different operations - an item in `updates` "
-            "needs a real existing plan_exercise_id from the plan context above; never invent one or put "
-            "a new exercise there, since that silently does nothing. A request to ADD something the plan "
-            "doesn't already have always goes in `additions`, not `updates`."
+            "consistent completion), `additions` inserts brand-new exercises onto the plan (e.g. 'add a "
+            "glute exercise to today'), and `removals` deletes exercises from the plan entirely (e.g. 'no "
+            "sumo squat', 'remove the extra exercise you just added', 'take out X'). These are three "
+            "different operations - an item in `updates` needs a real existing plan_exercise_id from the "
+            "plan context above; never invent one or put a new exercise there, since that silently does "
+            "nothing. A request to ADD something the plan doesn't already have always goes in `additions`, "
+            "not `updates`. A request to remove/undo/take out an exercise always goes in `removals` - "
+            "NEVER just say you removed something without actually including its plan_exercise_id in "
+            "`removals`; there is no other way to delete an exercise, and claiming success without calling "
+            "this leaves the exercise on the plan while telling the user it's gone."
         ),
         "input_schema": {
             "type": "object",
@@ -93,6 +98,15 @@ TOOL_SCHEMAS = [
                         },
                         "required": ["name", "day_of_week"],
                     },
+                },
+                "removals": {
+                    "type": "array",
+                    "description": (
+                        "plan_exercise_id values to delete from the plan entirely - use this whenever the "
+                        "user wants an exercise taken out, undone, or removed. Must be real IDs from the "
+                        "plan context above; never invent one."
+                    ),
+                    "items": {"type": "integer"},
                 },
             },
             "required": ["plan_id"],
@@ -309,22 +323,50 @@ def execute_adjust_plan(db: Session, user_id: int, tool_input: dict) -> dict:
         db.flush()
         added_ids.append(plan_exercise.id)
 
+    # Deletes exercises from the plan entirely - until this was added,
+    # adjust_plan had NO way to remove a plan_exercise at all (only `updates`,
+    # which modifies a row in place, and `additions`, which inserts new
+    # rows). Confirmed live as a real bug: a user asked to remove an exercise
+    # the coach had just added, the model replied "Done - removed the sumo
+    # squat," and the exercise stayed on the plan untouched - there was
+    # simply no tool call capable of deleting it, so the model's confident
+    # narration was never backed by any actual database change.
+    removed_ids = []
+    skipped_removals = 0
+    for plan_exercise_id in tool_input.get("removals", []):
+        plan_exercise = db.get(models.PlanExercise, plan_exercise_id)
+        if not plan_exercise or plan_exercise.plan_id != plan.id:
+            skipped_removals += 1
+            continue
+        db.delete(plan_exercise)
+        removed_ids.append(plan_exercise_id)
+
     db.commit()
     result = {
         "plan_id": plan.id,
         "updated_plan_exercise_ids": updated_ids,
         "added_plan_exercise_ids": added_ids,
+        "removed_plan_exercise_ids": removed_ids,
         "notes": plan.notes,
     }
+    warnings = []
     if skipped_updates:
         # Explicit so the model can never mistake silence for success - an
         # update referencing an ID that doesn't exist on this plan is always
         # worth surfacing, not swallowing.
-        result["warning"] = (
+        warnings.append(
             f"{skipped_updates} update(s) referenced a plan_exercise_id not found on this plan and were "
             "skipped - if you meant to add a new exercise rather than change an existing one, use "
             "`additions` instead."
         )
+    if skipped_removals:
+        warnings.append(
+            f"{skipped_removals} removal(s) referenced a plan_exercise_id not found on this plan and were "
+            "skipped - never tell the user something was removed unless its ID actually appears in "
+            "removed_plan_exercise_ids above."
+        )
+    if warnings:
+        result["warning"] = " ".join(warnings)
     return result
 
 
