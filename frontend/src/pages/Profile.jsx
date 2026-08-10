@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
+import WheelPicker from '../components/WheelPicker.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import {
@@ -25,18 +26,145 @@ const GOAL_OPTIONS = [
   { value: 'endurance', label: 'Endurance' },
 ]
 
+const EXPERIENCE_OPTIONS = [
+  { value: 'beginner', label: 'Beginner' },
+  { value: 'intermediate', label: 'Intermediate' },
+  { value: 'advanced', label: 'Advanced' },
+]
+
+const FREQUENCY_OPTIONS = [1, 2, 3, 4, 5, 6, 7]
+
+const CM_RANGE = Array.from({ length: 111 }, (_, i) => 120 + i) // 120-230 cm
+const FEET_RANGE = [3, 4, 5, 6, 7, 8]
+const INCH_RANGE = Array.from({ length: 12 }, (_, i) => i) // 0-11
+const KG_RANGE = Array.from({ length: 221 }, (_, i) => 30 + i) // 30-250 kg
+const LB_RANGE = Array.from({ length: 485 }, (_, i) => 66 + i) // 66-550 lb
+
+const STEPS = ['experience', 'frequency', 'equipment', 'goals', 'height', 'weight', 'limitations', 'review']
+
+function CheckIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" className="w-3 h-3" stroke="currentColor" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 10l4 4 8-8" />
+    </svg>
+  )
+}
+
+function PillChoice({ options, value, onChange }) {
+  return (
+    <div className="space-y-2.5">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          onClick={() => onChange(opt.value)}
+          className={`w-full px-4 py-3 rounded-xl border text-sm font-heading font-semibold transition-colors ${
+            value === opt.value
+              ? 'bg-coral-500 border-coral-500'
+              : 'bg-forest-900 border-forest-700 text-slate-300 hover:border-coral-500/60'
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function PillMultiSelect({ options, values, onToggle }) {
+  return (
+    <div className="space-y-2.5">
+      {options.map((opt) => {
+        const checked = values.includes(opt.value)
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onToggle(opt.value)}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-semibold transition-colors ${
+              checked ? 'bg-coral-500/10 border-coral-500 text-coral-400' : 'bg-forest-900 border-forest-700 text-slate-300 hover:border-coral-500/60'
+            }`}
+          >
+            <span>{opt.label}</span>
+            <span
+              className={`w-5 h-5 shrink-0 rounded-full border flex items-center justify-center ${
+                checked ? 'bg-coral-500 border-coral-500' : 'border-forest-600 text-transparent'
+              }`}
+            >
+              <CheckIcon />
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function StepDots({ count, current, onJump }) {
+  return (
+    <div className="flex items-center justify-center gap-2 mb-8">
+      {Array.from({ length: count }, (_, i) => (
+        <button
+          key={i}
+          type="button"
+          aria-label={`Go to step ${i + 1}`}
+          onClick={() => onJump(i)}
+          className={`h-1.5 rounded-full transition-all ${i === current ? 'w-6 bg-coral-500' : 'w-1.5 bg-forest-600 hover:bg-forest-500'}`}
+        />
+      ))}
+    </div>
+  )
+}
+
+function StepHeader({ eyebrow, title, subtitle }) {
+  return (
+    <div className="mb-6 text-center">
+      <p className="text-xs uppercase tracking-wide text-coral-400/80 font-heading font-semibold mb-1">{eyebrow}</p>
+      <h1 className="font-heading font-bold text-xl">{title}</h1>
+      {subtitle && <p className="text-sm text-slate-400 mt-1">{subtitle}</p>}
+    </div>
+  )
+}
+
+function parseFeetInches(display) {
+  const match = /^(\d+)'(\d+)"?$/.exec(String(display || '').trim())
+  if (!match) return { feet: 5, inches: 8 }
+  return { feet: Number(match[1]), inches: Number(match[2]) }
+}
+
+function ReviewRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2 border-b border-forest-700/60 last:border-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-200 text-right font-medium">{value}</span>
+    </div>
+  )
+}
+
+const STEP_META = {
+  experience: { eyebrow: 'Step 1 of 8', title: "What's your experience level?", subtitle: 'This shapes how your plan progresses.' },
+  frequency: { eyebrow: 'Step 2 of 8', title: 'How many days a week?', subtitle: 'How often you want to train.' },
+  equipment: { eyebrow: 'Step 3 of 8', title: 'What equipment do you have?', subtitle: 'Select everything available to you.' },
+  goals: { eyebrow: 'Step 4 of 8', title: "What's your goal?", subtitle: 'Pick as many as apply.' },
+  height: { eyebrow: 'Step 5 of 8', title: 'What is your height?', subtitle: null },
+  weight: { eyebrow: 'Step 6 of 8', title: 'What is your weight?', subtitle: null },
+  limitations: { eyebrow: 'Step 7 of 8', title: 'Any physical limitations?', subtitle: 'Optional - injuries, mobility limits, anything to work around.' },
+  review: { eyebrow: 'Step 8 of 8', title: 'Review your profile', subtitle: 'The chat agent reads this automatically and builds your plan from it.' },
+}
+
 export default function Profile() {
   const { userId } = useSession()
   const { showToast } = useToast()
   const navigate = useNavigate()
 
+  const [step, setStep] = useState(0)
   const [experienceLevel, setExperienceLevel] = useState('beginner')
   const [targetFrequency, setTargetFrequency] = useState(3)
   const [equipment, setEquipment] = useState([])
   const [goals, setGoals] = useState([])
   const [limitations, setLimitations] = useState('')
-  const [heightDisplay, setHeightDisplay] = useState('')
-  const [weightDisplay, setWeightDisplay] = useState('')
+  const [heightDisplay, setHeightDisplay] = useState('173')
+  const [weightDisplay, setWeightDisplay] = useState(70)
   const [preferredUnits, setPreferredUnits] = useState('metric')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -54,24 +182,25 @@ export default function Profile() {
         setGoals(data.primary_goals || [])
         setLimitations(data.physical_limitations || '')
         setPreferredUnits(units)
-        setHeightDisplay(heightMetricToDisplay(data.height_cm, units))
-        setWeightDisplay(metricToDisplay(data.weight_kg, units, KG_PER_LB))
+        setHeightDisplay(heightMetricToDisplay(data.height_cm, units) || (units === 'imperial' ? `5'8"` : '173'))
+        setWeightDisplay(Math.round(metricToDisplay(data.weight_kg, units, KG_PER_LB)) || (units === 'imperial' ? 154 : 70))
         setHasSaved(Boolean(data.experience_level))
       })
       .catch(() => {
         /* no profile saved yet - defaults above are fine */
       })
       .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId])
 
-  // Switching the unit toggle converts the currently-typed value in place,
+  // Switching the unit toggle converts the currently-picked value in place,
   // rather than clearing it or silently reinterpreting the same number under
   // a different unit.
   function handleUnitsChange(nextUnits) {
     const heightCm = heightDisplayToMetric(heightDisplay, preferredUnits)
     const weightKg = displayToMetric(weightDisplay, preferredUnits, KG_PER_LB)
     setHeightDisplay(heightMetricToDisplay(heightCm, nextUnits))
-    setWeightDisplay(metricToDisplay(weightKg, nextUnits, KG_PER_LB))
+    setWeightDisplay(Math.round(metricToDisplay(weightKg, nextUnits, KG_PER_LB)))
     setPreferredUnits(nextUnits)
   }
 
@@ -79,8 +208,15 @@ export default function Profile() {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
   }
 
-  async function handleSave(event) {
-    event.preventDefault()
+  function goNext() {
+    setStep((s) => Math.min(STEPS.length - 1, s + 1))
+  }
+
+  function goBack() {
+    setStep((s) => Math.max(0, s - 1))
+  }
+
+  async function handleSave() {
     const isFirstSave = !hasSaved
     setSaving(true)
     if (isFirstSave) {
@@ -112,182 +248,174 @@ export default function Profile() {
     return <p className="text-slate-400 text-sm px-6 py-12">Loading your profile…</p>
   }
 
+  const { feet, inches } = parseFeetInches(heightDisplay)
+  const heightCmValue = Math.min(230, Math.max(120, Math.round(Number(heightDisplay)) || 173))
+  const weightBounds = preferredUnits === 'imperial' ? { min: 66, max: 550 } : { min: 30, max: 250 }
+  const weightValue = Math.min(weightBounds.max, Math.max(weightBounds.min, Math.round(Number(weightDisplay)) || 70))
+
+  const current = STEPS[step]
+  const meta = STEP_META[current]
+
   return (
-    <div className="max-w-2xl mx-auto px-6 py-12 font-body">
-      <h1 className="font-heading font-bold text-2xl mb-1">Your training profile</h1>
-      <p className="text-sm text-slate-400 mb-6">
-        Set this once. The chat agent reads it automatically and won't ask you to repeat it.
-      </p>
+    <div className="max-w-md mx-auto px-6 py-10 font-body">
+      <StepDots count={STEPS.length} current={step} onJump={setStep} />
 
-      <form onSubmit={handleSave} className="card p-6 space-y-5">
-        <div>
-          <label className="block text-sm mb-1" htmlFor="experience">
-            Experience level
-          </label>
-          <select
-            id="experience"
-            value={experienceLevel}
-            onChange={(e) => setExperienceLevel(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-          >
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-        </div>
+      <div key={current} className="wizard-step card p-6">
+        <StepHeader eyebrow={meta.eyebrow} title={meta.title} subtitle={meta.subtitle} />
 
-        <div>
-          <label className="block text-sm mb-1" htmlFor="frequency">
-            Target frequency (days/week)
-          </label>
-          <input
-            id="frequency"
-            type="number"
-            min="1"
-            max="7"
-            value={targetFrequency}
-            onChange={(e) => setTargetFrequency(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-          />
-        </div>
+        {current === 'experience' && (
+          <PillChoice options={EXPERIENCE_OPTIONS} value={experienceLevel} onChange={setExperienceLevel} />
+        )}
 
-        <div>
-          <span className="block text-sm mb-1">Available equipment</span>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
-            {EQUIPMENT_OPTIONS.map((opt) => (
-              <label key={opt.value} className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={equipment.includes(opt.value)}
-                  onChange={() => toggle(equipment, setEquipment, opt.value)}
-                />
-                {opt.label}
-              </label>
+        {current === 'frequency' && (
+          <div className="flex flex-wrap justify-center gap-2.5">
+            {FREQUENCY_OPTIONS.map((n) => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setTargetFrequency(n)}
+                className={`w-12 h-12 rounded-full border font-heading font-bold transition-colors ${
+                  Number(targetFrequency) === n
+                    ? 'bg-coral-500 border-coral-500'
+                    : 'bg-forest-900 border-forest-700 text-slate-300 hover:border-coral-500/60'
+                }`}
+              >
+                {n}
+              </button>
             ))}
           </div>
-        </div>
+        )}
 
-        <div>
-          <span className="block text-sm mb-1">Primary goals</span>
-          <div className="flex flex-wrap gap-4 text-sm text-slate-300">
-            {GOAL_OPTIONS.map((opt) => (
-              <label key={opt.value} className="flex items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={goals.includes(opt.value)}
-                  onChange={() => toggle(goals, setGoals, opt.value)}
-                />
-                {opt.label}
-              </label>
-            ))}
-          </div>
-        </div>
+        {current === 'equipment' && (
+          <PillMultiSelect options={EQUIPMENT_OPTIONS} values={equipment} onToggle={(v) => toggle(equipment, setEquipment, v)} />
+        )}
 
-        <div>
-          <span className="block text-sm mb-1">Units</span>
-          <div className="flex gap-4 text-sm text-slate-300">
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="units"
-                checked={preferredUnits === 'metric'}
-                onChange={() => handleUnitsChange('metric')}
-              />
-              Metric (cm / kg)
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="units"
-                checked={preferredUnits === 'imperial'}
-                onChange={() => handleUnitsChange('imperial')}
-              />
-              Imperial (ft'in / lb)
-            </label>
-          </div>
-        </div>
+        {current === 'goals' && (
+          <PillMultiSelect options={GOAL_OPTIONS} values={goals} onToggle={(v) => toggle(goals, setGoals, v)} />
+        )}
 
-        <div className="grid grid-cols-2 gap-4">
+        {current === 'height' && (
           <div>
-            <label className="block text-sm mb-1" htmlFor="height">
-              Height ({preferredUnits === 'metric' ? 'cm' : "ft'in"})
-            </label>
-            {preferredUnits === 'imperial' ? (
-              <input
-                id="height"
-                type="text"
-                inputMode="numeric"
-                placeholder={`5'4"`}
-                value={heightDisplay}
-                onChange={(e) => setHeightDisplay(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-              />
+            <div className="flex justify-center mb-5">
+              <div className="inline-flex rounded-full border border-forest-700 p-1 bg-forest-900">
+                {['metric', 'imperial'].map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => handleUnitsChange(u)}
+                    className={`px-3 py-1 rounded-full text-xs font-heading font-semibold transition-colors ${
+                      preferredUnits === u ? 'bg-coral-500' : 'text-slate-400'
+                    }`}
+                  >
+                    {u === 'metric' ? 'cm' : "ft'in"}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {preferredUnits === 'metric' ? (
+              <div className="flex justify-center">
+                <WheelPicker values={CM_RANGE} value={heightCmValue} onChange={(v) => setHeightDisplay(String(v))} formatValue={(v) => `${v} cm`} />
+              </div>
             ) : (
-              <input
-                id="height"
-                type="number"
-                min="50"
-                max="272"
-                step="0.1"
-                value={heightDisplay}
-                onChange={(e) => setHeightDisplay(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-              />
+              <div className="flex justify-center gap-4">
+                <WheelPicker values={FEET_RANGE} value={feet} onChange={(v) => setHeightDisplay(`${v}'${inches}"`)} formatValue={(v) => `${v} ft`} />
+                <WheelPicker values={INCH_RANGE} value={inches} onChange={(v) => setHeightDisplay(`${feet}'${v}"`)} formatValue={(v) => `${v} in`} />
+              </div>
             )}
           </div>
-          <div>
-            <label className="block text-sm mb-1" htmlFor="weight">
-              Weight ({preferredUnits === 'metric' ? 'kg' : 'lb'})
-            </label>
-            <input
-              id="weight"
-              type="number"
-              // 20-450kg (or the lb equivalent) - matches backend's
-              // UserProfileUpdate.weight_kg bounds, converted to whichever
-              // unit is currently displayed.
-              min={preferredUnits === 'metric' ? 20 : 44}
-              max={preferredUnits === 'metric' ? 450 : 992}
-              step="0.1"
-              value={weightDisplay}
-              onChange={(e) => setWeightDisplay(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-            />
-          </div>
-        </div>
+        )}
 
-        <div>
-          <label className="block text-sm mb-1" htmlFor="limitations">
-            Physical limitations (optional)
-          </label>
+        {current === 'weight' && (
+          <div>
+            <div className="flex justify-center mb-5">
+              <div className="inline-flex rounded-full border border-forest-700 p-1 bg-forest-900">
+                {['metric', 'imperial'].map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => handleUnitsChange(u)}
+                    className={`px-3 py-1 rounded-full text-xs font-heading font-semibold transition-colors ${
+                      preferredUnits === u ? 'bg-coral-500' : 'text-slate-400'
+                    }`}
+                  >
+                    {u === 'metric' ? 'kg' : 'lb'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <WheelPicker
+              values={preferredUnits === 'imperial' ? LB_RANGE : KG_RANGE}
+              value={weightValue}
+              onChange={setWeightDisplay}
+              orientation="horizontal"
+            />
+            <p className="text-center text-xs text-slate-500 mt-2">{preferredUnits === 'imperial' ? 'lb' : 'kg'}</p>
+          </div>
+        )}
+
+        {current === 'limitations' && (
           <textarea
-            id="limitations"
-            rows={2}
-            placeholder="e.g. bad left knee, avoid overhead pressing"
             value={limitations}
             onChange={(e) => setLimitations(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+            rows={4}
+            placeholder="e.g. lower back sensitivity, avoid overhead pressing"
+            className="w-full rounded-xl border border-forest-700 bg-forest-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-coral-500"
           />
-        </div>
+        )}
 
-        <div className="flex items-center gap-3">
+        {current === 'review' && (
+          <div className="space-y-1 text-sm">
+            <ReviewRow label="Experience" value={EXPERIENCE_OPTIONS.find((o) => o.value === experienceLevel)?.label} />
+            <ReviewRow label="Frequency" value={`${targetFrequency}x / week`} />
+            <ReviewRow label="Equipment" value={equipment.map((v) => EQUIPMENT_OPTIONS.find((o) => o.value === v)?.label).join(', ') || 'None selected'} />
+            <ReviewRow label="Goals" value={goals.map((v) => GOAL_OPTIONS.find((o) => o.value === v)?.label).join(', ') || 'None selected'} />
+            <ReviewRow label="Height" value={heightMetricToDisplay(heightDisplayToMetric(heightDisplay, preferredUnits), preferredUnits)} />
+            <ReviewRow label="Weight" value={`${weightDisplay} ${preferredUnits === 'imperial' ? 'lb' : 'kg'}`} />
+            <ReviewRow label="Limitations" value={limitations || 'None noted'} />
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-3 mt-6">
+        {step > 0 && (
           <button
-            type="submit"
-            disabled={saving || saved}
-            className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+            type="button"
+            onClick={goBack}
+            className="flex-1 py-3 rounded-xl border border-forest-700 text-sm font-heading font-semibold text-slate-300 hover:border-coral-500/60"
           >
-            {saving ? (hasSaved ? 'Saving…' : 'Generating your plan…') : saved ? 'Saved ✓' : 'Save profile'}
+            Back
           </button>
-          {hasSaved && (
-            <button
-              type="button"
-              onClick={() => navigate('/dashboard')}
-              className="px-4 py-2 rounded-lg border border-forest-600 hover:border-coral-400 transition-colors text-sm font-heading font-semibold"
-            >
-              Continue to dashboard →
-            </button>
-          )}
-        </div>
-      </form>
+        )}
+        {current === 'limitations' && (
+          <button
+            type="button"
+            onClick={goNext}
+            className="flex-1 py-3 rounded-xl border border-forest-700 text-sm font-heading font-semibold text-slate-400 hover:border-coral-500/60"
+          >
+            Skip
+          </button>
+        )}
+        {current !== 'review' ? (
+          <button type="button" onClick={goNext} className="flex-1 py-3 rounded-xl bg-coral-500 text-sm font-heading font-semibold">
+            Continue
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={saving || saved}
+            onClick={handleSave}
+            className="flex-1 py-3 rounded-xl bg-coral-500 text-sm font-heading font-semibold disabled:opacity-70"
+          >
+            {saved ? 'Saved ✓' : saving ? (hasSaved ? 'Saving…' : 'Generating your plan…') : 'Save profile'}
+          </button>
+        )}
+      </div>
+
+      {hasSaved && current === 'review' && !saving && (
+        <button type="button" onClick={() => navigate('/dashboard')} className="w-full text-center text-sm text-coral-400 mt-4 hover:underline">
+          Continue to dashboard →
+        </button>
+      )}
     </div>
   )
 }
