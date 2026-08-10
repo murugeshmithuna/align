@@ -6,13 +6,18 @@ comes back as directly-usable structured data (a list of factors, one
 authoritative resolution, and optionally concrete plan_exercise adjustments)
 rather than a persona-flavored paragraph to parse."""
 
+import logging
+
+import anthropic
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models
-from app.agent.orchestrator import _get_client, _get_user_or_raise
+from app.agent.orchestrator import _AGENT_CALL_FAILURE_MESSAGE, _get_client, _get_user_or_raise
 from app.config import CLAUDE_MODEL
 from app.models import _today
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_QUESTION = "Should I push hard in training today, or back off?"
 
@@ -158,16 +163,54 @@ def generate_coach_resolution(db: Session, user_id: int, question: str | None = 
         f"{plan_detail}"
     )
 
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        max_tokens=600,
-        system=RESOLUTION_SYSTEM_PROMPT,
-        tools=[RESOLUTION_TOOL],
-        tool_choice={"type": "tool", "name": "report_coach_resolution"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    tool_block = next(b for b in response.content if b.type == "tool_use")
+    # This call had NO error handling at all until caught live here: a
+    # transient upstream failure (the Manifest proxy this project routes
+    # through, same class of hiccup documented elsewhere in this app - e.g.
+    # AIMessageBar's one-off "M102: anthropic subscription credentials could
+    # not be refreshed") propagated straight out of this function as a raw
+    # anthropic.APIError, past the router's `except RuntimeError` (which
+    # only catches the RuntimeError this except now raises, not the SDK's own
+    # exception type) into an unhandled 500 with no CORS headers on the
+    # error response - which the browser then reports as a misleading "CORS
+    # policy" error, masking the real cause. Reproduced directly against the
+    # running server: ~2 of 3 sequential calls to POST /agent/coach-resolution
+    # returned a bare 500. Fixed the same way orchestrator.py's run_agent_turn/
+    # stream_agent_turn already handle the identical failure mode - catch
+    # anthropic.APIError, log it, and surface a clean, generic 503 instead.
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=600,
+            system=RESOLUTION_SYSTEM_PROMPT,
+            tools=[RESOLUTION_TOOL],
+            tool_choice={"type": "tool", "name": "report_coach_resolution"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError:
+        logger.exception("Coach Resolution Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+
+    tool_block = next((b for b in response.content if b.type == "tool_use"), None)
+    if tool_block is None:
+        logger.error("Coach Resolution call returned no tool_use block despite forced tool_choice")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE)
+
     result = tool_block.input
+    # RESOLUTION_TOOL's schema lists plan_adjustments as required (and
+    # "strict": True on top of that) - but caught live, reproducibly, against
+    # the real running server: the model sometimes still omits it from the
+    # tool call's input when the resolution is purely informational (no plan
+    # change), despite the schema. schemas.CoachResolutionOut's
+    # `plan_adjustments: list[PlanAdjustmentItem]` (non-optional) then fails
+    # FastAPI's response validation with a raw, unhandled 500 - which has no
+    # CORS headers on the error response, so the browser reports it as a
+    # misleading "CORS policy" failure that obscures the real cause. Directly
+    # reproduced: ~2 of 3 sequential POST /agent/coach-resolution calls
+    # against the live server failed this way. Defaulting the missing field
+    # here (the schema already treats an empty list as "no plan changes
+    # proposed" - see CoachResolution.jsx's `hasAdjustments` check) is a safe,
+    # meaning-preserving fallback, not a guess.
+    result.setdefault("plan_adjustments", [])
     result["question"] = question
     result["plan_id"] = plan_id
     return result

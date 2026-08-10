@@ -1,7 +1,7 @@
 import json
 import logging
 from collections.abc import Iterator
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 
 import anthropic
 from sqlalchemy import select
@@ -197,7 +197,25 @@ def _build_profile_context(user: models.User) -> str:
 _DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-def _today_context() -> str:
+def _resolve_today(client_date: str | None) -> date:
+    """Prefers the browser's own local calendar date over the server's UTC
+    date - real bug found live: the orchestrator always grounded "today" in
+    server UTC while every frontend page (Calendar.jsx, WorkoutLog.jsx,
+    Dashboard) computes "today" from local browser time. For any user ahead
+    of UTC, near local midnight the two disagree about which calendar day it
+    is - a chat-added exercise could land on the coach's (UTC) day while the
+    user is looking at their own (already-next) local day. Falls back to the
+    server's UTC date when no client date is given (e.g. weekly digests,
+    which have no request-time browser to ask) or if it's malformed."""
+    if client_date:
+        try:
+            return date.fromisoformat(client_date)
+        except ValueError:
+            pass
+    return _today()
+
+
+def _today_context(today: date) -> str:
     """Nowhere else in this file ever states today's actual day of the week -
     confirmed live as a real bug: asked to "add glutes today", the model
     replied "Today is a Wednesday-type upper-body day" while the real
@@ -208,17 +226,19 @@ def _today_context() -> str:
     turn now states the real date/weekday up front, computed the exact same
     way `_build_plan_context`'s schedule keys already are (Python's
     `date.weekday()`: 0=Monday..6=Sunday, matching _DAY_NAMES)."""
-    today = _today()
     return f"Today's real date is {today.isoformat()} ({_DAY_NAMES[today.weekday()]})."
 
 
-def _build_plan_context(db: Session, user_id: int) -> str:
+def _build_plan_context(db: Session, user_id: int, today: date) -> str:
     plans = db.scalars(
         select(models.Plan).where(models.Plan.user_id == user_id).order_by(models.Plan.created_at.desc())
     ).all()
     plan = next((p for p in plans if p.is_active), plans[0] if plans else None)
     if not plan:
-        return f"{_today_context()} Active plan: none yet - the user has no training plan (offer to generate one)."
+        return (
+            f"{_today_context(today)} Active plan: none yet - the user has no training plan "
+            "(offer to generate one)."
+        )
 
     by_day: dict[str, list[str]] = {}
     for pe in plan.plan_exercises:
@@ -231,7 +251,7 @@ def _build_plan_context(db: Session, user_id: int) -> str:
     schedule = "\n".join(f"- {day}: {', '.join(exs)}" for day, exs in by_day.items()) or "no exercises yet"
 
     return (
-        f"{_today_context()}\n"
+        f"{_today_context(today)}\n"
         f'Active plan (do not ask the user to restate any of this): "{plan.name}" (plan_id={plan.id}).\n'
         f"Weekly schedule:\n{schedule}\n"
         f"When calling adjust_plan, only ever reference plan_exercise_id values listed above - never invent "
@@ -276,11 +296,11 @@ def _build_recent_logs_context(db: Session, user_id: int) -> str:
     )
 
 
-def _build_checkin_context(db: Session, user_id: int) -> str:
+def _build_checkin_context(db: Session, user_id: int, today: date) -> str:
     checkin = db.scalar(
         select(models.CheckIn).where(
             models.CheckIn.user_id == user_id,
-            models.CheckIn.checkin_date == _today(),
+            models.CheckIn.checkin_date == today,
         )
     )
     if not checkin:
@@ -393,17 +413,21 @@ def _serialize_content(content) -> list[dict]:
     return serialized
 
 
-def run_agent_turn(db: Session, user_id: int, message: str, history: list[dict] | None = None) -> dict:
+def run_agent_turn(
+    db: Session, user_id: int, message: str, history: list[dict] | None = None, client_date: str | None = None
+) -> dict:
     """`history` is the full prior conversation (as returned in a previous
     call's `history` field) - this API is stateless, so the caller is
     responsible for echoing it back on every turn. Without it, a short reply
     like "2" or "yes" has no context to resolve against and looks like a
-    non-sequitur to the model."""
+    non-sequitur to the model. `client_date` is the browser's own local
+    calendar date - see _resolve_today()."""
     client = _get_client()
     user = _get_user_or_raise(db, user_id)
+    today = _resolve_today(client_date)
     system_prompt = (
-        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
-        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}\n\n"
+        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id, today)}\n\n"
+        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id, today)}\n\n"
         f"{_build_soreness_context(db, user_id)}"
     )
 
@@ -508,7 +532,9 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
-def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dict] | None = None) -> Iterator[str]:
+def stream_agent_turn(
+    db: Session, user_id: int, message: str, history: list[dict] | None = None, client_date: str | None = None
+) -> Iterator[str]:
     """Yields SSE-formatted `data: {...}\\n\\n` frames as the agent responds.
 
     Frame shapes: {"content": "<token>"} for streamed text, {"tool": name,
@@ -517,7 +543,8 @@ def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dic
     asking in prose, {"error": "..."} on failure, {"history": [...]} carrying
     the updated conversation state the client must echo back as `history` on
     its next request (this endpoint is stateless - see run_agent_turn), and a
-    final {"done": true}.
+    final {"done": true}. `client_date` is the browser's own local calendar
+    date - see _resolve_today().
     """
     try:
         client = _get_client()
@@ -526,9 +553,10 @@ def stream_agent_turn(db: Session, user_id: int, message: str, history: list[dic
         yield _sse({"error": str(exc)})
         return
 
+    today = _resolve_today(client_date)
     system_prompt = (
-        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id)}\n\n"
-        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id)}\n\n"
+        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id, today)}\n\n"
+        f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id, today)}\n\n"
         f"{_build_soreness_context(db, user_id)}"
     )
 

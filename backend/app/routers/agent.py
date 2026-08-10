@@ -23,7 +23,7 @@ def agent_chat(payload: schemas.AgentChatRequest, db: Session = Depends(get_db))
     if not db.get(models.User, payload.user_id):
         raise HTTPException(status_code=404, detail="User not found")
     try:
-        return run_agent_turn(db, payload.user_id, payload.message, payload.history)
+        return run_agent_turn(db, payload.user_id, payload.message, payload.history, payload.client_date)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
@@ -33,7 +33,7 @@ def agent_chat_stream(payload: schemas.AgentChatRequest, db: Session = Depends(g
     if not db.get(models.User, payload.user_id):
         raise HTTPException(status_code=404, detail="User not found")
     return StreamingResponse(
-        stream_agent_turn(db, payload.user_id, payload.message, payload.history),
+        stream_agent_turn(db, payload.user_id, payload.message, payload.history, payload.client_date),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )

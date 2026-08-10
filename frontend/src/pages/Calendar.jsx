@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
+import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
 
 // Self-contained in-app activity calendar - NOT a Google Calendar
 // integration (that's a separate, still-deferred feature waiting on OAuth
@@ -203,7 +204,7 @@ export default function CalendarPage() {
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(null)
 
-  useEffect(() => {
+  const loadActivePlan = useCallback(() => {
     api
       .listPlans(userId)
       .then((plans) => {
@@ -217,8 +218,8 @@ export default function CalendarPage() {
       .catch(() => setActivePlan(null))
   }, [userId])
 
-  useEffect(() => {
-    Promise.all([api.listLogs(userId), api.listMealAnalyses(userId), api.getCheckinHistory(userId)])
+  const loadActivity = useCallback(() => {
+    return Promise.all([api.listLogs(userId), api.listMealAnalyses(userId), api.getCheckinHistory(userId)])
       .then(([logs, meals, checkins]) => {
         const byLogDate = {}
         for (const log of logs) {
@@ -246,8 +247,31 @@ export default function CalendarPage() {
         // just with no indicator dots, same as an empty-state elsewhere
         // in this app rather than blocking the whole page.
       })
-      .finally(() => setLoading(false))
   }, [userId])
+
+  useEffect(() => {
+    loadActivePlan()
+  }, [loadActivePlan])
+
+  useEffect(() => {
+    loadActivity().finally(() => setLoading(false))
+  }, [loadActivity])
+
+  // The AI Coach (AIMessageBar, mounted globally) can generate/adjust a plan
+  // or log/correct/delete a workout from its own floating drawer, completely
+  // independent of whichever page happens to be open underneath it - without
+  // this, a coach-confirmed change (e.g. "added leg day Wednesday") left this
+  // calendar's scheduled-workout dots and logged-activity dots stale until a
+  // manual reload, the same class of bug already fixed for Dashboard/
+  // PlanDetail/WorkoutLog (see coachEvents.js).
+  useEffect(() => {
+    function handleCoachChange() {
+      loadActivePlan()
+      loadActivity()
+    }
+    window.addEventListener(COACH_DATA_CHANGED_EVENT, handleCoachChange)
+    return () => window.removeEventListener(COACH_DATA_CHANGED_EVENT, handleCoachChange)
+  }, [loadActivePlan, loadActivity])
 
   const gridDays = useMemo(
     () => buildMonthGrid(cursor.getFullYear(), cursor.getMonth()),

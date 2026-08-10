@@ -1,5 +1,20 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
+// The browser's own local calendar date ("2026-08-11"), NOT UTC - `new
+// Date().toISOString()` would shift to UTC internally, defeating the whole
+// point. Sent on every agent chat request as `client_date` so the
+// orchestrator's day-of-week grounding matches what the user is actually
+// looking at locally, not the server's UTC date - see backend/app/agent/
+// orchestrator.py's _resolve_today() for the real bug this fixes (a user
+// ahead of UTC could have the coach ground "today" a full day behind their
+// actual local calendar day).
+function localDateString() {
+  const d = new Date()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${d.getFullYear()}-${month}-${day}`
+}
+
 // FastAPI's own request-validation errors (a Field(ge=/le=) violation, a
 // missing required field, etc.) send `detail` as an array of
 // {loc, msg, type} objects, not a plain string - passed straight into
@@ -37,7 +52,8 @@ async function request(path, options = {}) {
 export const api = {
   health: () => request('/health'),
 
-  chat: (payload) => request('/agent/chat', { method: 'POST', body: JSON.stringify(payload) }),
+  chat: (payload) =>
+    request('/agent/chat', { method: 'POST', body: JSON.stringify({ client_date: localDateString(), ...payload }) }),
 
   // NOTE: no listUsers() - there is deliberately no bulk user-listing
   // endpoint on the backend (see backend/app/routers/users.py). createUser
@@ -156,7 +172,7 @@ export async function streamAgentChat(userId, message, onEvent, history = []) {
       res = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, message, history }),
+        body: JSON.stringify({ user_id: userId, message, history, client_date: localDateString() }),
         signal: controller.signal,
       })
     } catch (err) {
