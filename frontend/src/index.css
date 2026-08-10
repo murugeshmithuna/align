@@ -1,17 +1,19 @@
 @import "tailwindcss";
 
 @theme {
-  /* Near-black scale (was a dark-teal scale) - matches the reference apps'
-     true near-black surfaces rather than a colored dark background. Token
-     names kept as forest-N / coral-N rather than renamed throughout every
-     component that references them (a much larger, riskier mechanical
-     rename) - a real naming/color mismatch now exists here, flagged
-     honestly rather than hidden, not something to silently leave forever. */
-  --color-forest-950: #050506;
-  --color-forest-900: #0a0a0d;
-  --color-forest-800: #131316;
-  --color-forest-700: #1d1d21;
-  --color-forest-600: #28282e;
+  /* Soft charcoal scale (was a dark-teal scale, then a near-pure-black scale -
+     the pure-black version made inputs/borders nearly indistinguishable from
+     the page background since both used forest-950/forest-700 hex values
+     within a few points of each other). Token names kept as forest-N /
+     coral-N rather than renamed throughout every component that references
+     them (a much larger, riskier mechanical rename) - a real naming/color
+     mismatch now exists here, flagged honestly rather than hidden, not
+     something to silently leave forever. */
+  --color-forest-950: #0c0c0f;
+  --color-forest-900: #17171b;
+  --color-forest-800: #212126;
+  --color-forest-700: #323238;
+  --color-forest-600: #45454c;
 
   /* Electric lime accent (was coral/orange) - the one vibrant accent used
      consistently everywhere, matching the majority color across the
@@ -56,8 +58,8 @@ body {
 }
 
 .card {
-  background: rgba(10, 10, 13, 0.6);
-  border: 1px solid rgba(29, 29, 33, 0.9);
+  background: rgba(23, 23, 27, 0.6);
+  border: 1px solid rgba(50, 50, 56, 0.9);
   border-radius: 0.75rem;
   backdrop-filter: blur(6px);
   transition:
