@@ -11,7 +11,9 @@ export const COACH_DATA_CHANGED_EVENT = 'align:coach-data-changed'
 // Only tools that actually write to the database are worth a refetch -
 // read-only tools (ask_schedule, analyze_form, ask_nutrition,
 // suggest_supplements) never change anything a page would need to re-fetch.
-const MUTATING_TOOLS = new Set([
+// Exported so AIMessageBar.jsx can reuse this exact set for its own
+// completion toast, rather than keeping a second list that could drift.
+export const MUTATING_TOOLS = new Set([
   'generate_workout_plan',
   'adjust_plan',
   'log_workout',

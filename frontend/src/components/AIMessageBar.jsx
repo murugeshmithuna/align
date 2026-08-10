@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { streamAgentChat } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
-import { notifyIfMutating } from '../utils/coachEvents.js'
+import { useToast } from '../context/ToastContext.jsx'
+import { MUTATING_TOOLS, notifyIfMutating } from '../utils/coachEvents.js'
 
 let nextId = 1
 
@@ -67,6 +68,20 @@ const TOOL_STATUS_LABELS = {
 
 function toolStatusLabel(toolName) {
   return TOOL_STATUS_LABELS[toolName] || 'Working on it…'
+}
+
+// Shown as a toast the moment a mutating tool actually finishes - the chat
+// bubble alone made a real, completed change easy to miss (the user has to
+// notice/trust the coach's own text, which occasionally narrated a change
+// that hadn't happened at all - see adjust_plan's `removals` field). A toast
+// is an explicit, separate on-screen confirmation that something in the
+// database really changed, distinct from whatever the model said.
+const TOOL_SUCCESS_LABELS = {
+  generate_workout_plan: 'New plan generated ✓',
+  adjust_plan: 'Plan updated ✓',
+  log_workout: 'Workout logged ✓',
+  update_log: 'Activity log updated ✓',
+  delete_log: 'Log entry removed ✓',
 }
 
 // Maps a short typed reply ("2", "yes", "45 mins") back to the exact option
@@ -205,6 +220,7 @@ function ChoiceWidget({ message, disabled, onOptionClick, onToggleOption, onMult
 // on one page.
 export default function AIMessageBar() {
   const { userId } = useSession()
+  const { showToast } = useToast()
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState(() => loadPersistedChat(userId)?.messages ?? [])
   const [input, setInput] = useState('')
@@ -297,6 +313,17 @@ export default function AIMessageBar() {
             // just sits there until the user manually reloads, which is
             // exactly the "said added but can't see it" report this fixes.
             notifyIfMutating(payload.tool)
+            // A separate, explicit on-screen confirmation - requested
+            // directly ("a clear message on screen... instead of hanging
+            // on"). The chat bubble alone isn't a reliable signal: it comes
+            // from the same model that has, in real use, narrated a change
+            // that never actually happened (e.g. claiming an exercise was
+            // removed with no removal tool call behind it). This toast only
+            // fires once the tool has actually finished running, so it's
+            // tied to a real completed database write, not the model's text.
+            if (MUTATING_TOOLS.has(payload.tool)) {
+              showToast(TOOL_SUCCESS_LABELS[payload.tool] || 'Update applied ✓')
+            }
           } else if (payload.widget) {
             attachWidget(agentId, payload.widget)
           } else if (payload.history) {
