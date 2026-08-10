@@ -87,7 +87,11 @@ export default function CoachResolution() {
       </form>
 
       {result && (
-        <div className="card p-6 space-y-5">
+        // Border Beam treatment on the page's focal point (the overall
+        // resolution summary card): dark-glass .card + a travelling lime
+        // gradient ring/bloom, see .border-beam-wrap in index.css. Purely
+        // visual - none of the content/behavior below changed.
+        <div className="card border-beam-wrap relative p-6 space-y-5">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span>🧠</span>
