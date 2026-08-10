@@ -20,6 +20,25 @@ const ROLE_LABELS = {
 
 const CONFIRM_SHORTHAND = /^(yes|y|yeah|yep|sure|ok|okay|do it|go|go ahead|apply|confirm|tailor it)$/i
 
+// Maps a raw backend tool name to a short, human, present-participle status
+// line - never surface an internal function/tool name to the user (e.g.
+// "Running adjust_plan…"). Falls back to a generic phrase for any future
+// tool this map hasn't been updated for yet, so a new tool can never regress
+// back to a raw identifier leaking through.
+const TOOL_STATUS_LABELS = {
+  generate_workout_plan: 'Generating your plan…',
+  adjust_plan: 'Updating your plan…',
+  log_workout: 'Logging your workout…',
+  suggest_supplements: 'Finding supplement suggestions…',
+  ask_schedule: 'Checking your schedule…',
+  analyze_form: 'Reviewing your form…',
+  ask_nutrition: 'Reviewing your nutrition…',
+}
+
+function toolStatusLabel(toolName) {
+  return TOOL_STATUS_LABELS[toolName] || 'Working on it…'
+}
+
 // Maps a short typed reply ("2", "yes", "45 mins") back to the exact option
 // text of whichever widget is currently awaiting an answer, so the user
 // isn't forced to re-type a full sentence. Falls through to the raw text
@@ -207,7 +226,7 @@ export default function AIMessageBar() {
           if (payload.content) {
             appendToMessage(agentId, payload.content)
           } else if (payload.tool && payload.status === 'running') {
-            appendMessage('status', `Running ${payload.tool}…`)
+            appendMessage('status', toolStatusLabel(payload.tool))
           } else if (payload.widget) {
             attachWidget(agentId, payload.widget)
           } else if (payload.history) {

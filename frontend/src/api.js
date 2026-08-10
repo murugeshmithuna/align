@@ -127,37 +127,75 @@ export const api = {
 // {done}) as it arrives. `history` is the prior turn's opaque conversation
 // state (echoed back from a previous {history} frame) - the backend is
 // stateless, so the caller owns persisting and replaying it.
+// Client-side safety net on top of the backend's own per-Claude-call timeout
+// (orchestrator.py's REQUEST_TIMEOUT_SECONDS, 60s): a hang at the network/
+// proxy layer - before a request ever reaches that backend code, or a
+// connection that's accepted but silently never sends another byte - would
+// otherwise leave this fetch's response body awaited forever with no way to
+// know the turn is dead, which is the frontend-side half of the "stuck on
+// Running adjust_plan... forever" bug. Tracked as inactivity (reset on every
+// chunk received), not one absolute deadline, so a real multi-tool-call turn
+// that's still actively streaming is never cut off just for running long;
+// comfortably longer than the backend's own timeout so a normal slow-but-
+// alive turn always has time to fail cleanly on the backend first.
+const STREAM_INACTIVITY_TIMEOUT_MS = 90000
+const STREAM_TIMEOUT_MESSAGE = "The coach is taking too long to respond - please try again in a moment."
+
 export async function streamAgentChat(userId, message, onEvent, history = []) {
-  const res = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user_id: userId, message, history }),
-  })
-  if (!res.ok || !res.body) {
-    const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || `HTTP ${res.status}`)
+  const controller = new AbortController()
+  let watchdog
+  const armWatchdog = () => {
+    clearTimeout(watchdog)
+    watchdog = setTimeout(() => controller.abort(), STREAM_INACTIVITY_TIMEOUT_MS)
   }
+  armWatchdog()
 
-  const reader = res.body.getReader()
-  const decoder = new TextDecoder()
-  let buffer = ''
+  try {
+    let res
+    try {
+      res = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, message, history }),
+        signal: controller.signal,
+      })
+    } catch (err) {
+      throw err.name === 'AbortError' ? new Error(STREAM_TIMEOUT_MESSAGE) : err
+    }
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => ({}))
+      throw new Error(data.detail || `HTTP ${res.status}`)
+    }
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
 
-    const frames = buffer.split('\n\n')
-    buffer = frames.pop()
-
-    for (const frame of frames) {
-      const line = frame.split('\n').find((l) => l.startsWith('data: '))
-      if (!line) continue
+    while (true) {
+      let done, value
       try {
-        onEvent(JSON.parse(line.slice('data: '.length)))
-      } catch {
-        // ignore malformed frame
+        ;({ done, value } = await reader.read())
+      } catch (err) {
+        throw err.name === 'AbortError' ? new Error(STREAM_TIMEOUT_MESSAGE) : err
+      }
+      armWatchdog()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop()
+
+      for (const frame of frames) {
+        const line = frame.split('\n').find((l) => l.startsWith('data: '))
+        if (!line) continue
+        try {
+          onEvent(JSON.parse(line.slice('data: '.length)))
+        } catch {
+          // ignore malformed frame
+        }
       }
     }
+  } finally {
+    clearTimeout(watchdog)
   }
 }

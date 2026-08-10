@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import models
+from app import models, schemas
 from app.models import _today
 
 TOOL_SCHEMAS = [
@@ -117,6 +117,32 @@ TOOL_SCHEMAS = [
             "Meal Photo page."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "log_workout",
+        "description": (
+            "Record a workout the user says they ALREADY completed (e.g. 'log 3x10 squats at 135lb', "
+            "'I just did 4 sets of pull-ups') as a permanent history entry. This is distinct from "
+            "adjust_plan: adjust_plan changes the future plan's prescription, log_workout records what "
+            "actually happened today so it shows up in progress charts and history - use log_workout "
+            "whenever the user reports something they did, not something they want to change going "
+            "forward. Fuzzy-match the exercise name against a sensible canonical name (e.g. 'squats' -> "
+            "'Back Squat') the same way generate_workout_plan would name it; a new exercise catalog entry "
+            "is created automatically if no match exists."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {"type": "string", "description": "Canonical exercise name, e.g. 'Back Squat'"},
+                "muscle_group": {"type": "string", "description": "Only used if this exercise doesn't exist yet"},
+                "sets": {"type": "integer"},
+                "reps": {"type": "integer"},
+                "weight": {"type": "number", "description": "Weight used, in the user's usual units"},
+                "rpe": {"type": "number", "description": "Rate of perceived exertion, 0-10, if mentioned"},
+                "notes": {"type": "string", "description": "Any other detail the user mentioned"},
+            },
+            "required": ["exercise_name"],
+        },
     },
 ]
 
@@ -313,6 +339,56 @@ def execute_ask_nutrition(db: Session, user_id: int, tool_input: dict) -> dict:
     }
 
 
+def execute_log_workout(db: Session, user_id: int, tool_input: dict) -> dict:
+    user = db.get(models.User, user_id)
+    if not user:
+        return {"error": "user not found"}
+
+    name = (tool_input.get("exercise_name") or "").strip()
+    if not name:
+        return {"error": "exercise_name is required"}
+
+    # Same find-or-create-by-name pattern as execute_generate_workout_plan,
+    # so a chat-logged exercise ("Squats") and a plan-generated one ("Back
+    # Squat") both land in the same shared catalog table rather than a
+    # second, divergent way of creating an Exercise row.
+    exercise = db.scalar(select(models.Exercise).where(models.Exercise.name == name))
+    if not exercise:
+        exercise = models.Exercise(name=name, muscle_group=tool_input.get("muscle_group"))
+        db.add(exercise)
+        db.flush()
+
+    # Validated through the exact same Pydantic schema POST /logs uses
+    # (sets/reps/weight/rpe bounds) rather than a second, hand-rolled set of
+    # limits that could quietly drift out of sync with the REST endpoint's.
+    # A ValidationError here propagates up to _run_tool's catch-all, which
+    # turns it into a normal tool_result the model can react to.
+    validated = schemas.LogCreate(
+        user_id=user_id,
+        exercise_id=exercise.id,
+        sets=tool_input.get("sets"),
+        reps=tool_input.get("reps"),
+        weight=tool_input.get("weight"),
+        rpe=tool_input.get("rpe"),
+        notes=tool_input.get("notes"),
+    )
+
+    log = models.WorkoutLog(**validated.model_dump())
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+
+    return {
+        "log_id": log.id,
+        "exercise_name": exercise.name,
+        "sets": log.sets,
+        "reps": log.reps,
+        "weight": log.weight,
+        "rpe": log.rpe,
+        "performed_at": log.performed_at.isoformat(),
+    }
+
+
 TOOL_EXECUTORS = {
     "generate_workout_plan": execute_generate_workout_plan,
     "adjust_plan": execute_adjust_plan,
@@ -320,4 +396,5 @@ TOOL_EXECUTORS = {
     "ask_schedule": execute_ask_schedule,
     "analyze_form": execute_analyze_form,
     "ask_nutrition": execute_ask_nutrition,
+    "log_workout": execute_log_workout,
 }
