@@ -94,18 +94,18 @@ export default function Navbar() {
 
   return (
     <nav className="bg-coral-500">
-      <div className="flex items-center gap-4 md:gap-6 px-4 md:px-8 py-3">
+      <div className="max-w-7xl mx-auto flex items-center justify-between w-full px-4 md:px-8 py-3">
         <div className="flex items-center gap-2 shrink-0">
           <AlignWordmark className="font-heading font-bold tracking-tight text-sm md:text-base" size="1.15em" />
         </div>
 
-        <div className="hidden md:flex items-center gap-x-3 overflow-x-auto no-scrollbar">
+        <div className="hidden md:flex items-center gap-3 min-w-0 overflow-x-auto no-scrollbar">
           {LINKS.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `font-heading text-xs font-bold whitespace-nowrap pb-1.5 border-b-2 transition-colors ${
+                `font-heading text-xs font-bold whitespace-nowrap px-2 py-1.5 border-b-2 transition-colors ${
                   isActive
                     ? 'text-forest-950 border-forest-950'
                     : 'text-forest-950/55 border-transparent hover:text-forest-950 hover:border-forest-950/40'
@@ -117,7 +117,7 @@ export default function Navbar() {
           ))}
         </div>
 
-        <ProfileMenu profile={profile} userId={userId} onLogout={handleLogout} className="ml-auto" />
+        <ProfileMenu profile={profile} userId={userId} onLogout={handleLogout} />
       </div>
     </nav>
   )
