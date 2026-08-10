@@ -1,15 +1,24 @@
 @import "tailwindcss";
 
 @theme {
-  --color-forest-950: #07211c;
-  --color-forest-900: #0b2e27;
-  --color-forest-800: #0f3b32;
-  --color-forest-700: #155445;
-  --color-forest-600: #1c6e59;
+  /* Near-black scale (was a dark-teal scale) - matches the reference apps'
+     true near-black surfaces rather than a colored dark background. Token
+     names kept as forest-N / coral-N rather than renamed throughout every
+     component that references them (a much larger, riskier mechanical
+     rename) - a real naming/color mismatch now exists here, flagged
+     honestly rather than hidden, not something to silently leave forever. */
+  --color-forest-950: #050506;
+  --color-forest-900: #0a0a0d;
+  --color-forest-800: #131316;
+  --color-forest-700: #1d1d21;
+  --color-forest-600: #28282e;
 
-  --color-coral-400: #ff9a72;
-  --color-coral-500: #ff7a4d;
-  --color-coral-600: #f4602f;
+  /* Electric lime accent (was coral/orange) - the one vibrant accent used
+     consistently everywhere, matching the majority color across the
+     reference apps. */
+  --color-coral-400: #dfff6b;
+  --color-coral-500: #c6ff3d;
+  --color-coral-600: #a6e017;
 
   --font-heading: "Sora", sans-serif;
   --font-body: "Inter", sans-serif;
@@ -19,13 +28,26 @@ body {
   font-family: var(--font-body);
 }
 
+/* A solid lime background needs dark text for real contrast - white/light
+   text (this app's default on the old dark-orange coral) is unreadable on
+   a bright lime fill. Scoped to the opaque bg-coral-* utilities specifically
+   (not the /NN opacity-modifier variants, which are translucent tints/badges
+   over a dark background and correctly keep light text) so every existing
+   "bg-coral-500 ... font-semibold" button across the app gets legible text
+   automatically, with zero className changes needed anywhere else. */
+.bg-coral-400,
+.bg-coral-500,
+.bg-coral-600 {
+  color: #0a0a0d;
+}
+
 @keyframes pulse-dot {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(255, 122, 77, 0.6);
+    box-shadow: 0 0 0 0 rgba(198, 255, 61, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(255, 122, 77, 0);
+    box-shadow: 0 0 0 8px rgba(198, 255, 61, 0);
   }
 }
 
@@ -34,8 +56,8 @@ body {
 }
 
 .card {
-  background: rgba(15, 59, 50, 0.5);
-  border: 1px solid rgba(28, 110, 89, 0.6);
+  background: rgba(10, 10, 13, 0.6);
+  border: 1px solid rgba(29, 29, 33, 0.9);
   border-radius: 0.75rem;
   backdrop-filter: blur(6px);
   transition:
@@ -45,7 +67,7 @@ body {
 
 .card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 122, 77, 0.6);
+  border-color: rgba(198, 255, 61, 0.5);
 }
 
 /* ==========================================================================

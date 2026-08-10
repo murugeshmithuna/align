@@ -17,7 +17,7 @@ function SignalWave() {
     >
       <path
         d="M0,90 L160,90 L182,50 L204,130 L226,90 L500,90 L522,58 L541,122 L563,90 L1200,90"
-        stroke="#ff7a4d"
+        stroke="#c6ff3d"
         strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -25,11 +25,11 @@ function SignalWave() {
       />
       <path
         d="M0,110 L380,110 L400,80 L419,140 L440,110 L940,110 L960,84 L978,136 L999,110 L1200,110"
-        stroke="#1c6e59"
+        stroke="#dfff6b"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        opacity="0.3"
+        opacity="0.25"
       />
     </svg>
   )

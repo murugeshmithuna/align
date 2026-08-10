@@ -248,7 +248,9 @@ function tabClass(active) {
 // a DOM snapshot into an oversized embedded image.
 function buildWorkoutPdf({ exercises, formAccuracyPct, durationLabel, aiNote }) {
   const doc = new jsPDF()
-  const CORAL = [255, 122, 77]
+  // Print-safe olive-lime (see Progress.jsx's identical PDF color note) -
+  // the on-screen neon lime is unreadable on a white PDF page.
+  const CORAL = [122, 176, 24]
   const SLATE = [100, 116, 139]
   const INK = [15, 23, 42]
   const marginX = 20

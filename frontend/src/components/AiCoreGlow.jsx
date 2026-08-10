@@ -1,8 +1,8 @@
 // Futuristic centerpiece for the landing hero: a pulsing glow core with two
 // counter-rotating segmented rings, pure CSS/SVG - no image asset, no 3D
-// library. Same brand colors as everywhere else in the app (coral accent,
-// forest-600 secondary) rather than introducing a new palette just for this
-// one page.
+// library. One accent color (electric lime) at layered opacities rather
+// than a second hue, matching the "single vibrant accent used everywhere"
+// convention now used app-wide.
 export default function AiCoreGlow({ className = '' }) {
   return (
     <div
@@ -20,11 +20,11 @@ export default function AiCoreGlow({ className = '' }) {
           cy="100"
           r="92"
           fill="none"
-          stroke="#ff7a4d"
+          stroke="#c6ff3d"
           strokeWidth="1.5"
           strokeDasharray="3 11"
           strokeLinecap="round"
-          opacity="0.55"
+          opacity="0.5"
         />
       </svg>
 
@@ -37,11 +37,11 @@ export default function AiCoreGlow({ className = '' }) {
           cy="100"
           r="70"
           fill="none"
-          stroke="#1c6e59"
+          stroke="#c6ff3d"
           strokeWidth="2"
           strokeDasharray="26 10"
           strokeLinecap="round"
-          opacity="0.65"
+          opacity="0.3"
         />
       </svg>
 
@@ -55,11 +55,11 @@ export default function AiCoreGlow({ className = '' }) {
           cy="100"
           r="50"
           fill="none"
-          stroke="#ff9a72"
+          stroke="#dfff6b"
           strokeWidth="1"
           strokeDasharray="1 7"
           strokeLinecap="round"
-          opacity="0.6"
+          opacity="0.55"
         />
       </svg>
     </div>

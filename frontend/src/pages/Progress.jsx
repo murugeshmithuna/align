@@ -16,8 +16,9 @@ import { useSession } from '../context/SessionContext.jsx'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Legend, Tooltip)
 
-// Single-series charts - one hue throughout (brand coral), no legend needed.
-const CORAL = '#ff7a4d'
+// Single-series charts - one hue throughout (brand accent, electric lime),
+// no legend needed.
+const CORAL = '#c6ff3d'
 const GRID_COLOR = 'rgba(148, 163, 184, 0.12)'
 const TEXT_MUTED = '#94a3b8'
 
@@ -64,7 +65,7 @@ function macroTargetBadge(value, target) {
 // hue per macro, matching the brand colors already used elsewhere (bg-coral-500/
 // bg-emerald-500/bg-sky-500/bg-amber-500), each with its own low-opacity fill.
 const SPARKLINE_COLORS = {
-  calories: { line: '#ff7a4d', fill: 'rgba(255, 122, 77, 0.15)' },
+  calories: { line: '#c6ff3d', fill: 'rgba(198, 255, 61, 0.15)' },
   protein: { line: '#10b981', fill: 'rgba(16, 185, 129, 0.15)' },
   carbs: { line: '#0ea5e9', fill: 'rgba(14, 165, 233, 0.15)' },
   fat: { line: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)' },
@@ -122,7 +123,10 @@ function MacroTile({ icon, label, value, unit, badge, dailyData, colors }) {
 // short paragraphs.
 function buildNutritionAuditPdf(review) {
   const doc = new jsPDF()
-  const CORAL = [255, 122, 77]
+  // A PDF renders on white paper regardless of the app's dark theme - the
+  // bright neon lime used on-screen has terrible contrast on white, so this
+  // uses a darker, print-safe olive-lime instead of the literal UI accent.
+  const CORAL = [122, 176, 24]
   const SLATE = [100, 116, 139]
   const INK = [15, 23, 42]
   const marginX = 20
@@ -241,17 +245,17 @@ function buildVolumeChartData(volumeByDate) {
         pointRadius: 0,
         pointHoverRadius: 5,
         pointHoverBackgroundColor: CORAL,
-        pointHoverBorderColor: '#07211c',
+        pointHoverBorderColor: '#050506',
         pointHoverBorderWidth: 2,
         tension: 0.25,
         fill: true,
         backgroundColor: (ctx) => {
           const { chart } = ctx
           const { ctx: canvasCtx, chartArea } = chart
-          if (!chartArea) return 'rgba(255, 122, 77, 0.12)'
+          if (!chartArea) return 'rgba(198, 255, 61, 0.12)'
           const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-          gradient.addColorStop(0, 'rgba(255, 122, 77, 0.28)')
-          gradient.addColorStop(1, 'rgba(255, 122, 77, 0.02)')
+          gradient.addColorStop(0, 'rgba(198, 255, 61, 0.28)')
+          gradient.addColorStop(1, 'rgba(198, 255, 61, 0.02)')
           return gradient
         },
       },
@@ -275,7 +279,7 @@ function buildExerciseChartData(history) {
         pointRadius: history.map((p) => (p.is_pr ? 6 : 2)),
         pointHoverRadius: history.map((p) => (p.is_pr ? 8 : 5)),
         pointBackgroundColor: CORAL,
-        pointBorderColor: '#07211c',
+        pointBorderColor: '#050506',
         pointBorderWidth: history.map((p) => (p.is_pr ? 2 : 1)),
       },
     ],
@@ -325,8 +329,8 @@ const baseChartOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#0b2e27',
-      borderColor: 'rgba(28, 110, 89, 0.6)',
+      backgroundColor: '#0a0a0d',
+      borderColor: 'rgba(198, 255, 61, 0.35)',
       borderWidth: 1,
       titleColor: '#e2e8f0',
       bodyColor: '#e2e8f0',
