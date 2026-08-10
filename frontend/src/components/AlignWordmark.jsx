@@ -15,7 +15,7 @@ function PulseA({ className, style }) {
       style={style}
       fill="none"
       stroke="currentColor"
-      strokeWidth="11"
+      strokeWidth="6"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
