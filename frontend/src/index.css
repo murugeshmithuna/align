@@ -174,3 +174,112 @@ body {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   BorderBeam - thin animated gradient ring that travels around a rounded
+   container's border, plus a soft bloom glow underneath (see
+   src/components/AIMessageBar.jsx's chat input, src/pages/CoachResolution.jsx's
+   resolution card). Pure CSS conic-gradient + mask, no dependency, same
+   "single lime accent" convention as AiCoreGlow rather than the green/purple
+   reference this was modeled on.
+   ========================================================================== */
+
+/* Registers --border-beam-angle as a real, animatable <angle> so the ring's
+   conic-gradient can be rotated by animating the gradient's own "from"
+   angle directly, rather than via a CSS `transform: rotate()` on the masked
+   pseudo-element. That transform approach was tried first and looked right
+   in the recipe, but a real screenshot caught it leaking an unmasked wedge
+   of the gradient well past the card's edges - a Chromium compositing bug
+   where an animated `transform` on an element using `mask-composite` can
+   desync the paint from the mask's clip region. Animating the gradient
+   angle itself sidesteps that whole bug category (no transform involved at
+   all) and is well-supported (Chrome/Edge/Safari 16.4+/Firefox 128+).
+   Falls back to a static (non-animated) angle if @property isn't supported. */
+@property --border-beam-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.border-beam-wrap {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Soft outward bloom beneath the box - a blurred, low-opacity lime disc that
+   sits behind the card via a negative z-index, distinct from the thin ring
+   pseudo-element below. */
+.border-beam-wrap::after {
+  content: "";
+  position: absolute;
+  inset: -18px;
+  border-radius: inherit;
+  background: radial-gradient(closest-side, rgba(198, 255, 61, 0.28), transparent 80%);
+  filter: blur(18px);
+  z-index: -1;
+  animation: border-beam-bloom 3.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* The travelling ring itself - a conic-gradient "comet" masked down to just
+   the border thickness via the standard padding-box/content-box XOR trick,
+   rotated by animating --border-beam-angle (see @property above), not a
+   transform. */
+.border-beam-wrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--border-beam-angle),
+    transparent 0deg,
+    transparent 250deg,
+    var(--color-coral-600) 300deg,
+    var(--color-coral-500) 330deg,
+    var(--color-coral-400) 350deg,
+    var(--color-coral-500) 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  /* Standard (unprefixed) mask must be set too, not just -webkit-mask - an
+     engine that honors mask-composite but not -webkit-mask-composite has no
+     mask-image at all otherwise, so the conic-gradient paints unmasked
+     instead of clipped to a thin ring (caught via a real screenshot, not
+     just reading the recipe - see verification notes above). */
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: border-beam-spin 3.5s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes border-beam-spin {
+  to {
+    --border-beam-angle: 360deg;
+  }
+}
+
+@keyframes border-beam-bloom {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .border-beam-wrap::before {
+    animation: none;
+  }
+  .border-beam-wrap::after {
+    animation: none;
+    opacity: 0.7;
+  }
+}

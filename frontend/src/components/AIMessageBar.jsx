@@ -331,23 +331,32 @@ export default function AIMessageBar() {
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="flex gap-2 px-5 py-4 border-t border-forest-800">
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder={activeWidget ? 'Or type your answer…' : 'Ask your coach…'}
-            className="flex-1 px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-          />
-          <button
-            type="submit"
-            disabled={sending}
-            aria-label="Send"
-            className="px-3 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 flex items-center justify-center"
+        <div className="px-5 py-4 border-t border-forest-800">
+          {/* Border Beam treatment: dark-glass rounded-2xl input box with a
+              travelling lime gradient ring + soft bloom underneath (see
+              .border-beam-wrap in index.css). Same input/button/handler as
+              before - visual restyle only. */}
+          <form
+            onSubmit={handleSubmit}
+            className="border-beam-wrap relative flex items-center gap-2 rounded-2xl bg-forest-900/70 border border-forest-700/70 backdrop-blur-md px-2 py-2"
           >
-            <SendIcon />
-          </button>
-        </form>
+            <input
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={activeWidget ? 'Or type your answer…' : 'Ask your coach…'}
+              className="flex-1 min-w-0 px-2 py-2 bg-transparent text-sm placeholder:text-slate-500 focus:outline-none"
+            />
+            <button
+              type="submit"
+              disabled={sending}
+              aria-label="Send"
+              className="w-9 h-9 flex-shrink-0 rounded-full bg-coral-500 hover:bg-coral-600 disabled:opacity-50 flex items-center justify-center transition-colors"
+            >
+              <SendIcon />
+            </button>
+          </form>
+        </div>
       </div>
     </>
   )
