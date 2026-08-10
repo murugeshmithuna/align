@@ -23,7 +23,7 @@ const LINKS = [
   { to: '/admin', label: 'Admin' },
 ]
 
-function ProfileMenu({ profile, userId, onLogout }) {
+function ProfileMenu({ profile, userId, onLogout, className = '' }) {
   const [open, setOpen] = useState(false)
   const menuRef = useRef(null)
 
@@ -36,7 +36,7 @@ function ProfileMenu({ profile, userId, onLogout }) {
   }, [])
 
   return (
-    <div className="relative shrink-0" ref={menuRef}>
+    <div className={`relative shrink-0 ${className}`} ref={menuRef}>
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 bg-forest-950 rounded-full pl-1 pr-2.5 py-1"
@@ -117,7 +117,7 @@ export default function Navbar() {
           ))}
         </div>
 
-        <ProfileMenu profile={profile} userId={userId} onLogout={handleLogout} />
+        <ProfileMenu profile={profile} userId={userId} onLogout={handleLogout} className="ml-auto" />
       </div>
     </nav>
   )
