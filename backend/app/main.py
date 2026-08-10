@@ -21,8 +21,8 @@ from app.routers import (
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="AI Fitness Agent API",
-    description="Backend for the AI Fitness Agent — a coach that watches, listens, and adapts.",
+    title="ALIGN API",
+    description="Backend for ALIGN — a coach that watches, listens, and adapts.",
     version="0.1.0",
 )
 
@@ -51,9 +51,9 @@ app.include_router(admin.router)
 @app.get("/health", tags=["health"])
 def health_check():
     """Quick liveness check to confirm the API is running smoothly."""
-    return {"status": "ok", "service": "AI Fitness Agent API", "version": app.version}
+    return {"status": "ok", "service": "ALIGN API", "version": app.version}
 
 
 @app.get("/", tags=["health"])
 def root():
-    return {"message": "AI Fitness Agent API is running. See /docs for the interactive API explorer."}
+    return {"message": "ALIGN API is running. See /docs for the interactive API explorer."}

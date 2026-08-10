@@ -14,7 +14,7 @@ from app.models import _today, _utcnow
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are the orchestrator agent for the AI Fitness Agent, a coach that watches, \
+SYSTEM_PROMPT = """You are the orchestrator agent for ALIGN, a coach that watches, \
 listens, and adapts.
 
 ROLE: The user's baseline training plan is generated automatically from their profile settings - you \

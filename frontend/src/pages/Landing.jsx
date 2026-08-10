@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import AiCoreGlow from '../components/AiCoreGlow.jsx'
+import AlignWordmark from '../components/AlignWordmark.jsx'
 import LiveSignalBg from '../components/LiveSignalBg.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 
@@ -57,10 +58,7 @@ export default function Landing() {
         <AiCoreGlow className="opacity-80" />
 
         <header className="relative z-10 flex items-center justify-between px-6 md:px-12 py-6">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-coral-500 pulse-dot" />
-            <span className="font-heading font-bold text-lg tracking-tight">AI Fitness Agent</span>
-          </div>
+          <AlignWordmark className="font-heading font-bold text-lg tracking-tight" size="1.15em" />
           <Link
             to={primaryCta.to}
             className="px-4 py-2 rounded-full border border-forest-600 hover:border-coral-400 transition-colors text-sm font-heading font-semibold"
@@ -137,7 +135,7 @@ export default function Landing() {
       </section>
 
       <footer className="px-6 md:px-12 py-10 border-t border-forest-800 text-center">
-        <p className="text-sm text-slate-500">AI Fitness Agent - a coach that watches, listens, and adapts.</p>
+        <p className="text-sm text-slate-500">ALIGN - a coach that watches, listens, and adapts.</p>
       </footer>
     </div>
   )
