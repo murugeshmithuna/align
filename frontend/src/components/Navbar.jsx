@@ -17,7 +17,6 @@ const LINKS = [
   { to: '/nutrition', label: 'Meal Photo' },
   { to: '/nutrition/calculator', label: 'Macro Calculator' },
   { to: '/analytics', label: 'Analytics' },
-  { to: '/calendar', label: 'Calendar' },
   { to: '/coach-resolution', label: 'Coach Resolution' },
   { to: '/profile', label: 'Profile Settings' },
   { to: '/admin', label: 'Admin' },
@@ -94,31 +93,31 @@ export default function Navbar() {
 
   return (
     <nav className="bg-coral-500">
-      <div className="flex items-center justify-between gap-3 px-4 md:px-8 pt-3">
+      <div className="flex items-center gap-4 md:gap-6 px-4 md:px-8 py-3">
         <div className="flex items-center gap-2 shrink-0">
           <span className="w-2.5 h-2.5 rounded-full bg-forest-950" />
-          <span className="font-heading font-bold tracking-tight">AI Fitness Agent</span>
+          <span className="font-heading font-bold tracking-tight text-sm md:text-base whitespace-nowrap">AI Fitness Agent</span>
+        </div>
+
+        <div className="hidden md:flex items-center gap-x-3 xl:gap-x-5 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+          {LINKS.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                `font-heading text-xs xl:text-sm font-bold whitespace-nowrap pb-1.5 border-b-2 transition-colors ${
+                  isActive
+                    ? 'text-forest-950 border-forest-950'
+                    : 'text-forest-950/55 border-transparent hover:text-forest-950 hover:border-forest-950/40'
+                }`
+              }
+            >
+              {link.label}
+            </NavLink>
+          ))}
         </div>
 
         <ProfileMenu profile={profile} userId={userId} onLogout={handleLogout} />
-      </div>
-
-      <div className="hidden md:flex items-center gap-x-8 gap-y-2 flex-wrap px-4 md:px-8 py-4">
-        {LINKS.map((link) => (
-          <NavLink
-            key={link.to}
-            to={link.to}
-            className={({ isActive }) =>
-              `font-heading text-sm font-bold whitespace-nowrap pb-1.5 border-b-2 transition-colors ${
-                isActive
-                  ? 'text-forest-950 border-forest-950'
-                  : 'text-forest-950/55 border-transparent hover:text-forest-950 hover:border-forest-950/40'
-              }`
-            }
-          >
-            {link.label}
-          </NavLink>
-        ))}
       </div>
     </nav>
   )
