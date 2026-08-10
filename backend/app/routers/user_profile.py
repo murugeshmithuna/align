@@ -31,7 +31,25 @@ def upsert_user_profile(payload: schemas.UserProfileUpdate, db: Session = Depend
     has_plan = db.scalar(select(models.Plan).where(models.Plan.user_id == user.id)) is not None
     if user.experience_level and not has_plan:
         try:
-            run_agent_turn(db, user.id, "Generate my baseline workout plan from my saved profile.")
+            # Explicit and directive on purpose: a vaguer prompt here ("generate
+            # my baseline plan") once produced a single-exercise "starter" plan
+            # ("Arm Starter" - just a bicep curl, with notes promising to "build
+            # this out into a full weekly program whenever you're ready") that
+            # the user then had no chat turn to correct, since this call is
+            # synchronous and never shown to them. This is the ONE call in the
+            # whole app that has no back-and-forth to fall back on, so it has to
+            # ask for a genuinely complete plan up front, not a placeholder.
+            frequency = user.target_frequency or 3
+            run_agent_turn(
+                db,
+                user.id,
+                "Generate my complete baseline workout plan from my saved profile. It must be a full, "
+                f"ready-to-follow program covering exactly {frequency} distinct training days per week "
+                "(spread across different days of the week, not stacked on one day), with a balanced set "
+                "of 4-6 exercises per training day appropriate to my goals, experience level, and "
+                "available equipment. Do not create a single-exercise placeholder or 'starter' plan - "
+                "this is the only plan I will have until I ask for changes.",
+            )
         except Exception:
             logger.exception("Baseline plan auto-generation failed for user %s", user.id)
 
