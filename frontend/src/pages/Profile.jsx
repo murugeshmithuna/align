@@ -167,11 +167,13 @@ export default function Profile() {
   const [weightDisplay, setWeightDisplay] = useState(70)
   const [preferredUnits, setPreferredUnits] = useState('metric')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, flashSaved] = useSavedFlash()
   const [hasSaved, setHasSaved] = useState(false)
 
   useEffect(() => {
+    setLoadError(false)
     api
       .getProfile(userId)
       .then((data) => {
@@ -186,8 +188,21 @@ export default function Profile() {
         setWeightDisplay(Math.round(metricToDisplay(data.weight_kg, units, KG_PER_LB)) || (units === 'imperial' ? 154 : 70))
         setHasSaved(Boolean(data.experience_level))
       })
-      .catch(() => {
-        /* no profile saved yet - defaults above are fine */
+      .catch((err) => {
+        // A genuine 404 here means the user row itself doesn't exist, which
+        // is effectively impossible once an account has been created - the
+        // row (with null fields) is always there, so GET returns 200 even
+        // for a brand-new profile. Every OTHER failure (network error,
+        // timeout, a cold-starting backend - Render's free tier spins down
+        // and the first request after idle can take 30s+, see CLAUDE.md) was
+        // previously swallowed by this same silent catch, which left a user
+        // who HAD already saved a real profile staring at the wizard reset
+        // to hardcoded defaults with no indication anything went wrong -
+        // indistinguishable from "my data didn't save." Surface it instead.
+        if (err?.status !== 404) {
+          setLoadError(true)
+          showToast("Couldn't load your saved profile - check your connection and try again.", 'error')
+        }
       })
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,6 +261,29 @@ export default function Profile() {
 
   if (loading) {
     return <p className="text-slate-400 text-sm px-6 py-12">Loading your profile…</p>
+  }
+
+  // Don't show the wizard at all when the load genuinely failed (as opposed
+  // to a brand-new profile, which resolves normally with null fields) -
+  // rendering it anyway would look identical to a real reset, and letting
+  // the user click through and "Save profile" here would silently overwrite
+  // their real saved answers with these hardcoded defaults.
+  if (loadError) {
+    return (
+      <div className="max-w-md mx-auto px-6 py-16 text-center font-body">
+        <p className="text-slate-300 text-sm mb-5">
+          We couldn't load your saved profile. Your data is safe - this looks like a connection issue, not a
+          reset - please try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="px-6 py-3 rounded-xl bg-coral-500 text-sm font-heading font-semibold"
+        >
+          Retry
+        </button>
+      </div>
+    )
   }
 
   const { feet, inches } = parseFeetInches(heightDisplay)
