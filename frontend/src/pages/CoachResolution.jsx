@@ -56,9 +56,16 @@ export default function CoachResolution() {
     <div className="max-w-3xl mx-auto px-6 py-10 font-body space-y-6">
       <div>
         <h1 className="font-heading font-bold text-2xl">Coach Resolution &amp; Strategy</h1>
+        {/* Ask Coach (the floating drawer on every page) can already adjust
+            your plan conversationally - this page isn't a second copy of
+            that. It's the dedicated surface for a genuine training dilemma
+            (conflicting signals: soreness vs. a heavy day, fatigue vs. a
+            goal) that deserves one weighed-through verdict and a concrete
+            plan change to match, not a back-and-forth chat. */}
         <p className="text-sm text-slate-400 mt-1">
-          Submit a training dilemma and get one clear, authoritative call - not two opinions to weigh
-          yourself.
+          For real training dilemmas - conflicting signals like soreness vs. a heavy day - get one
+          weighed-through verdict, with the exact sets/reps/weight change applied straight to your plan.
+          For quick questions or day-to-day logging, use Ask Coach from any page instead.
         </p>
       </div>
 
@@ -132,7 +139,9 @@ export default function CoachResolution() {
                 {applied ? 'Applied ✓' : applying ? 'Applying…' : 'Apply This Plan Adjustment'}
               </button>
             ) : (
-              <p className="text-sm text-slate-500">No plan changes proposed - this call is informational.</p>
+              <p className="text-sm text-slate-500">
+                No plan edit needed here - the verdict above is the action, follow it as-is.
+              </p>
             )}
           </div>
         </div>

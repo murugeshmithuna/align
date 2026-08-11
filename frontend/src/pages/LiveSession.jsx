@@ -661,21 +661,33 @@ function ExercisePicker({ value, onChange }) {
           </button>
         ))}
       </div>
-      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+      {/* Was a flex-wrap row of variable-width pills (label + inline category
+          tag squeezed into one line each) - with labels ranging from "Squat"
+          to "Romanian Deadlift / Hip Thrust", that wrapped raggedly with
+          uneven gaps and no visual rhythm. A fixed-column grid gives every
+          exercise an equal-width cell regardless of label length, with the
+          category moved to its own dimmer line underneath instead of
+          crammed inline - reads as a clean tile grid instead of a jumble of
+          differently-sized buttons. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
         {filtered.length === 0 ? (
-          <p className="text-xs text-slate-500 py-1">No exercises match.</p>
+          <p className="text-xs text-slate-500 py-1 col-span-full">No exercises match.</p>
         ) : (
           filtered.map(([key, config]) => (
             <button
               key={key}
               type="button"
               onClick={() => onChange(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                value === key ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
+              className={`flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg text-left transition-colors ${
+                value === key ? 'bg-coral-500' : 'bg-forest-900 hover:bg-forest-800'
               }`}
             >
-              {config.label}
-              <span className="ml-1.5 text-[10px] opacity-70">{config.category}</span>
+              <span className={`text-xs font-semibold leading-tight ${value === key ? 'text-forest-950' : 'text-slate-200'}`}>
+                {config.label}
+              </span>
+              <span className={`text-[10px] ${value === key ? 'text-forest-950/70' : 'text-slate-500'}`}>
+                {config.category}
+              </span>
             </button>
           ))
         )}
