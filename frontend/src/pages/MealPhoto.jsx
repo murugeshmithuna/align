@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js'
 import { Doughnut } from 'react-chartjs-2'
+import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import MacroBar from '../components/MacroBar.jsx'
+import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useSavedFlash } from '../utils/useSavedFlash.js'
@@ -31,6 +34,17 @@ const macroDonutOptions = {
       callbacks: { label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}g` },
     },
   },
+}
+
+// Plain inline SVG, matching this app's existing icon convention (see
+// WorkoutLog.jsx/Navbar.jsx) - replaces the plain "✕" text glyph the remove-
+// ingredient buttons used to render.
+function RemoveIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  )
 }
 
 const MAX_DIMENSION_PX = 800
@@ -358,9 +372,9 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
                     <button
                       onClick={() => removeIngredient(i)}
                       aria-label="Remove ingredient"
-                      className="shrink-0 text-slate-500 hover:text-red-400 text-sm px-1"
+                      className="shrink-0 text-slate-500 hover:text-red-400 px-1"
                     >
-                      ✕
+                      <RemoveIcon className="w-3.5 h-3.5" />
                     </button>
                   </div>
                   <input
@@ -410,9 +424,9 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
                   <button
                     onClick={() => removeIngredient(i)}
                     aria-label="Remove ingredient"
-                    className="text-slate-500 hover:text-red-400 text-sm px-1"
+                    className="text-slate-500 hover:text-red-400 px-1"
                   >
-                    ✕
+                    <RemoveIcon className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -573,15 +587,94 @@ function TextTab({ onAnalyzed, userId }) {
   )
 }
 
+// Top-of-page summary card - today's real consumed totals (the same
+// `todaysTotals` already derived from `history` for the donut further down,
+// no second computation) against the user's own profile targets. Reuses
+// Dashboard.jsx's MacroBar/ProgressRing components verbatim, including their
+// established "no target set" fallback (fills if anything was logged,
+// otherwise empty - never a fabricated percentage), rather than building a
+// second version of the same idea. Targets are all individually nullable -
+// a macro with no target just renders MacroBar's honest fallback instead of
+// hiding that row; only when *every* target is unset does the card show a
+// dedicated empty-state pointing at the calculator. Fiber has no per-meal
+// "consumed" figure at all (MealAnalysis has no fiber column - see
+// backend/app/models.py), so it's shown as a target-only readout, never a
+// fabricated consumed number.
+function DailyIntakeTracker({ totals, profile }) {
+  const hasAnyTarget =
+    profile &&
+    (profile.daily_calorie_target ||
+      profile.daily_protein_target ||
+      profile.daily_carbs_target ||
+      profile.daily_fat_target ||
+      profile.daily_fiber_target)
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-4 gap-2">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Today</p>
+          <h2 className="font-heading font-semibold mt-0.5">Daily Intake Tracker</h2>
+        </div>
+        <Link
+          to="/nutrition/calculator"
+          className="text-xs font-semibold text-coral-400 hover:text-coral-300 whitespace-nowrap"
+        >
+          {hasAnyTarget ? 'Edit targets →' : 'Set targets →'}
+        </Link>
+      </div>
+
+      {!hasAnyTarget ? (
+        <p className="text-sm text-slate-500">
+          No daily targets set yet -{' '}
+          <Link to="/nutrition/calculator" className="text-coral-400 hover:text-coral-300">
+            calculate your baseline goals
+          </Link>{' '}
+          to track today's progress here.
+        </p>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+          <div className="flex justify-center sm:pr-5 sm:border-r sm:border-forest-800 shrink-0">
+            <ProgressRing
+              value={totals.calories}
+              target={profile.daily_calorie_target}
+              label="Calories"
+              unit="kcal"
+            />
+          </div>
+          <div className="flex-1 min-w-0 space-y-3">
+            <MacroBar label="Protein" value={totals.protein} target={profile.daily_protein_target} unit="g" color="bg-emerald-500" />
+            <MacroBar label="Carbs" value={totals.carbs} target={profile.daily_carbs_target} unit="g" color="bg-sky-500" />
+            <MacroBar label="Fat" value={totals.fat} target={profile.daily_fat_target} unit="g" color="bg-amber-500" />
+            {profile.daily_fiber_target ? (
+              <div className="flex items-baseline justify-between pt-0.5">
+                <span className="text-xs text-slate-500">Fiber target</span>
+                <span className="text-xs font-semibold tabular-nums text-slate-300">
+                  {Math.round(profile.daily_fiber_target)}g / day
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function MealPhoto() {
   const { userId } = useSession()
   const [tab, setTab] = useState('photo')
   const [reviewData, setReviewData] = useState(null)
   const [history, setHistory] = useState([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [profile, setProfile] = useState(null)
   const [dailyReview, setDailyReview] = useState(null)
   const [dailyReviewLoading, setDailyReviewLoading] = useState(false)
   const [dailyReviewError, setDailyReviewError] = useState('')
+
+  useEffect(() => {
+    api.getProfile(userId).then(setProfile).catch(() => setProfile(null))
+  }, [userId])
 
   function loadHistory() {
     api
@@ -635,6 +728,8 @@ export default function MealPhoto() {
           Snap a photo or describe your meal in words - either way, review the breakdown before it's saved.
         </p>
       </div>
+
+      <DailyIntakeTracker totals={todaysTotals} profile={profile} />
 
       <div className="flex gap-2">
         <button onClick={() => setTab('photo')} className={tabClass(tab === 'photo')}>
@@ -720,15 +815,15 @@ export default function MealPhoto() {
             ) : dailyReview ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">📊 Macros</p>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Macros</p>
                   <p className="text-sm font-semibold text-slate-100">{dailyReview.macro_status}</p>
                 </div>
                 <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">💡 Pattern</p>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Pattern</p>
                   <p className="text-sm font-semibold text-slate-100">{dailyReview.key_pattern}</p>
                 </div>
                 <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">🎯 Tomorrow</p>
+                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">Tomorrow</p>
                   <p className="text-sm font-semibold text-slate-100">{dailyReview.recommendation}</p>
                 </div>
               </div>
