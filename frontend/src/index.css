@@ -1,26 +1,27 @@
 @import "tailwindcss";
 
 @theme {
-  /* Soft charcoal scale (was a dark-teal scale, then a near-pure-black scale -
-     the pure-black version made inputs/borders nearly indistinguishable from
-     the page background since both used forest-950/forest-700 hex values
-     within a few points of each other). Token names kept as forest-N /
-     coral-N rather than renamed throughout every component that references
-     them (a much larger, riskier mechanical rename) - a real naming/color
-     mismatch now exists here, flagged honestly rather than hidden, not
-     something to silently leave forever. */
-  --color-forest-950: #0c0c0f;
-  --color-forest-900: #17171b;
-  --color-forest-800: #212126;
-  --color-forest-700: #323238;
-  --color-forest-600: #45454c;
+  /* "Editorial luxury dark" pass - exact page/surface backgrounds requested
+     (#0c0c0e / #121214), 800/700/600 shifted down by the same delta so the
+     existing contrast steps between them are preserved, just anchored to
+     this darker baseline instead of re-guessed from scratch. Token names
+     kept as forest-N / coral-N rather than renamed throughout every
+     component that references them (a much larger, riskier mechanical
+     rename) - a real naming/color mismatch exists here, flagged honestly
+     rather than hidden, not something to silently leave forever. */
+  --color-forest-950: #0c0c0e;
+  --color-forest-900: #121214;
+  --color-forest-800: #1c1c1f;
+  --color-forest-700: #2d2d31;
+  --color-forest-600: #404045;
 
-  /* Electric lime accent (was coral/orange) - the one vibrant accent used
-     consistently everywhere, matching the majority color across the
-     reference apps. */
-  --color-coral-400: #dfff6b;
-  --color-coral-500: #c6ff3d;
-  --color-coral-600: #a6e017;
+  /* Electric lime accent, exact requested hex (#ccff00) - 400/600 are
+     lighter/darker steps derived the same way the previous lime shades
+     related to each other (400 lighter+less saturated, 600 darker+more
+     saturated), not arbitrary. */
+  --color-coral-400: #d9ff4d;
+  --color-coral-500: #ccff00;
+  --color-coral-600: #a3cc00;
 
   --font-heading: "Sora", sans-serif;
   --font-body: "Inter", sans-serif;
@@ -46,10 +47,10 @@ body {
 @keyframes pulse-dot {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(198, 255, 61, 0.6);
+    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.6);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(198, 255, 61, 0);
+    box-shadow: 0 0 0 8px rgba(204, 255, 0, 0);
   }
 }
 
@@ -58,8 +59,8 @@ body {
 }
 
 .card {
-  background: rgba(23, 23, 27, 0.6);
-  border: 1px solid rgba(50, 50, 56, 0.9);
+  background: rgba(18, 18, 20, 0.6);
+  border: 1px solid rgba(45, 45, 49, 0.9);
   border-radius: 0.75rem;
   backdrop-filter: blur(6px);
   transition:
@@ -69,7 +70,7 @@ body {
 
 .card:hover {
   transform: translateY(-2px);
-  border-color: rgba(198, 255, 61, 0.5);
+  border-color: rgba(204, 255, 0, 0.5);
 }
 
 /* ==========================================================================
@@ -214,7 +215,7 @@ body {
   position: absolute;
   inset: -18px;
   border-radius: inherit;
-  background: radial-gradient(closest-side, rgba(198, 255, 61, 0.28), transparent 80%);
+  background: radial-gradient(closest-side, rgba(204, 255, 0, 0.28), transparent 80%);
   filter: blur(18px);
   z-index: -1;
   animation: border-beam-bloom 3.5s ease-in-out infinite;

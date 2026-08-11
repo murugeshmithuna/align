@@ -9,7 +9,7 @@ const STROKE = 8
 const RADIUS = (SIZE - STROKE) / 2
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 
-export default function ProgressRing({ value, target, label, unit = '', color = '#c6ff3d' }) {
+export default function ProgressRing({ value, target, label, unit = '', color = '#ccff00' }) {
   const pct = target ? Math.min(1, value / target) : value > 0 ? 1 : 0
   const offset = CIRCUMFERENCE * (1 - pct)
 
