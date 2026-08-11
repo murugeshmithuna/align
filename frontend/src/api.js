@@ -64,6 +64,7 @@ export const api = {
 
   listExercises: () => request('/exercises'),
   createExercise: (payload) => request('/exercises', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteExercise: (exerciseId) => request(`/exercises/${exerciseId}`, { method: 'DELETE' }),
 
   getProfile: (userId) => request(`/user/profile/${userId}`),
   saveProfile: (payload) => request('/user/profile', { method: 'POST', body: JSON.stringify(payload) }),

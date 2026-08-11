@@ -2,7 +2,7 @@ import logging
 
 import anthropic
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
@@ -47,3 +47,27 @@ def create_exercise(payload: schemas.ExerciseCreate, db: Session = Depends(get_d
 @router.get("", response_model=list[schemas.ExerciseOut])
 def list_exercises(db: Session = Depends(get_db)):
     return db.scalars(select(models.Exercise)).all()
+
+
+@router.delete("/{exercise_id}", status_code=204)
+def delete_exercise(exercise_id: int, db: Session = Depends(get_db)):
+    """Removes a bad shared-catalog entry - real need: name validation
+    (added above) only stops NEW junk from being created, it doesn't clean
+    up anything that got in before validation existed (e.g. "banana
+    smoothie", created and logged against on production before this
+    endpoint or the validation check existed). A catalog entry can already
+    be referenced by real logs/plan_exercises by the time someone notices
+    it's bad, so this cascades to remove those too - if the exercise itself
+    was never valid, anything logged against it is equally invalid, not
+    real history worth preserving. This is a deliberate, rare cleanup
+    action (an admin manually removing a bad catalog row), not routine data
+    management, which is why a cascade is acceptable here but not
+    elsewhere."""
+    exercise = db.get(models.Exercise, exercise_id)
+    if not exercise:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+
+    db.execute(delete(models.WorkoutLog).where(models.WorkoutLog.exercise_id == exercise_id))
+    db.execute(delete(models.PlanExercise).where(models.PlanExercise.exercise_id == exercise_id))
+    db.delete(exercise)
+    db.commit()

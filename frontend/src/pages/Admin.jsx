@@ -1,7 +1,97 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
+import { useToast } from '../context/ToastContext.jsx'
+
+// The shared exercise catalog had no admin cleanup path at all - name
+// validation (exercise_validation.py) only stops NEW junk from being
+// created, it can't retroactively remove anything that got in before
+// validation existed (e.g. a real "banana smoothie" entry that made it
+// into production and stayed in every user's exercise picker with no way
+// to remove it short of a direct database edit). Deliberately its own
+// small section here rather than a dedicated page - this is a rare cleanup
+// action, not a routine one.
+function ExerciseCatalogSection() {
+  const { showToast } = useToast()
+  const [exercises, setExercises] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState('')
+  const [deletingId, setDeletingId] = useState(null)
+
+  useEffect(() => {
+    api
+      .listExercises()
+      .then(setExercises)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const list = q ? exercises.filter((ex) => ex.name.toLowerCase().includes(q)) : exercises
+    return [...list].sort((a, b) => a.name.localeCompare(b.name))
+  }, [exercises, query])
+
+  async function handleDelete(exercise) {
+    if (!window.confirm(`Remove "${exercise.name}" from the exercise catalog? This also removes any logs or plan entries using it and can't be undone.`)) {
+      return
+    }
+    setDeletingId(exercise.id)
+    try {
+      await api.deleteExercise(exercise.id)
+      setExercises((prev) => prev.filter((ex) => ex.id !== exercise.id))
+      showToast(`Removed "${exercise.name}".`)
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  return (
+    <div className="card p-6 space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <h2 className="font-heading font-semibold">Exercise catalog</h2>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Shared across every user - remove anything invalid (typos, nonsense, duplicates).
+          </p>
+        </div>
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search…"
+          className="px-3 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm w-40"
+        />
+      </div>
+      {loading ? (
+        <p className="text-sm text-slate-500">Loading…</p>
+      ) : (
+        <div className="max-h-72 overflow-y-auto space-y-1">
+          {filtered.length === 0 && <p className="text-sm text-slate-500">No matches.</p>}
+          {filtered.map((ex) => (
+            <div
+              key={ex.id}
+              className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg hover:bg-forest-900/60"
+            >
+              <span className="text-sm truncate">{ex.name}</span>
+              <button
+                type="button"
+                onClick={() => handleDelete(ex)}
+                disabled={deletingId === ex.id}
+                className="text-xs font-semibold text-red-400 hover:text-red-300 disabled:opacity-50 shrink-0"
+              >
+                {deletingId === ex.id ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function Admin() {
   const { userId } = useSession()
@@ -100,6 +190,8 @@ export default function Admin() {
           </tbody>
         </table>
       </div>
+
+      <ExerciseCatalogSection />
     </div>
   )
 }
