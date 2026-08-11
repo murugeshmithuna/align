@@ -9,6 +9,17 @@ function CheckIcon() {
   )
 }
 
+// Plain inline SVG, matching this app's existing icon convention (see
+// AIMessageBar.jsx's CloseIcon, MealPhoto.jsx's RemoveIcon) - replaces the
+// plain "✕" text glyph this modal's close button used to render.
+function CloseIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  )
+}
+
 // Checkmark-pill checklist of every muscle zone this app knows about, lit
 // for whichever one(s) this specific exercise targets - same reference-
 // matched visual language as the body diagram (lime pill + filled check for
@@ -61,10 +72,10 @@ export default function ExerciseMuscleModal({ exerciseName, targetedZones, onClo
           <h2 className="font-heading font-bold text-lg">{exerciseName}</h2>
           <button
             onClick={onClose}
-            className="text-slate-500 hover:text-slate-300 text-sm shrink-0"
+            className="text-slate-500 hover:text-slate-300 shrink-0 transition-colors"
             aria-label="Close"
           >
-            ✕
+            <CloseIcon className="w-4 h-4" />
           </button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,180px)_1fr] gap-6 items-center">

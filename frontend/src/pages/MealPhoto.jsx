@@ -1,39 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Chart as ChartJS, ArcElement, Tooltip } from 'chart.js'
-import { Doughnut } from 'react-chartjs-2'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
+import CoachAIIndicator from '../components/CoachAIIndicator.jsx'
 import MacroBar from '../components/MacroBar.jsx'
 import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { useSavedFlash } from '../utils/useSavedFlash.js'
 
-ChartJS.register(ArcElement, Tooltip)
-
-// Same P/C/F colors already used elsewhere on this page (the emerald/sky/
-// amber badges below) and in Dashboard.jsx/MacroBar.jsx - reused exactly,
-// not a new triad for the same three quantities.
-const PROTEIN_COLOR = '#10b981'
-const CARBS_COLOR = '#0ea5e9'
-const FAT_COLOR = '#f59e0b'
-
-const macroDonutOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  cutout: '68%',
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: '#121214',
-      borderColor: 'rgba(204, 255, 0, 0.35)',
-      borderWidth: 1,
-      titleColor: '#e2e8f0',
-      bodyColor: '#e2e8f0',
-      padding: 8,
-      callbacks: { label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}g` },
-    },
-  },
+// Plain inline SVG, matching this app's existing icon convention - used by
+// the redesigned photo dropzone below.
+function UploadCloudIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M7 18a4.5 4.5 0 0 1-.5-8.97A5.5 5.5 0 0 1 17.28 8.5 4 4 0 0 1 17 16.5" />
+      <path d="M12 12v9M9 18l3-3 3 3" />
+    </svg>
+  )
 }
 
 // Plain inline SVG, matching this app's existing icon convention (see
@@ -105,7 +88,9 @@ function AnalyzingModal() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
       <div className="card w-full max-w-sm p-8 text-center space-y-4">
-        <div className="mx-auto w-10 h-10 border-4 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+        <div className="mx-auto w-14 h-14">
+          <CoachAIIndicator />
+        </div>
         <p className="font-heading font-semibold">{ANALYSIS_STAGES[stageIndex]}</p>
       </div>
     </div>
@@ -517,14 +502,40 @@ function PhotoTab({ onAnalyzed, userId }) {
 
   return (
     <form onSubmit={handleSubmit} className="card p-6 space-y-4">
-      <input
-        type="file"
-        accept="image/*"
-        onChange={handleFileChange}
-        disabled={loading}
-        className="w-full text-sm text-slate-400 file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border-0 file:bg-forest-800 file:text-slate-200 file:text-sm disabled:opacity-50"
-      />
-      {previewUrl && <img src={previewUrl} alt="Meal preview" className="w-full max-h-72 object-cover rounded-xl" />}
+      {/* An intentional dropzone rather than a bare default file input - the
+          same onChange/disabled/accept behavior as before, just triggered by
+          clicking anywhere in this labeled area instead of a small OS-styled
+          button. Fixed height so selecting a photo doesn't jump the layout
+          between the empty prompt and the preview state. */}
+      <label
+        className={`relative flex flex-col items-center justify-center gap-2 h-56 rounded-2xl border-2 border-dashed overflow-hidden text-center transition-colors ${
+          loading ? 'cursor-not-allowed opacity-60 border-forest-700' : 'cursor-pointer border-forest-700 hover:border-coral-400'
+        }`}
+      >
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          disabled={loading}
+          className="sr-only"
+        />
+        {previewUrl ? (
+          <>
+            <img src={previewUrl} alt="Meal preview" className="absolute inset-0 w-full h-full object-cover" />
+            <div className="absolute inset-0 bg-forest-950/0 hover:bg-forest-950/60 flex items-center justify-center transition-colors group">
+              <span className="opacity-0 group-hover:opacity-100 text-sm font-heading font-semibold text-white transition-opacity">
+                Change photo
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <UploadCloudIcon className="w-8 h-8 text-slate-500" />
+            <p className="text-sm font-semibold">Upload a meal photo</p>
+            <p className="text-xs text-slate-500">PNG or JPG · tap to choose</p>
+          </>
+        )}
+      </label>
       <button
         type="submit"
         disabled={!file || loading}
@@ -587,19 +598,18 @@ function TextTab({ onAnalyzed, userId }) {
   )
 }
 
-// Top-of-page summary card - today's real consumed totals (the same
-// `todaysTotals` already derived from `history` for the donut further down,
-// no second computation) against the user's own profile targets. Reuses
-// Dashboard.jsx's MacroBar/ProgressRing components verbatim, including their
-// established "no target set" fallback (fills if anything was logged,
-// otherwise empty - never a fabricated percentage), rather than building a
-// second version of the same idea. Targets are all individually nullable -
-// a macro with no target just renders MacroBar's honest fallback instead of
-// hiding that row; only when *every* target is unset does the card show a
-// dedicated empty-state pointing at the calculator. Fiber has no per-meal
-// "consumed" figure at all (MealAnalysis has no fiber column - see
-// backend/app/models.py), so it's shown as a target-only readout, never a
-// fabricated consumed number.
+// Full-width compact strip at the very top of the page - today's real
+// consumed totals (the same `todaysTotals` already derived from `history`
+// below, no second computation) against the user's own profile targets.
+// Reuses Dashboard.jsx's MacroBar/ProgressRing components verbatim,
+// including their established "no target set" fallback (fills if anything
+// was logged, otherwise empty - never a fabricated percentage). Deliberately
+// a single dense row (not a tall stacked card with its own header block) -
+// this used to be its own multi-line card; folding the title into the row
+// and dropping the fiber line (still available on the calculator page) is
+// what gets it down near the "compact status strip" footprint the rest of
+// this page's grid layout needs it to have. Only when *every* target is
+// unset does it show a one-line empty-state pointing at the calculator.
 function DailyIntakeTracker({ totals, profile }) {
   const hasAnyTarget =
     profile &&
@@ -609,55 +619,199 @@ function DailyIntakeTracker({ totals, profile }) {
       profile.daily_fat_target ||
       profile.daily_fiber_target)
 
-  return (
-    <div className="card p-6">
-      <div className="flex items-center justify-between mb-4 gap-2">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Today</p>
-          <h2 className="font-heading font-semibold mt-0.5">Daily Intake Tracker</h2>
-        </div>
+  if (!hasAnyTarget) {
+    return (
+      <div className="card px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-sm text-slate-500">
+          No daily targets set yet - calculate your baseline goals to track today's intake here.
+        </p>
         <Link
           to="/nutrition/calculator"
           className="text-xs font-semibold text-coral-400 hover:text-coral-300 whitespace-nowrap"
         >
-          {hasAnyTarget ? 'Edit targets →' : 'Set targets →'}
+          Set targets →
         </Link>
       </div>
+    )
+  }
 
-      {!hasAnyTarget ? (
-        <p className="text-sm text-slate-500">
-          No daily targets set yet -{' '}
-          <Link to="/nutrition/calculator" className="text-coral-400 hover:text-coral-300">
-            calculate your baseline goals
-          </Link>{' '}
-          to track today's progress here.
-        </p>
-      ) : (
-        <div className="flex flex-col sm:flex-row sm:items-center gap-5">
-          <div className="flex justify-center sm:pr-5 sm:border-r sm:border-forest-800 shrink-0">
-            <ProgressRing
-              value={totals.calories}
-              target={profile.daily_calorie_target}
-              label="Calories"
-              unit="kcal"
-            />
-          </div>
-          <div className="flex-1 min-w-0 space-y-3">
-            <MacroBar label="Protein" value={totals.protein} target={profile.daily_protein_target} unit="g" color="bg-emerald-500" />
-            <MacroBar label="Carbs" value={totals.carbs} target={profile.daily_carbs_target} unit="g" color="bg-sky-500" />
-            <MacroBar label="Fat" value={totals.fat} target={profile.daily_fat_target} unit="g" color="bg-amber-500" />
-            {profile.daily_fiber_target ? (
-              <div className="flex items-baseline justify-between pt-0.5">
-                <span className="text-xs text-slate-500">Fiber target</span>
-                <span className="text-xs font-semibold tabular-nums text-slate-300">
-                  {Math.round(profile.daily_fiber_target)}g / day
-                </span>
-              </div>
-            ) : null}
-          </div>
+  return (
+    <div className="card px-5 py-3">
+      <div className="flex items-center gap-5 flex-wrap sm:flex-nowrap">
+        <div className="shrink-0">
+          <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-0.5">Today's Intake</p>
+          <ProgressRing value={totals.calories} target={profile.daily_calorie_target} label="Calories" unit="kcal" />
+        </div>
+        <div className="flex-1 min-w-[220px] grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-2">
+          <MacroBar label="Protein" value={totals.protein} target={profile.daily_protein_target} unit="g" color="bg-emerald-500" />
+          <MacroBar label="Carbs" value={totals.carbs} target={profile.daily_carbs_target} unit="g" color="bg-sky-500" />
+          <MacroBar label="Fat" value={totals.fat} target={profile.daily_fat_target} unit="g" color="bg-amber-500" />
+        </div>
+        <Link
+          to="/nutrition/calculator"
+          className="shrink-0 self-start text-xs font-semibold text-coral-400 hover:text-coral-300 whitespace-nowrap"
+        >
+          Edit targets →
+        </Link>
+      </div>
+    </div>
+  )
+}
+
+function isSameDay(a, b) {
+  return a.toDateString() === b.toDateString()
+}
+
+function dayLabelFor(date) {
+  const now = new Date()
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (isSameDay(date, now)) return 'Today'
+  if (isSameDay(date, yesterday)) return 'Yesterday'
+  return date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// CRITICAL FIX target: individual meals must never be mapped straight into
+// the page body. This groups the flat `history` array into one entry per
+// calendar day, each carrying its own aggregated macro totals, so the page
+// can render one summary DayCard per day instead of an endless flat meal
+// list. `history` is already sorted newest-first by the backend
+// (GET /vision/meal-analyses/user/{id}), so a plain first-seen ordering
+// here preserves that without a separate sort.
+function groupMealsByDay(history) {
+  const order = []
+  const byKey = new Map()
+  for (const meal of history) {
+    const date = new Date(meal.analyzed_at)
+    const key = date.toDateString()
+    if (!byKey.has(key)) {
+      byKey.set(key, { key, date, meals: [] })
+      order.push(key)
+    }
+    byKey.get(key).meals.push(meal)
+  }
+  return order.map((key) => {
+    const group = byKey.get(key)
+    const totals = group.meals.reduce(
+      (sum, m) => ({
+        calories: sum.calories + m.estimated_calories,
+        protein: sum.protein + m.protein_g,
+        carbs: sum.carbs + m.carbs_g,
+        fat: sum.fat + m.fat_g,
+      }),
+      { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    )
+    return { ...group, totals }
+  })
+}
+
+const MAX_VISIBLE_DAY_CARDS = 5
+
+// One day's aggregated summary - the only thing rendered in the historical
+// list. Individual meals stay hidden behind "View Meals" until clicked.
+function DayCard({ group, onViewMeals }) {
+  const { protein, carbs, fat } = group.totals
+  const macroGramsTotal = protein + carbs + fat
+  // Same pure gram-ratio display math as the Macro Calculator's distribution
+  // bar (no new nutrition calculation, just a visual share of three already-
+  // known numbers) - shared visual language between the two pages.
+  const proteinPct = macroGramsTotal ? (protein / macroGramsTotal) * 100 : 0
+  const carbsPct = macroGramsTotal ? (carbs / macroGramsTotal) * 100 : 0
+  const fatPct = macroGramsTotal ? (fat / macroGramsTotal) * 100 : 0
+
+  return (
+    <div className="card p-4">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <div>
+          <p className="font-heading font-bold text-base">{dayLabelFor(group.date)}</p>
+          <p className="text-xs text-slate-500">
+            {group.meals.length} meal{group.meals.length === 1 ? '' : 's'} logged
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onViewMeals(group)}
+          className="px-3 py-1.5 rounded-lg border border-forest-700 hover:border-coral-400 text-xs font-semibold whitespace-nowrap transition-colors"
+        >
+          View Meals
+        </button>
+      </div>
+      <p className="text-2xl font-heading font-bold tabular-nums leading-none">
+        {Math.round(group.totals.calories)}
+        <span className="text-xs text-slate-500 font-normal ml-1">kcal</span>
+      </p>
+      {macroGramsTotal > 0 && (
+        <div className="h-1.5 rounded-full overflow-hidden flex bg-forest-900 mt-2.5">
+          <div className="bg-emerald-500" style={{ width: `${proteinPct}%` }} />
+          <div className="bg-sky-500" style={{ width: `${carbsPct}%` }} />
+          <div className="bg-amber-500" style={{ width: `${fatPct}%` }} />
         </div>
       )}
+      <div className="flex items-center gap-3 flex-wrap mt-2 text-xs text-slate-400 tabular-nums">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />P {Math.round(protein)}g
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" />C {Math.round(carbs)}g
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />F {Math.round(fat)}g
+        </span>
+      </div>
     </div>
+  )
+}
+
+// Slide-over drawer (same right-side pattern as AIMessageBar.jsx's drawer)
+// revealing one day's individual meals - the only place a single meal's
+// own row still renders, and only once the user explicitly asks to see it.
+function DayMealsDrawer({ group, onClose }) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} aria-hidden="true" />
+      <div className="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-forest-900 border-l border-forest-800 shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-forest-800">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">{dayLabelFor(group.date)}</p>
+            <h2 className="font-heading font-semibold">
+              {group.meals.length} meal{group.meals.length === 1 ? '' : 's'}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="text-slate-400 hover:text-coral-300 transition-colors"
+          >
+            <RemoveIcon className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+          {group.meals.map((meal) => (
+            <div key={meal.id} className="border-b border-forest-800 last:border-0 pb-3 last:pb-0">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold">{meal.description}</p>
+                <span className="text-xs text-slate-500 whitespace-nowrap ml-2">
+                  {new Date(meal.analyzed_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                <span className="text-xs text-slate-400 tabular-nums">{meal.estimated_calories} kcal</span>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
+                  P {Math.round(meal.protein_g)}g
+                </span>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400">
+                  C {Math.round(meal.carbs_g)}g
+                </span>
+                <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
+                  F {Math.round(meal.fat_g)}g
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -671,6 +825,7 @@ export default function MealPhoto() {
   const [dailyReview, setDailyReview] = useState(null)
   const [dailyReviewLoading, setDailyReviewLoading] = useState(false)
   const [dailyReviewError, setDailyReviewError] = useState('')
+  const [viewingDay, setViewingDay] = useState(null)
 
   useEffect(() => {
     api.getProfile(userId).then(setProfile).catch(() => setProfile(null))
@@ -720,100 +875,67 @@ export default function MealPhoto() {
     }
   }
 
+  const dayGroups = useMemo(() => groupMealsByDay(history), [history])
+  const visibleDayGroups = dayGroups.slice(0, MAX_VISIBLE_DAY_CARDS)
+
   return (
-    <div className="max-w-2xl mx-auto px-6 py-10 font-body space-y-6">
+    <div className="max-w-7xl mx-auto px-6 py-10 font-body space-y-6">
       <div>
-        <h1 className="font-heading font-bold text-2xl">Meal Tracking</h1>
+        <p className="text-xs uppercase tracking-wide text-slate-500">Nutrition</p>
+        <h1 className="font-heading font-bold text-3xl mt-0.5">Meal Tracking</h1>
         <p className="text-sm text-slate-400 mt-1">
           Snap a photo or describe your meal in words - either way, review the breakdown before it's saved.
         </p>
       </div>
 
+      {/* Full-width compact status strip, not a tall card - see
+          DailyIntakeTracker's own comment for why. */}
       <DailyIntakeTracker totals={todaysTotals} profile={profile} />
 
-      <div className="flex gap-2">
-        <button onClick={() => setTab('photo')} className={tabClass(tab === 'photo')}>
-          Photo Upload
-        </button>
-        <button onClick={() => setTab('text')} className={tabClass(tab === 'text')}>
-          Quick Log
-        </button>
-      </div>
-
-      {tab === 'photo' ? (
-        <PhotoTab onAnalyzed={setReviewData} userId={userId} />
-      ) : (
-        <TextTab onAnalyzed={setReviewData} userId={userId} />
-      )}
-
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-heading font-semibold">Today</h2>
-          <button
-            onClick={generateDailyReview}
-            disabled={dailyReviewLoading}
-            className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
-          >
-            {dailyReviewLoading ? 'Reviewing…' : dailyReview ? 'Regenerate' : 'Generate review'}
-          </button>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Real, already-fetched totals - no AI call needed for this half. */}
-          <div className="flex items-center gap-3 sm:pr-4 sm:border-r sm:border-forest-800 shrink-0">
-            {todaysTotals.count > 0 ? (
-              <>
-                <div className="w-14 h-14 shrink-0">
-                  <Doughnut
-                    data={{
-                      labels: ['Protein', 'Carbs', 'Fat'],
-                      datasets: [
-                        {
-                          data: [todaysTotals.protein, todaysTotals.carbs, todaysTotals.fat],
-                          backgroundColor: [PROTEIN_COLOR, CARBS_COLOR, FAT_COLOR],
-                          borderColor: '#0c0c0e',
-                          borderWidth: 2,
-                        },
-                      ],
-                    }}
-                    options={macroDonutOptions}
-                  />
-                </div>
-                <div>
-                  <p className="font-heading font-bold text-xl leading-none">
-                    {Math.round(todaysTotals.calories).toLocaleString()}
-                    <span className="text-xs text-slate-400 font-normal ml-1">kcal today</span>
-                  </p>
-                  <div className="flex items-center gap-2 mt-1.5 text-[11px] text-slate-400 whitespace-nowrap">
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: PROTEIN_COLOR }} />P{' '}
-                      {Math.round(todaysTotals.protein)}g
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: CARBS_COLOR }} />C{' '}
-                      {Math.round(todaysTotals.carbs)}g
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: FAT_COLOR }} />F{' '}
-                      {Math.round(todaysTotals.fat)}g
-                    </span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-slate-500 sm:max-w-[9rem]">No meals logged today yet.</p>
-            )}
+      {/* Split-grid dashboard: capture (upload/quick-log) on the left,
+          history (day-grouped, drill-down-only) on the right - replaces the
+          old single vertical column of stacked full-width cards. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-5 space-y-6">
+          <div className="flex gap-2">
+            <button onClick={() => setTab('photo')} className={tabClass(tab === 'photo')}>
+              Photo Upload
+            </button>
+            <button onClick={() => setTab('text')} className={tabClass(tab === 'text')}>
+              Quick Log
+            </button>
           </div>
 
-          <div className="flex-1 min-w-0">
+          {tab === 'photo' ? (
+            <PhotoTab onAnalyzed={setReviewData} userId={userId} />
+          ) : (
+            <TextTab onAnalyzed={setReviewData} userId={userId} />
+          )}
+
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 shrink-0">
+                  <CoachAIIndicator />
+                </div>
+                <h2 className="font-heading font-semibold">Today's Review</h2>
+              </div>
+              <button
+                onClick={generateDailyReview}
+                disabled={dailyReviewLoading}
+                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
+              >
+                {dailyReviewLoading ? 'Reviewing…' : dailyReview ? 'Regenerate' : 'Generate review'}
+              </button>
+            </div>
             {dailyReviewError && <p className="text-sm text-red-400">{dailyReviewError}</p>}
             {dailyReviewLoading ? (
               <p className="text-sm text-slate-500 flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
                 Reviewing today's meals…
               </p>
             ) : dailyReview ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="space-y-2">
                 <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
                   <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Macros</p>
                   <p className="text-sm font-semibold text-slate-100">{dailyReview.macro_status}</p>
@@ -832,43 +954,34 @@ export default function MealPhoto() {
             )}
           </div>
         </div>
-      </div>
 
-      <div className="card p-6">
-        <h2 className="font-heading font-semibold mb-3">Recent meals</h2>
-        {historyLoading ? (
-          <p className="text-sm text-slate-500">Loading…</p>
-        ) : history.length === 0 ? (
-          <p className="text-sm text-slate-500">Nothing logged yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {history.map((meal) => (
-              <div key={meal.id} className="border-b border-forest-800 last:border-0 pb-3 last:pb-0">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">{meal.description}</p>
-                  <span className="text-xs text-slate-500 whitespace-nowrap ml-2">
-                    {new Date(meal.analyzed_at).toLocaleDateString()}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs text-slate-400 tabular-nums">{meal.estimated_calories} kcal</span>
-                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400">
-                    P {Math.round(meal.protein_g)}g
-                  </span>
-                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-400">
-                    C {Math.round(meal.carbs_g)}g
-                  </span>
-                  <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">
-                    F {Math.round(meal.fat_g)}g
-                  </span>
-                </div>
-              </div>
-            ))}
+        <div className="lg:col-span-7 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-heading font-semibold">Recent meals</h2>
+            {dayGroups.length > MAX_VISIBLE_DAY_CARDS && (
+              <span className="text-xs text-slate-500">Showing last {MAX_VISIBLE_DAY_CARDS} days</span>
+            )}
           </div>
-        )}
-        <p className="text-xs text-slate-500 mt-3">
-          Ask the chat "how's my nutrition been?" any time for a rundown across your recent meals.
-        </p>
+
+          {historyLoading ? (
+            <div className="card p-6">
+              <p className="text-sm text-slate-500">Loading…</p>
+            </div>
+          ) : visibleDayGroups.length === 0 ? (
+            <div className="card p-6">
+              <p className="text-sm text-slate-500">Nothing logged yet.</p>
+            </div>
+          ) : (
+            <div className="max-h-[600px] overflow-y-auto space-y-3 pr-1">
+              {visibleDayGroups.map((group) => (
+                <DayCard key={group.key} group={group} onViewMeals={setViewingDay} />
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-slate-500">
+            Ask the chat "how's my nutrition been?" any time for a rundown across your recent meals.
+          </p>
+        </div>
       </div>
 
       {reviewData && (
@@ -879,6 +992,8 @@ export default function MealPhoto() {
           onSaved={handleSaved}
         />
       )}
+
+      {viewingDay && <DayMealsDrawer group={viewingDay} onClose={() => setViewingDay(null)} />}
     </div>
   )
 }

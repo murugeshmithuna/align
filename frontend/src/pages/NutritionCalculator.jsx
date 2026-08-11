@@ -53,23 +53,40 @@ function Stepper({ id, value, onChange, step, min = 0, max = Infinity }) {
   )
 }
 
-// A visual target card - plain uppercase-tracked label header (no emoji -
-// an icon here would just be decorative filler for something a text label
-// already identifies unambiguously), the computed value in large bold
-// editorial type with a small muted unit alongside it, then a stepper row
-// to adjust it. Distinct from a plain labeled input so the five targets
-// read as "goals to hit" rather than a form field.
-function MacroTargetCard({ id, label, value, onChange, step, unit, max }) {
+// Compact color-coded row for Protein/Carbs/Fat - deliberately NOT a third
+// identical hero card like Calories gets. The color dot matches the same
+// distribution bar segment above it and the emerald/sky/amber convention
+// already used for these three macros everywhere else in the app
+// (Dashboard, Meal Photo), so the relationship between the bar and each
+// row's own number is immediate rather than three disconnected boxes.
+const MACRO_ROW_COLORS = {
+  emerald: { dot: 'bg-emerald-500', text: 'text-emerald-400' },
+  sky: { dot: 'bg-sky-500', text: 'text-sky-400' },
+  amber: { dot: 'bg-amber-500', text: 'text-amber-400' },
+}
+
+// Stacked (label above, value+stepper below) rather than a single
+// horizontal row - a real bug caught via a live DOM/layout check: cramming
+// dot+label+value+the full stepper (three buttons + an input) onto one line
+// inside a narrow 1/3-width grid column left the label effectively zero
+// width once the stepper claimed the space it needed, so "Protein" rendered
+// invisible even though it was genuinely in the DOM. Stacking removes the
+// horizontal contention entirely.
+function MacroRow({ id, label, color, value, onChange, step, unit, max }) {
+  const c = MACRO_ROW_COLORS[color]
   return (
-    <div className="card p-4 flex flex-col gap-3">
-      <span className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">{label}</span>
-      <div className="flex items-baseline gap-1.5">
-        <span className="text-3xl font-heading font-bold tabular-nums leading-none">
-          {value === '' ? '—' : value}
-        </span>
-        <span className="text-xs text-slate-500 font-medium">{unit}</span>
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className={`w-2 h-2 rounded-full shrink-0 ${c.dot}`} />
+        <span className="text-xs uppercase tracking-wide text-slate-500 font-semibold">{label}</span>
       </div>
-      <Stepper id={id} value={value} onChange={onChange} step={step} max={max} />
+      <div className="flex items-center gap-3">
+        <span className={`text-lg font-heading font-bold tabular-nums shrink-0 ${c.text}`}>
+          {value === '' ? '—' : value}
+          <span className="text-xs text-slate-500 font-medium ml-0.5">{unit}</span>
+        </span>
+        <Stepper id={id} value={value} onChange={onChange} step={step} max={max} />
+      </div>
     </div>
   )
 }
@@ -253,11 +270,20 @@ export default function NutritionCalculator() {
     return <p className="text-slate-400 text-sm px-6 py-12">Loading…</p>
   }
 
+  const macroGramsTotal =
+    (Number(proteinTarget) || 0) + (Number(carbsTarget) || 0) + (Number(fatTarget) || 0)
+  // Pure display ratio of the three already-known gram values (not a new
+  // nutrition calculation) driving the distribution bar's segment widths -
+  // same category as ProgressRing's existing value/target percentage.
+  const proteinPct = macroGramsTotal ? ((Number(proteinTarget) || 0) / macroGramsTotal) * 100 : 0
+  const carbsPct = macroGramsTotal ? ((Number(carbsTarget) || 0) / macroGramsTotal) * 100 : 0
+  const fatPct = macroGramsTotal ? ((Number(fatTarget) || 0) / macroGramsTotal) * 100 : 0
+
   return (
-    <div className="max-w-5xl mx-auto px-6 py-8 font-body space-y-4">
+    <div className="max-w-5xl mx-auto px-6 py-8 font-body space-y-6">
       <div>
         <p className="text-xs uppercase tracking-wide text-slate-500">Baseline goals</p>
-        <h1 className="font-heading font-bold text-2xl mt-0.5">Nutritional &amp; Macro Calculator</h1>
+        <h1 className="font-heading font-bold text-3xl mt-0.5">Nutritional &amp; Macro Calculator</h1>
         <p className="text-sm text-slate-400 mt-1">
           Auto-calculate a baseline from your stats (Mifflin-St Jeor), then adjust anything before saving.
         </p>
@@ -276,201 +302,234 @@ export default function NutritionCalculator() {
           swallowing a real submit. The backend's own Pydantic Field(ge=/
           le=) bounds remain the actual source of truth and already surface
           a clear, specific toast via formatErrorDetail() on rejection. */}
-      <form onSubmit={handleSaveGoals} className="card p-5 space-y-4" noValidate>
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-          <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="height">
-              Height ({preferredUnits === 'metric' ? 'cm' : "ft'in"})
-            </label>
-            {preferredUnits === 'imperial' ? (
+      <form onSubmit={handleSaveGoals} className="space-y-6" noValidate>
+        {/* Inputs - a genuinely coherent group (one profile, feeding one
+            calculation), so a single card grouping is the right call here -
+            distinct from the results panel below, which gets its own
+            dominant surface rather than looking like a second identical box. */}
+        <div className="card p-5 space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="height">
+                Height ({preferredUnits === 'metric' ? 'cm' : "ft'in"})
+              </label>
+              {preferredUnits === 'imperial' ? (
+                <input
+                  id="height"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder={`5'4"`}
+                  value={heightDisplay}
+                  onChange={(e) => setHeightDisplay(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                />
+              ) : (
+                <input
+                  id="height"
+                  type="number"
+                  min="50"
+                  max="272"
+                  step="0.1"
+                  value={heightDisplay}
+                  onChange={(e) => setHeightDisplay(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                />
+              )}
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="weight">
+                Weight ({preferredUnits === 'metric' ? 'kg' : 'lb'})
+              </label>
               <input
-                id="height"
-                type="text"
-                inputMode="numeric"
-                placeholder={`5'4"`}
-                value={heightDisplay}
-                onChange={(e) => setHeightDisplay(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-              />
-            ) : (
-              <input
-                id="height"
+                id="weight"
                 type="number"
-                min="50"
-                max="272"
+                min={preferredUnits === 'metric' ? 20 : 44}
+                max={preferredUnits === 'metric' ? 450 : 992}
                 step="0.1"
-                value={heightDisplay}
-                onChange={(e) => setHeightDisplay(e.target.value)}
+                value={weightDisplay}
+                onChange={(e) => setWeightDisplay(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
               />
-            )}
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="age">
+                Age
+              </label>
+              <input
+                id="age"
+                type="number"
+                min="10"
+                max="120"
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="sex">
+                Sex
+              </label>
+              <select
+                id="sex"
+                value={sex}
+                onChange={(e) => setSex(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="activity-level">
+                Activity level
+              </label>
+              <select
+                id="activity-level"
+                value={activityLevel}
+                onChange={(e) => setActivityLevel(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+              >
+                {Object.entries(ACTIVITY_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1" htmlFor="nutrition-goal">
+                Primary goal
+              </label>
+              <select
+                id="nutrition-goal"
+                value={nutritionGoal}
+                onChange={(e) => setNutritionGoal(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+              >
+                {Object.entries(GOAL_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="weight">
-              Weight ({preferredUnits === 'metric' ? 'kg' : 'lb'})
-            </label>
-            <input
-              id="weight"
-              type="number"
-              min={preferredUnits === 'metric' ? 20 : 44}
-              max={preferredUnits === 'metric' ? 450 : 992}
-              step="0.1"
-              value={weightDisplay}
-              onChange={(e) => setWeightDisplay(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="age">
-              Age
-            </label>
-            <input
-              id="age"
-              type="number"
-              min="10"
-              max="120"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="sex">
-              Sex
-            </label>
-            <select
-              id="sex"
-              value={sex}
-              onChange={(e) => setSex(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+
+          <BmiCard bmi={bmi} />
+
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex gap-4 text-sm text-slate-300">
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="units"
+                  checked={preferredUnits === 'metric'}
+                  onChange={() => handleUnitsChange('metric')}
+                />
+                Metric
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input
+                  type="radio"
+                  name="units"
+                  checked={preferredUnits === 'imperial'}
+                  onChange={() => handleUnitsChange('imperial')}
+                />
+                Imperial
+              </label>
+            </div>
+            <button
+              type="button"
+              onClick={handleAutoCalculate}
+              className="px-4 py-2 rounded-full border border-coral-500/60 text-coral-300 hover:bg-coral-500/10 transition-colors text-sm font-heading font-semibold whitespace-nowrap"
             >
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="activity-level">
-              Activity level
-            </label>
-            <select
-              id="activity-level"
-              value={activityLevel}
-              onChange={(e) => setActivityLevel(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            >
-              {Object.entries(ACTIVITY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="nutrition-goal">
-              Primary goal
-            </label>
-            <select
-              id="nutrition-goal"
-              value={nutritionGoal}
-              onChange={(e) => setNutritionGoal(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            >
-              {Object.entries(GOAL_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
+              Auto-Calculate Baseline Goals
+            </button>
           </div>
         </div>
 
-        <BmiCard bmi={bmi} />
-
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex gap-4 text-sm text-slate-300">
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="units"
-                checked={preferredUnits === 'metric'}
-                onChange={() => handleUnitsChange('metric')}
-              />
-              Metric
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input
-                type="radio"
-                name="units"
-                checked={preferredUnits === 'imperial'}
-                onChange={() => handleUnitsChange('imperial')}
-              />
-              Imperial
-            </label>
+        {/* Results - the page's actual answer, so it gets the same
+            border-beam focal treatment as this app's other "here's the
+            verdict" surfaces (Coach Resolution's resolution card, etc.)
+            rather than looking like a fifth identical input card. Calories
+            is the one true hero number; Protein/Carbs/Fat share a single
+            distribution bar plus compact color-coded rows instead of three
+            more hero cards, and Fiber is demoted to a small supporting
+            metric below a divider - a real hierarchy, not five equal boxes. */}
+        <div className="card border-beam-wrap relative p-6 space-y-5">
+          <div className="flex items-end justify-between gap-4 flex-wrap">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Daily calorie target</p>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-6xl font-heading font-extrabold tabular-nums leading-none">
+                  {calorieTarget === '' ? '—' : calorieTarget}
+                </span>
+                <span className="text-lg text-slate-500">kcal</span>
+              </div>
+            </div>
+            <Stepper id="calorie-target" value={calorieTarget} onChange={setCalorieTarget} step={50} max={10000} />
           </div>
+
+          {macroGramsTotal > 0 && (
+            <div className="h-2 rounded-full overflow-hidden flex bg-forest-900">
+              <div className="bg-emerald-500 transition-all" style={{ width: `${proteinPct}%` }} />
+              <div className="bg-sky-500 transition-all" style={{ width: `${carbsPct}%` }} />
+              <div className="bg-amber-500 transition-all" style={{ width: `${fatPct}%` }} />
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+            <MacroRow
+              id="protein-target"
+              label="Protein"
+              color="emerald"
+              value={proteinTarget}
+              onChange={setProteinTarget}
+              step={5}
+              max={500}
+              unit="g"
+            />
+            <MacroRow
+              id="carbs-target"
+              label="Carbs"
+              color="sky"
+              value={carbsTarget}
+              onChange={setCarbsTarget}
+              step={5}
+              max={1000}
+              unit="g"
+            />
+            <MacroRow
+              id="fat-target"
+              label="Fat"
+              color="amber"
+              value={fatTarget}
+              onChange={setFatTarget}
+              step={5}
+              max={500}
+              unit="g"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-4 pt-4 border-t border-forest-800">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-slate-500">Fiber</p>
+              <p className="text-lg font-heading font-semibold tabular-nums mt-0.5">
+                {fiberTarget === '' ? '—' : fiberTarget}
+                <span className="text-xs text-slate-500 font-normal ml-1">g / day</span>
+              </p>
+            </div>
+            <Stepper id="fiber-target" value={fiberTarget} onChange={setFiberTarget} step={1} max={200} />
+          </div>
+
           <button
-            type="button"
-            onClick={handleAutoCalculate}
-            className="px-4 py-2 rounded-full border border-coral-500/60 text-coral-300 hover:bg-coral-500/10 transition-colors text-sm font-heading font-semibold whitespace-nowrap"
+            type="submit"
+            disabled={saving || saved}
+            className="w-full sm:w-auto px-6 py-2.5 rounded-full bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold transition-colors"
           >
-            Auto-Calculate Baseline Goals
+            {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Goals'}
           </button>
         </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <MacroTargetCard
-            id="calorie-target"
-            label="Calories"
-            value={calorieTarget}
-            onChange={setCalorieTarget}
-            step={50}
-            max={10000}
-            unit="kcal"
-          />
-          <MacroTargetCard
-            id="protein-target"
-            label="Protein"
-            value={proteinTarget}
-            onChange={setProteinTarget}
-            step={5}
-            max={500}
-            unit="g"
-          />
-          <MacroTargetCard
-            id="carbs-target"
-            label="Carbs"
-            value={carbsTarget}
-            onChange={setCarbsTarget}
-            step={5}
-            max={1000}
-            unit="g"
-          />
-          <MacroTargetCard
-            id="fat-target"
-            label="Fat"
-            value={fatTarget}
-            onChange={setFatTarget}
-            step={5}
-            max={500}
-            unit="g"
-          />
-          <MacroTargetCard
-            id="fiber-target"
-            label="Fiber"
-            value={fiberTarget}
-            onChange={setFiberTarget}
-            step={1}
-            max={200}
-            unit="g"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={saving || saved}
-          className="px-6 py-2.5 rounded-full bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold transition-colors"
-        >
-          {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Goals'}
-        </button>
       </form>
     </div>
   )

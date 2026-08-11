@@ -14,9 +14,40 @@ import {
 import { Line, Bar, Doughnut } from 'react-chartjs-2'
 import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
+import CoachAIIndicator from '../components/CoachAIIndicator.jsx'
 import MacroBar from '../components/MacroBar.jsx'
 import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
+
+// Plain inline SVGs, matching this app's existing icon convention - replace
+// emoji glyphs in the redesigned JSX below with the same underlying
+// information (a labeled stat still says exactly what it said before).
+function FlameIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.176 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" />
+    </svg>
+  )
+}
+
+function TrophyIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 4h8v4a4 4 0 0 1-8 0V4Z" />
+      <path d="M8 5H5a3 3 0 0 0 3 4M16 5h3a3 3 0 0 1-3 4" />
+      <path d="M12 12v3M9 19h6M10 15h4v2a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-2Z" />
+    </svg>
+  )
+}
+
+function DownloadIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  )
+}
 
 ChartJS.register(
   CategoryScale,
@@ -270,11 +301,15 @@ const macroDonutOptions = {
   },
 }
 
-function MacroTile({ icon, label, value, unit, badge, dailyData, colors }) {
+// A colored dot matching the tile's own sparkline color stands in for the
+// old food emoji (🥩🌾🥑) - same "color carries identity" convention already
+// used for macros everywhere else in this app (Meal Photo, Macro
+// Calculator), rather than decorative icons a text label already covers.
+function MacroTile({ label, value, unit, badge, dailyData, colors }) {
   return (
     <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
       <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-        <span>{icon}</span>
+        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: colors.line }} />
         <span>{label}</span>
       </div>
       <p className="text-lg font-bold tabular-nums">
@@ -922,15 +957,19 @@ export default function Progress() {
   const hasExercises = progress.exercises.length > 0
 
   return (
-    <div className="max-w-6xl mx-auto px-6 py-8 font-body space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="font-heading font-bold text-2xl">Progress</h1>
+    <div className="max-w-7xl mx-auto px-6 py-8 font-body space-y-6">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Performance intelligence</p>
+          <h1 className="font-heading font-bold text-3xl mt-0.5">Progress</h1>
+        </div>
         <button
           onClick={handleExportFullReport}
           disabled={exportingReport}
-          className="px-3 py-1.5 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-xs font-semibold disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-xs font-semibold disabled:opacity-50"
         >
-          {exportingReport ? 'Building report…' : '📄 Export Full PDF Report'}
+          <DownloadIcon className="w-3.5 h-3.5" />
+          {exportingReport ? 'Building report…' : 'Export Full PDF Report'}
         </button>
       </div>
 
@@ -946,7 +985,12 @@ export default function Progress() {
         <div className="space-y-4">
           <div className="card py-3 px-4">
             <div className="flex justify-between items-center mb-2 gap-2">
-              <h2 className="font-heading font-semibold text-sm">Weekly AI Recap</h2>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 shrink-0">
+                  <CoachAIIndicator />
+                </div>
+                <h2 className="font-heading font-semibold text-sm">Weekly AI Recap</h2>
+              </div>
               <button
                 onClick={loadRecap}
                 disabled={recapLoading || !weekReady}
@@ -999,7 +1043,7 @@ export default function Progress() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                      <span>🔥</span>
+                      <FlameIcon className="w-3 h-3 text-coral-400 shrink-0" />
                       <span>Avg. calories</span>
                     </div>
                     <p className="text-lg font-bold tabular-nums">
@@ -1013,7 +1057,6 @@ export default function Progress() {
 
                   <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                      <span>🍽️</span>
                       <span>Macro balance</span>
                     </div>
                     {weekStats.hasMacroData ? (
@@ -1073,7 +1116,7 @@ export default function Progress() {
 
                   <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                      <span>🏆</span>
+                      <TrophyIcon className="w-3 h-3 text-coral-400 shrink-0" />
                       <span>Best day</span>
                     </div>
                     <p className="text-lg font-bold">
@@ -1106,13 +1149,13 @@ export default function Progress() {
             )}
             {recapLoading && (
               <p className="text-sm text-slate-500 flex items-center gap-2 mt-3">
-                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
                 Generating…
               </p>
             )}
             {recap && !recapLoading && (
               <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5 mt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-coral-400 mb-1">📝 Snapshot</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-coral-400 mb-1">Snapshot</p>
                 <p className="text-sm text-slate-100">{recap}</p>
               </div>
             )}
@@ -1121,7 +1164,12 @@ export default function Progress() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           <div className="card py-3 px-4">
             <div className="flex justify-between items-center mb-2">
-              <h2 className="font-heading font-semibold text-sm">Weekly AI Insights</h2>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 shrink-0">
+                  <CoachAIIndicator />
+                </div>
+                <h2 className="font-heading font-semibold text-sm">Weekly AI Insights</h2>
+              </div>
               <button
                 onClick={loadDigest}
                 disabled={digestLoading}
@@ -1133,21 +1181,21 @@ export default function Progress() {
             {digestError && <p className="text-sm text-red-400">{digestError}</p>}
             {digestLoading ? (
               <p className="text-sm text-slate-500 flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
                 Synthesizing…
               </p>
             ) : digest ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">🚀 Win</p>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Win</p>
                   <p className="text-sm font-semibold text-slate-100">{digest.biggest_win}</p>
                 </div>
                 <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">⚠️ Recovery</p>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Recovery</p>
                   <p className="text-sm font-semibold text-slate-100">{digest.recovery_note}</p>
                 </div>
                 <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">🎯 Focus</p>
+                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">Focus</p>
                   <p className="text-sm font-semibold text-slate-100">{digest.next_week_focus}</p>
                 </div>
               </div>
@@ -1160,7 +1208,12 @@ export default function Progress() {
 
           <div className="card py-3 px-4">
             <div className="flex justify-between items-center mb-2 gap-2">
-              <h2 className="font-heading font-semibold text-sm">Weekly Nutrition Audit</h2>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 shrink-0">
+                  <CoachAIIndicator />
+                </div>
+                <h2 className="font-heading font-semibold text-sm">Weekly Nutrition Audit</h2>
+              </div>
               <div className="flex gap-2 shrink-0">
                 <button
                   onClick={loadNutritionReview}
@@ -1174,7 +1227,7 @@ export default function Progress() {
             {nutritionReviewError && <p className="text-sm text-red-400">{nutritionReviewError}</p>}
             {nutritionReviewLoading ? (
               <p className="text-sm text-slate-500 flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
                 Auditing…
               </p>
             ) : nutritionReview ? (
@@ -1182,7 +1235,6 @@ export default function Progress() {
                 {nutritionReview.avg_calories != null ? (
                   <div className="grid grid-cols-2 gap-2">
                     <MacroTile
-                      icon="🔥"
                       label="Calories"
                       value={nutritionReview.avg_calories}
                       unit=" kcal"
@@ -1191,7 +1243,6 @@ export default function Progress() {
                       colors={SPARKLINE_COLORS.calories}
                     />
                     <MacroTile
-                      icon="🥩"
                       label="Protein"
                       value={nutritionReview.avg_protein}
                       unit="g"
@@ -1200,7 +1251,6 @@ export default function Progress() {
                       colors={SPARKLINE_COLORS.protein}
                     />
                     <MacroTile
-                      icon="🌾"
                       label="Carbs"
                       value={nutritionReview.avg_carbs}
                       unit="g"
@@ -1209,7 +1259,6 @@ export default function Progress() {
                       colors={SPARKLINE_COLORS.carbs}
                     />
                     <MacroTile
-                      icon="🥑"
                       label="Fat"
                       value={nutritionReview.avg_fat}
                       unit="g"
@@ -1219,14 +1268,11 @@ export default function Progress() {
                     />
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-200 flex gap-2">
-                    <span>📊</span>
-                    <span>{nutritionReview.macro_status}</span>
-                  </p>
+                  <p className="text-sm text-slate-200">{nutritionReview.macro_status}</p>
                 )}
 
                 <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">🔄 Pattern</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">Pattern</p>
                   <p className="text-sm text-slate-200">{nutritionReview.key_pattern}</p>
                   {nutritionReview.days_logged != null && (
                     <p className="text-xs text-slate-500 mt-1">Logged {nutritionReview.days_logged} of 7 days</p>
@@ -1234,7 +1280,7 @@ export default function Progress() {
                 </div>
 
                 <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-coral-400 mb-1">🎯 Recommendation</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-coral-400 mb-1">Recommendation</p>
                   <p className="text-sm text-slate-100">{nutritionReview.recommendation}</p>
                 </div>
               </div>
@@ -1249,13 +1295,28 @@ export default function Progress() {
       )}
 
       {activeTab === 'performance' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="card py-3 px-4">
-            <h2 className="font-heading font-semibold text-sm mb-1">Training Volume</h2>
-            <p className="text-xs text-slate-500 mb-3">Total sets × reps × weight, per day.</p>
+        <div className="space-y-4">
+          {/* Training Volume is the primary trend on this tab - full width,
+              taller, with its own hero stat - rather than one of three
+              equal-weight chart cards in a uniform grid. */}
+          <div className="card py-4 px-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+              <div>
+                <h2 className="font-heading font-semibold">Training Volume</h2>
+                <p className="text-xs text-slate-500 mt-0.5">Total sets × reps × weight, per day.</p>
+              </div>
+              {hasVolume && (
+                <div className="text-right shrink-0">
+                  <p className="text-3xl font-heading font-bold tabular-nums leading-none">
+                    {progress.volume_by_date[progress.volume_by_date.length - 1].total_volume.toLocaleString()}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-1">Most recent session</p>
+                </div>
+              )}
+            </div>
             {hasVolume ? (
               <>
-                <div className="h-56">
+                <div className="h-64 mt-2">
                   <Line data={buildVolumeChartData(progress.volume_by_date)} options={baseChartOptions} />
                 </div>
                 <button
@@ -1284,115 +1345,123 @@ export default function Progress() {
                 )}
               </>
             ) : (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-500 mt-3">
                 No workouts logged yet - once you log a few sessions, your volume trend shows up here.
               </p>
             )}
           </div>
 
-          <div className="card py-3 px-4">
-            <h2 className="font-heading font-semibold text-sm mb-1">Calories Burned</h2>
-            <p className="text-xs text-slate-500 mb-3">
-              MET-formula estimate per day (est.), from your logged sets/reps/weight/RPE and body weight.
-            </p>
-            {hasCalories ? (
-              <>
-                <div className="h-56">
-                  <Line data={buildCaloriesChartData(progress.calories_by_date)} options={baseChartOptions} />
-                </div>
-                <button
-                  onClick={() => setShowCaloriesTable((v) => !v)}
-                  className="text-xs text-slate-500 hover:text-slate-300 mt-3"
-                >
-                  {showCaloriesTable ? 'Hide' : 'View'} as table
-                </button>
-                {showCaloriesTable && (
-                  <table className="w-full text-xs mt-2 text-slate-400">
-                    <thead>
-                      <tr className="text-left border-b border-forest-700">
-                        <th className="py-1">Date</th>
-                        <th className="py-1">Calories (est.)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {progress.calories_by_date.map((p) => (
-                        <tr key={p.date} className="border-b border-forest-800">
-                          <td className="py-1">{p.date}</td>
-                          <td className="py-1 tabular-nums">~{Math.round(p.total_calories).toLocaleString()} kcal</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">
-                {hasVolume
-                  ? 'Set your weight on your profile to see a calorie-burned estimate here.'
-                  : 'No workouts logged yet - once you log a few sessions, your calories-burned trend shows up here.'}
+          {/* Supporting charts - same data/behavior, deliberately smaller and
+              quieter than the primary trend above. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="card py-3 px-4">
+              <h2 className="font-heading font-semibold text-sm mb-1">Calories Burned</h2>
+              <p className="text-xs text-slate-500 mb-3">
+                MET-formula estimate per day (est.), from your logged sets/reps/weight/RPE and body weight.
               </p>
-            )}
-          </div>
-
-          <div className="card py-3 px-4">
-            <div className="flex justify-between items-center mb-1">
-              <h2 className="font-heading font-semibold text-sm">Exercise Progression</h2>
-              {hasExercises && (
-                <select
-                  value={selectedExerciseId ?? ''}
-                  onChange={(e) => setSelectedExerciseId(Number(e.target.value))}
-                  className="px-2 py-1 rounded-lg bg-forest-950 border border-forest-700 text-xs shrink-0"
-                >
-                  {progress.exercises.map((ex) => (
-                    <option key={ex.exercise_id} value={ex.exercise_id}>
-                      {ex.exercise_name}
-                    </option>
-                  ))}
-                </select>
+              {hasCalories ? (
+                <>
+                  <div className="h-56">
+                    <Line data={buildCaloriesChartData(progress.calories_by_date)} options={baseChartOptions} />
+                  </div>
+                  <button
+                    onClick={() => setShowCaloriesTable((v) => !v)}
+                    className="text-xs text-slate-500 hover:text-slate-300 mt-3"
+                  >
+                    {showCaloriesTable ? 'Hide' : 'View'} as table
+                  </button>
+                  {showCaloriesTable && (
+                    <table className="w-full text-xs mt-2 text-slate-400">
+                      <thead>
+                        <tr className="text-left border-b border-forest-700">
+                          <th className="py-1">Date</th>
+                          <th className="py-1">Calories (est.)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {progress.calories_by_date.map((p) => (
+                          <tr key={p.date} className="border-b border-forest-800">
+                            <td className="py-1">{p.date}</td>
+                            <td className="py-1 tabular-nums">
+                              ~{Math.round(p.total_calories).toLocaleString()} kcal
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  {hasVolume
+                    ? 'Set your weight on your profile to see a calorie-burned estimate here.'
+                    : 'No workouts logged yet - once you log a few sessions, your calories-burned trend shows up here.'}
+                </p>
               )}
             </div>
-            <p className="text-xs text-slate-500 mb-3">Weight over time - larger points mark a PR.</p>
-            {hasExercises && selectedExercise ? (
-              <>
-                <div className="h-56">
-                  <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
-                </div>
-                <button
-                  onClick={() => setShowExerciseTable((v) => !v)}
-                  className="text-xs text-slate-500 hover:text-slate-300 mt-3"
-                >
-                  {showExerciseTable ? 'Hide' : 'View'} as table
-                </button>
-                {showExerciseTable && (
-                  <table className="w-full text-xs mt-2 text-slate-400">
-                    <thead>
-                      <tr className="text-left border-b border-forest-700">
-                        <th className="py-1">Date</th>
-                        <th className="py-1">Weight</th>
-                        <th className="py-1">Sets × Reps</th>
-                        <th className="py-1">PR</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedExercise.history.map((p, i) => (
-                        <tr key={i} className="border-b border-forest-800">
-                          <td className="py-1">{new Date(p.performed_at).toLocaleDateString()}</td>
-                          <td className="py-1 tabular-nums">{p.weight ?? 'bodyweight'}</td>
-                          <td className="py-1 tabular-nums">
-                            {p.sets}×{p.reps}
-                          </td>
-                          <td className="py-1">{p.is_pr ? '🏆' : ''}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+
+            <div className="card py-3 px-4">
+              <div className="flex justify-between items-center mb-1">
+                <h2 className="font-heading font-semibold text-sm">Exercise Progression</h2>
+                {hasExercises && (
+                  <select
+                    value={selectedExerciseId ?? ''}
+                    onChange={(e) => setSelectedExerciseId(Number(e.target.value))}
+                    className="px-2 py-1 rounded-lg bg-forest-950 border border-forest-700 text-xs shrink-0"
+                  >
+                    {progress.exercises.map((ex) => (
+                      <option key={ex.exercise_id} value={ex.exercise_id}>
+                        {ex.exercise_name}
+                      </option>
+                    ))}
+                  </select>
                 )}
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">
-                No exercises logged yet - log a workout to start tracking progression.
-              </p>
-            )}
+              </div>
+              <p className="text-xs text-slate-500 mb-3">Weight over time - larger points mark a PR.</p>
+              {hasExercises && selectedExercise ? (
+                <>
+                  <div className="h-56">
+                    <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
+                  </div>
+                  <button
+                    onClick={() => setShowExerciseTable((v) => !v)}
+                    className="text-xs text-slate-500 hover:text-slate-300 mt-3"
+                  >
+                    {showExerciseTable ? 'Hide' : 'View'} as table
+                  </button>
+                  {showExerciseTable && (
+                    <table className="w-full text-xs mt-2 text-slate-400">
+                      <thead>
+                        <tr className="text-left border-b border-forest-700">
+                          <th className="py-1">Date</th>
+                          <th className="py-1">Weight</th>
+                          <th className="py-1">Sets × Reps</th>
+                          <th className="py-1">PR</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedExercise.history.map((p, i) => (
+                          <tr key={i} className="border-b border-forest-800">
+                            <td className="py-1">{new Date(p.performed_at).toLocaleDateString()}</td>
+                            <td className="py-1 tabular-nums">{p.weight ?? 'bodyweight'}</td>
+                            <td className="py-1 tabular-nums">
+                              {p.sets}×{p.reps}
+                            </td>
+                            <td className="py-1">
+                              {p.is_pr && <TrophyIcon className="w-3.5 h-3.5 text-coral-400" />}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">
+                  No exercises logged yet - log a workout to start tracking progression.
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}

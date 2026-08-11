@@ -619,7 +619,7 @@ export default function WorkoutLog() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10 font-body space-y-6">
+    <div className="max-w-7xl mx-auto px-6 py-10 font-body space-y-6">
       {/* Header - muted label over a bold title, adapted from the reference's
           "Welcome back / Hi, Name!" hierarchy, with a circular icon button
           on the right in place of its notification bell (there's no
@@ -628,7 +628,7 @@ export default function WorkoutLog() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-500">Manual logging</p>
-          <h1 className="font-heading font-bold text-2xl mt-0.5">Log a Workout</h1>
+          <h1 className="font-heading font-bold text-3xl mt-0.5">Log a Workout</h1>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {/* Real elapsed time on this page this visit, ticking every
@@ -681,358 +681,365 @@ export default function WorkoutLog() {
         </Link>
       </div>
 
-      {/* "This week" summary - adapted from the reference's "Overall Status"
-          teaser card, using real derived numbers instead of a placeholder
-          chart. */}
-      <div className="card p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-heading font-semibold">This week</h2>
-          <Link
-            to="/analytics"
-            className="text-xs font-semibold text-coral-400 hover:text-coral-300 flex items-center gap-0.5"
-          >
-            See all
-            <ChevronRightIcon className="w-3 h-3" />
-          </Link>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <StatTile
-            icon={<LayersIcon className="w-3.5 h-3.5" />}
-            label="Sets logged"
-            value={weeklyStats.setsCount}
-            tint={TINTS.setsReps}
-          />
-          <StatTile
-            icon={<FlameIcon className="w-3.5 h-3.5" />}
-            label="Est. calories"
-            value={weeklyStats.calories ? `~${Math.round(weeklyStats.calories)}` : '—'}
-            tint={TINTS.calories}
-          />
-        </div>
-      </div>
-
-      {/* Rest timer - a genuine countdown (see restSeconds/restRunning
-          state above), not a decorative readout. New, additive section -
-          the existing "New set" form below is untouched. */}
-      <div className="card p-6 space-y-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
-            <ClockIcon className="w-4 h-4" />
-          </div>
-          <h2 className="font-heading font-semibold">Rest timer</h2>
-        </div>
-        <div className="flex items-center justify-center py-2">
-          <span className="font-heading font-bold text-5xl tabular-nums">{formatClock(restSeconds)}</span>
-        </div>
-        <div className="flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={() => addRestSeconds(30)}
-            className="px-3 py-1.5 rounded-lg border border-forest-600 hover:border-coral-400 text-xs font-semibold"
-          >
-            +30s
-          </button>
-          <button
-            type="button"
-            onClick={() => addRestSeconds(60)}
-            className="px-3 py-1.5 rounded-lg border border-forest-600 hover:border-coral-400 text-xs font-semibold"
-          >
-            +60s
-          </button>
-        </div>
-        <div className="flex items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={toggleRest}
-            disabled={restSeconds === 0 && !restRunning}
-            className="px-6 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold flex items-center gap-2"
-          >
-            {restRunning ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
-            {restRunning ? 'Pause' : 'Play'}
-          </button>
-          <button
-            type="button"
-            onClick={resetRest}
-            className="px-4 py-2.5 rounded-xl border border-forest-600 hover:border-coral-400 text-sm font-semibold"
-          >
-            Reset
-          </button>
-        </div>
-      </div>
-
-      {/* Per-set tracker for whichever exercise is selected below - Weight/
-          Reps/RPE per row plus a completion checkmark that logs a real set
-          (via the same createLog call the existing form uses) and
-          auto-starts the rest timer above. Distinct from the existing
-          "New set" form (which logs one aggregate sets x reps entry) -
-          that form is completely unchanged. */}
-      {exerciseId && (
-        <div className="card p-6 space-y-4">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
-              <CheckIcon className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="font-heading font-semibold">Track sets</h2>
-              {selectedExerciseName && (
-                <p className="text-xs text-slate-500 truncate">{selectedExerciseName}</p>
-              )}
-            </div>
-          </div>
-
-          {previousLogForExercise && (
-            <p className="text-xs text-slate-500">
-              Prev: {previousLogForExercise.weight ? `${previousLogForExercise.weight}kg x ` : ''}
-              {previousLogForExercise.reps ?? '—'} reps
-              {previousLogForExercise.rpe ? ` @ RPE ${previousLogForExercise.rpe}` : ''}
-            </p>
-          )}
-
-          <div className="space-y-2">
-            {trackedSets.map((row, i) => (
-              <div
-                key={i}
-                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-colors ${
-                  row.completed ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-forest-700 bg-forest-950/40'
-                }`}
-              >
-                <span className="text-xs font-semibold text-slate-500 w-11 shrink-0">Set {i + 1}</span>
-                <input
-                  type="number"
-                  placeholder="kg"
-                  value={row.weight}
-                  disabled={row.completed}
-                  onChange={(e) => updateTrackedSet(i, 'weight', e.target.value)}
-                  className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
-                />
-                <input
-                  type="number"
-                  placeholder="reps"
-                  value={row.reps}
-                  disabled={row.completed}
-                  onChange={(e) => updateTrackedSet(i, 'reps', e.target.value)}
-                  className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
-                />
-                <input
-                  type="number"
-                  placeholder="RPE"
-                  step="0.5"
-                  value={row.rpe}
-                  disabled={row.completed}
-                  onChange={(e) => updateTrackedSet(i, 'rpe', e.target.value)}
-                  className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
-                />
-                {previousLogForExercise && !row.completed && (
-                  <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
-                    Prev: {previousLogForExercise.weight ? `${previousLogForExercise.weight}kg x ` : ''}
-                    {previousLogForExercise.reps ?? '—'}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => completeTrackedSet(i)}
-                  disabled={row.completed || loggingSetIndex === i}
-                  title={row.completed ? 'Completed' : 'Mark set complete'}
-                  className={`ml-auto w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
-                    row.completed
-                      ? 'bg-emerald-500 text-forest-950'
-                      : 'border border-forest-600 hover:border-coral-400 text-slate-400'
-                  }`}
-                >
-                  {loggingSetIndex === i ? (
-                    <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
-                  ) : (
-                    <CheckIcon className="w-4 h-4" />
-                  )}
-                </button>
+      {/* Split-grid dashboard: the active session (timer + per-set tracking
+          + history) on the left, the add/configure forms on the right -
+          replaces the old single stacked column of full-width cards. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-7 space-y-6">
+          {/* Rest timer - a genuine countdown (see restSeconds/restRunning
+              state above), not a decorative readout. Anchors the top of the
+              active-session column, per the "timer at top" layout rule. */}
+          <div className="card p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
+                <ClockIcon className="w-4 h-4" />
               </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={addTrackedSetRow}
-            className="text-xs font-semibold text-coral-400 hover:text-coral-300"
-          >
-            + Add set
-          </button>
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="card p-6 space-y-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
-            <DumbbellIcon className="w-4 h-4" />
-          </div>
-          <h2 className="font-heading font-semibold">New set</h2>
-        </div>
-
-        <div>
-          <label className="block text-sm mb-1" htmlFor="exercise">
-            Exercise
-          </label>
-          {!showNewExercise ? (
-            <div className="flex gap-2">
-              <div className="flex-1 min-w-0">
-                <ExercisePicker
-                  exercises={exercises}
-                  todaysExercises={todaysExercises}
-                  value={exerciseId}
-                  onChange={handleExerciseChange}
-                />
-              </div>
+              <h2 className="font-heading font-semibold">Rest timer</h2>
+            </div>
+            <div className="flex items-center justify-center py-2">
+              <span className="font-heading font-bold text-5xl tabular-nums">{formatClock(restSeconds)}</span>
+            </div>
+            <div className="flex items-center justify-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowNewExercise(true)}
-                className="px-3 py-2 rounded-xl border border-forest-600 hover:border-coral-400 text-xs font-semibold whitespace-nowrap"
+                onClick={() => addRestSeconds(30)}
+                className="px-3 py-1.5 rounded-lg border border-forest-600 hover:border-coral-400 text-xs font-semibold"
               >
-                + New
+                +30s
+              </button>
+              <button
+                type="button"
+                onClick={() => addRestSeconds(60)}
+                className="px-3 py-1.5 rounded-lg border border-forest-600 hover:border-coral-400 text-xs font-semibold"
+              >
+                +60s
               </button>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="New exercise name"
-                  value={newExerciseName}
-                  onChange={(e) => {
-                    setNewExerciseName(e.target.value)
-                    setNewExerciseError('')
-                  }}
-                  className="flex-1 px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={handleAddNewExercise}
-                  disabled={creatingExercise || !newExerciseName.trim()}
-                  className="px-3 py-2 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
-                >
-                  {creatingExercise ? 'Checking…' : 'Add'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewExercise(false)
-                    setNewExerciseName('')
-                    setNewExerciseError('')
-                  }}
-                  className="px-3 py-2 rounded-xl border border-forest-600 text-xs font-semibold"
-                >
-                  Cancel
-                </button>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={toggleRest}
+                disabled={restSeconds === 0 && !restRunning}
+                className="px-6 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold flex items-center gap-2"
+              >
+                {restRunning ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+                {restRunning ? 'Pause' : 'Play'}
+              </button>
+              <button
+                type="button"
+                onClick={resetRest}
+                className="px-4 py-2.5 rounded-xl border border-forest-600 hover:border-coral-400 text-sm font-semibold"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {/* Per-set tracker for whichever exercise is selected on the right
+              - Weight/Reps/RPE per row plus a completion checkmark that logs
+              a real set (via the same createLog call the "New set" form
+              uses) and auto-starts the rest timer above. */}
+          {exerciseId && (
+            <div className="card p-6 space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
+                  <CheckIcon className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-heading font-semibold">Track sets</h2>
+                  {selectedExerciseName && (
+                    <p className="text-xs text-slate-500 truncate">{selectedExerciseName}</p>
+                  )}
+                </div>
               </div>
-              {newExerciseError && <p className="text-xs text-red-400">{newExerciseError}</p>}
+
+              {previousLogForExercise && (
+                <p className="text-xs text-slate-500">
+                  Prev: {previousLogForExercise.weight ? `${previousLogForExercise.weight}kg x ` : ''}
+                  {previousLogForExercise.reps ?? '—'} reps
+                  {previousLogForExercise.rpe ? ` @ RPE ${previousLogForExercise.rpe}` : ''}
+                </p>
+              )}
+
+              <div className="space-y-2">
+                {trackedSets.map((row, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2 p-2.5 rounded-xl border transition-colors ${
+                      row.completed ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-forest-700 bg-forest-950/40'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold text-slate-500 w-11 shrink-0">Set {i + 1}</span>
+                    <input
+                      type="number"
+                      placeholder="kg"
+                      value={row.weight}
+                      disabled={row.completed}
+                      onChange={(e) => updateTrackedSet(i, 'weight', e.target.value)}
+                      className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
+                    />
+                    <input
+                      type="number"
+                      placeholder="reps"
+                      value={row.reps}
+                      disabled={row.completed}
+                      onChange={(e) => updateTrackedSet(i, 'reps', e.target.value)}
+                      className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
+                    />
+                    <input
+                      type="number"
+                      placeholder="RPE"
+                      step="0.5"
+                      value={row.rpe}
+                      disabled={row.completed}
+                      onChange={(e) => updateTrackedSet(i, 'rpe', e.target.value)}
+                      className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
+                    />
+                    {previousLogForExercise && !row.completed && (
+                      <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
+                        Prev: {previousLogForExercise.weight ? `${previousLogForExercise.weight}kg x ` : ''}
+                        {previousLogForExercise.reps ?? '—'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => completeTrackedSet(i)}
+                      disabled={row.completed || loggingSetIndex === i}
+                      title={row.completed ? 'Completed' : 'Mark set complete'}
+                      className={`ml-auto w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                        row.completed
+                          ? 'bg-emerald-500 text-forest-950'
+                          : 'border border-forest-600 hover:border-coral-400 text-slate-400'
+                      }`}
+                    >
+                      {loggingSetIndex === i ? (
+                        <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
+                      ) : (
+                        <CheckIcon className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={addTrackedSetRow}
+                className="text-xs font-semibold text-coral-400 hover:text-coral-300"
+              >
+                + Add set
+              </button>
             </div>
           )}
-        </div>
 
-        <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm mb-1" htmlFor="sets">
-              Sets
-            </label>
-            <input
-              id="sets"
-              type="number"
-              min="1"
-              max="20"
-              value={sets}
-              onChange={(e) => setSets(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm mb-1" htmlFor="reps">
-              Reps
-            </label>
-            <input
-              id="reps"
-              type="number"
-              min="1"
-              max="200"
-              value={reps}
-              onChange={(e) => setReps(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm mb-1" htmlFor="weight">
-              Weight (optional)
-            </label>
-            <input
-              id="weight"
-              type="number"
-              min="0"
-              max="1200"
-              step="0.5"
-              value={weight}
-              onChange={(e) => setWeight(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-sm mb-1" htmlFor="rpe">
-              RPE (optional, 1-10)
-            </label>
-            <input
-              id="rpe"
-              type="number"
-              min="1"
-              max="10"
-              step="0.5"
-              value={rpe}
-              onChange={(e) => setRpe(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-            />
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-heading font-semibold">Recent logs</h2>
+              <Link
+                to="/analytics"
+                className="text-xs font-semibold text-coral-400 hover:text-coral-300 flex items-center gap-0.5"
+              >
+                See all
+                <ChevronRightIcon className="w-3 h-3" />
+              </Link>
+            </div>
+            {logs.length === 0 ? (
+              <div className="card p-6">
+                <p className="text-sm text-slate-500">Nothing logged yet.</p>
+              </div>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-4 pr-1">
+                {logs.slice(0, 15).map((log) => (
+                  <LogCard key={log.id} log={log} />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm mb-1" htmlFor="notes">
-            Notes (optional)
-          </label>
-          <textarea
-            id="notes"
-            rows={2}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold transition-colors"
-        >
-          {saving ? 'Logging…' : 'Log set'}
-        </button>
-      </form>
-
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-heading font-semibold">Recent logs</h2>
-          <Link
-            to="/analytics"
-            className="text-xs font-semibold text-coral-400 hover:text-coral-300 flex items-center gap-0.5"
-          >
-            See all
-            <ChevronRightIcon className="w-3 h-3" />
-          </Link>
-        </div>
-        {logs.length === 0 ? (
+        <div className="lg:col-span-5 space-y-6">
+          {/* "This week" summary - adapted from the reference's "Overall
+              Status" teaser card, using real derived numbers instead of a
+              placeholder chart. */}
           <div className="card p-6">
-            <p className="text-sm text-slate-500">Nothing logged yet.</p>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-heading font-semibold">This week</h2>
+              <Link
+                to="/analytics"
+                className="text-xs font-semibold text-coral-400 hover:text-coral-300 flex items-center gap-0.5"
+              >
+                See all
+                <ChevronRightIcon className="w-3 h-3" />
+              </Link>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <StatTile
+                icon={<LayersIcon className="w-3.5 h-3.5" />}
+                label="Sets logged"
+                value={weeklyStats.setsCount}
+                tint={TINTS.setsReps}
+              />
+              <StatTile
+                icon={<FlameIcon className="w-3.5 h-3.5" />}
+                label="Est. calories"
+                value={weeklyStats.calories ? `~${Math.round(weeklyStats.calories)}` : '—'}
+                tint={TINTS.calories}
+              />
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {logs.slice(0, 15).map((log) => (
-              <LogCard key={log.id} log={log} />
-            ))}
-          </div>
-        )}
+
+          <form onSubmit={handleSubmit} className="card p-6 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
+                <DumbbellIcon className="w-4 h-4" />
+              </div>
+              <h2 className="font-heading font-semibold">New set</h2>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-1" htmlFor="exercise">
+                Exercise
+              </label>
+              {!showNewExercise ? (
+                <div className="flex gap-2">
+                  <div className="flex-1 min-w-0">
+                    <ExercisePicker
+                      exercises={exercises}
+                      todaysExercises={todaysExercises}
+                      value={exerciseId}
+                      onChange={handleExerciseChange}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewExercise(true)}
+                    className="px-3 py-2 rounded-xl border border-forest-600 hover:border-coral-400 text-xs font-semibold whitespace-nowrap"
+                  >
+                    + New
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="New exercise name"
+                      value={newExerciseName}
+                      onChange={(e) => {
+                        setNewExerciseName(e.target.value)
+                        setNewExerciseError('')
+                      }}
+                      className="flex-1 px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddNewExercise}
+                      disabled={creatingExercise || !newExerciseName.trim()}
+                      className="px-3 py-2 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold whitespace-nowrap"
+                    >
+                      {creatingExercise ? 'Checking…' : 'Add'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewExercise(false)
+                        setNewExerciseName('')
+                        setNewExerciseError('')
+                      }}
+                      className="px-3 py-2 rounded-xl border border-forest-600 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  {newExerciseError && <p className="text-xs text-red-400">{newExerciseError}</p>}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm mb-1" htmlFor="sets">
+                  Sets
+                </label>
+                <input
+                  id="sets"
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={sets}
+                  onChange={(e) => setSets(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1" htmlFor="reps">
+                  Reps
+                </label>
+                <input
+                  id="reps"
+                  type="number"
+                  min="1"
+                  max="200"
+                  value={reps}
+                  onChange={(e) => setReps(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1" htmlFor="weight">
+                  Weight (optional)
+                </label>
+                <input
+                  id="weight"
+                  type="number"
+                  min="0"
+                  max="1200"
+                  step="0.5"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm mb-1" htmlFor="rpe">
+                  RPE (optional, 1-10)
+                </label>
+                <input
+                  id="rpe"
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="0.5"
+                  value={rpe}
+                  onChange={(e) => setRpe(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-1" htmlFor="notes">
+                Notes (optional)
+              </label>
+              <textarea
+                id="notes"
+                rows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={saving}
+              className="w-full px-6 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold transition-colors"
+            >
+              {saving ? 'Logging…' : 'Log set'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   )

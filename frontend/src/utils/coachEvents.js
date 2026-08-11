@@ -27,6 +27,16 @@ export function notifyIfMutating(toolName) {
   }
 }
 
+// Lets any page open the floating AI Coach drawer without needing a prop/ref
+// into AIMessageBar (mounted once in AppLayout, entirely separate from
+// whichever page is rendered underneath it) - same "plain global event"
+// approach as COACH_DATA_CHANGED_EVENT above, for the same reason.
+export const OPEN_AI_COACH_EVENT = 'align:open-ai-coach'
+
+export function openAiCoach() {
+  window.dispatchEvent(new CustomEvent(OPEN_AI_COACH_EVENT))
+}
+
 // A page wires this up with its own existing fetch function:
 //   useEffect(() => {
 //     window.addEventListener(COACH_DATA_CHANGED_EVENT, refetch)

@@ -309,3 +309,151 @@ body {
     opacity: 0.7;
   }
 }
+
+/* ==========================================================================
+   Coach AI Visual (src/components/CoachAIVisual.jsx) - ALIGN's signature AI
+   graphic: a left-facing human head/neck/shoulders silhouette with an
+   organic neural network revealed inside it, a sparse particle field, and a
+   soft atmospheric glow. The silhouette itself never animates - only the
+   "intelligence" layer does (node pulse, one travelling signal, particle
+   drift, breathing glow), and slowly enough that it should read as static
+   at first glance. Every color here reuses the existing coral-500 accent -
+   no new palette for this component.
+   ========================================================================== */
+
+.coach-ai-visual {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  display: block;
+}
+
+.coach-ai-fill {
+  fill: url(#coachAiHeadGrad);
+}
+
+.coach-ai-glow {
+  fill: none;
+  stroke: rgba(204, 255, 0, 0.5);
+  stroke-width: 5;
+  stroke-linecap: round;
+  filter: blur(6px);
+  animation: coach-ai-glow-breathe 6s ease-in-out infinite;
+}
+
+.coach-ai-front {
+  fill: none;
+  stroke: rgba(204, 255, 0, 0.7);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+}
+
+.coach-ai-back {
+  fill: none;
+  stroke: rgba(204, 255, 0, 0.22);
+  stroke-width: 0.9;
+  stroke-linecap: round;
+}
+
+.coach-ai-ear {
+  fill: none;
+  stroke: rgba(204, 255, 0, 0.4);
+  stroke-width: 0.8;
+}
+
+.coach-ai-link path {
+  fill: none;
+  stroke: rgba(204, 255, 0, 0.35);
+  stroke-width: 0.5;
+}
+
+/* Higher specificity than ".coach-ai-link path" on purpose - the travelling
+   signal needs its own stroke/animation, not the generic dim connection
+   line style every other path in that group gets. */
+.coach-ai-link .coach-ai-signal {
+  stroke: var(--color-coral-500);
+  stroke-width: 1;
+  stroke-dasharray: 5 42;
+  opacity: 0.9;
+  animation: coach-ai-signal-travel 5s linear infinite;
+}
+
+/* Each node/particle is a <g opacity="base"><circle class="...-dot" /></g> -
+   see CoachAIVisual.jsx's Node/Particle helpers for why. Animating a ratio
+   on the child multiplies against the parent's fixed base opacity instead
+   of replacing it, so the pulse/drift never flattens the hand-tuned
+   brightness hierarchy between nodes. */
+.coach-ai-node-dot {
+  fill: rgba(204, 255, 0, 0.9);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coach-ai-node-pulse 4.5s ease-in-out infinite;
+  animation-delay: var(--pulse-delay, 0s);
+}
+
+.coach-ai-node-hero {
+  filter: drop-shadow(0 0 3px rgba(204, 255, 0, 0.9));
+}
+
+.coach-ai-particle-dot {
+  fill: rgba(204, 255, 0, 0.6);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: coach-ai-particle-drift 9s ease-in-out infinite;
+  animation-delay: var(--drift-delay, 0s);
+}
+
+@keyframes coach-ai-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes coach-ai-node-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.85);
+  }
+}
+
+@keyframes coach-ai-signal-travel {
+  0% {
+    stroke-dashoffset: 47;
+  }
+  55% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes coach-ai-particle-drift {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: translate(0, 0);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(1.5px, -2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .coach-ai-glow,
+  .coach-ai-node-dot,
+  .coach-ai-particle-dot,
+  .coach-ai-link .coach-ai-signal {
+    animation: none;
+  }
+}

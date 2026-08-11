@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api } from '../api.js'
 import CheckinModal from '../components/CheckinModal.jsx'
+import CoachAIIndicator from '../components/CoachAIIndicator.jsx'
 import MacroBar from '../components/MacroBar.jsx'
 import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
-import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
+import { COACH_DATA_CHANGED_EVENT, openAiCoach } from '../utils/coachEvents.js'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -131,25 +132,80 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-10 font-body space-y-6">
+    <div className="max-w-7xl mx-auto px-6 py-10 font-body space-y-8">
       <div>
-        <h1 className="font-heading font-bold text-2xl">Welcome back</h1>
+        <p className="text-xs uppercase tracking-wide text-slate-500">Command center</p>
+        <h1 className="font-heading font-bold text-3xl mt-0.5">Welcome back</h1>
         <p className="text-sm text-slate-400 mt-1">Here's where things stand today.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="card p-6">
-          <h2 className="font-heading font-semibold mb-2">Active plan</h2>
-          {planLoading ? (
+      {/* Today's state - the strongest visual position on the page, per the
+          "how am I doing today" priority. An open composition (no card
+          border) so the readiness number itself carries the weight, not a
+          box around it. Readiness and Recovery are two facets of the same
+          real check-in record (score vs. plan_status), not two separate
+          data sources - presented as two labeled halves of one hero row
+          rather than one new "recovery" metric that doesn't exist. */}
+      <div className="border-b border-forest-800 pb-8">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-8">
+          {checkinLoading ? (
             <p className="text-sm text-slate-500">Loading…</p>
-          ) : plan ? (
-            <Link to={`/plan/${plan.id}`} className="block hover:opacity-90 transition-opacity">
-              <p className="font-semibold text-coral-400">{plan.name} →</p>
-              <p className="text-sm text-slate-400 mt-1">{plan.plan_exercises.length} exercises</p>
-              {plan.notes && <p className="text-sm text-slate-500 mt-2 line-clamp-3">{plan.notes}</p>}
-            </Link>
+          ) : checkin ? (
+            <div className="flex flex-wrap items-center gap-8">
+              <div>
+                <p className="font-heading font-bold text-6xl tabular-nums leading-none">
+                  {checkin.score}
+                  <span className="text-2xl text-slate-600">/5</span>
+                </p>
+                <p className="text-xs uppercase tracking-wide text-slate-500 mt-2">Readiness</p>
+              </div>
+              <div className="h-12 w-px bg-forest-800 hidden sm:block" />
+              <div>
+                <p className="text-lg font-heading font-semibold">{checkin.label}</p>
+                <p className={`text-sm mt-1 ${checkin.plan_status !== 'normal' ? 'text-coral-400' : 'text-slate-500'}`}>
+                  Recovery:{' '}
+                  {checkin.plan_status !== 'normal' ? (
+                    <>
+                      today auto-marked <strong>{checkin.plan_status_label}</strong>
+                    </>
+                  ) : (
+                    'normal training load'
+                  )}
+                </p>
+              </div>
+            </div>
           ) : (
-            <>
+            <div>
+              <p className="text-sm text-slate-500 mb-3">You haven't checked in today.</p>
+              <Link
+                to="/checkin"
+                className="inline-block px-5 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 text-sm font-heading font-semibold"
+              >
+                Check in now
+              </Link>
+            </div>
+          )}
+          <Link
+            to="/calendar"
+            className="lg:ml-auto text-xs font-semibold text-coral-400 hover:text-coral-300 whitespace-nowrap"
+          >
+            Calendar & weekly analysis →
+          </Link>
+        </div>
+      </div>
+
+      {/* What should I do today? / How am I progressing? - the primary
+          working pair. Today's Workout gets the wider column since it's the
+          single most actionable item; the active-plan summary that used to
+          be its own separate card now lives as this panel's own subheading
+          instead of a second box holding the same underlying `plan`. */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-7 card p-6 flex flex-col">
+          <h2 className="font-heading font-semibold mb-3">Today's workout</h2>
+          {planLoading ? (
+            <p className="text-sm text-slate-500 flex-1">Loading…</p>
+          ) : !plan ? (
+            <div className="flex-1">
               <p className="text-sm text-slate-500 mb-3">
                 No active plan yet - it's generated automatically once your profile is saved, or ask the
                 AI Coach (bottom right) to build one now.
@@ -160,94 +216,56 @@ export default function Dashboard() {
               >
                 Select / activate a plan
               </Link>
-            </>
-          )}
-        </div>
-
-        <div className="card p-6">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-heading font-semibold">Today's readiness</h2>
-            <Link to="/calendar" className="text-xs font-semibold text-coral-400 hover:text-coral-300 whitespace-nowrap">
-              📅 Calendar & weekly analysis →
-            </Link>
-          </div>
-          {checkinLoading ? (
-            <p className="text-sm text-slate-500">Loading…</p>
-          ) : checkin ? (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="font-heading font-bold text-2xl text-coral-400">{checkin.score}/5</span>
-                <span className="text-sm text-slate-300">{checkin.label}</span>
-              </div>
-              {checkin.plan_status !== 'normal' && (
-                <p className="text-xs text-coral-400 mt-2">
-                  Today's plan was auto-marked <strong>{checkin.plan_status_label}</strong> based on your
-                  readiness - ask the coach to apply the specifics.
-                </p>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-slate-500 mb-3">You haven't checked in today.</p>
-              <Link
-                to="/checkin"
-                className="inline-block px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 text-sm font-semibold"
-              >
-                Check in now
-              </Link>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Today's Workout Overview */}
-        <div className="card p-6 flex flex-col">
-          <h2 className="font-heading font-semibold mb-2">Today's workout</h2>
-          {planLoading ? (
-            <p className="text-sm text-slate-500">Loading…</p>
-          ) : !plan ? (
-            <p className="text-sm text-slate-500 flex-1">Activate a plan to see today's routine here.</p>
-          ) : todaysExercises.length === 0 ? (
-            <p className="text-sm text-slate-500 flex-1">
-              Nothing scheduled for {DAY_NAMES[todayIndex()]} - rest day, or log something manually.
-            </p>
+            </div>
           ) : (
             <div className="flex-1">
-              <p className="text-sm font-semibold">
-                {DAY_NAMES[todayIndex()]} · {todaysExercises.length} exercise
-                {todaysExercises.length === 1 ? '' : 's'}
-              </p>
-              <p className="text-xs text-slate-500 mt-1">
-                {todaysExercises.map((pe) => pe.exercise.name).join(', ')}
-              </p>
+              <Link to={`/plan/${plan.id}`} className="inline-block hover:opacity-90 transition-opacity">
+                <p className="text-sm font-semibold text-coral-400">{plan.name} →</p>
+              </Link>
+              <div className="mt-3">
+                {todaysExercises.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    Nothing scheduled for {DAY_NAMES[todayIndex()]} - rest day, or log something manually.
+                  </p>
+                ) : (
+                  <>
+                    <p className="font-heading font-semibold text-lg">
+                      {DAY_NAMES[todayIndex()]}
+                      <span className="text-slate-500 font-normal text-sm ml-2">
+                        {todaysExercises.length} exercise{todaysExercises.length === 1 ? '' : 's'}
+                      </span>
+                    </p>
+                    <p className="text-sm text-slate-400 mt-1">
+                      {todaysExercises.map((pe) => pe.exercise.name).join(', ')}
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
           )}
-          <div className="flex flex-col gap-2 mt-4">
+          <div className="flex flex-col sm:flex-row gap-2 mt-5">
             <button
               onClick={startTodaysWorkout}
               disabled={todaysExercises.length === 0}
-              className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-heading font-semibold"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-heading font-semibold transition-colors"
             >
               Start today's live workout
             </button>
             <Link
               to="/workout/log"
-              className="px-4 py-2 rounded-lg border border-forest-700 hover:border-coral-400 transition-colors text-sm font-heading font-semibold text-center"
+              className="px-4 py-2.5 rounded-xl border border-forest-700 hover:border-coral-400 transition-colors text-sm font-heading font-semibold text-center"
             >
               Log manually
             </Link>
           </div>
         </div>
 
-        {/* Weekly Progress / Nutrition Snapshot */}
-        <div className="card p-6">
+        {/* This week - a metric cluster (rings + macro bars), kept as one
+            card since it's a genuinely coherent group of related weekly
+            numbers, not five separate boxes for five separate metrics. */}
+        <div className="lg:col-span-5 card p-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-heading font-semibold">This week</h2>
-            {/* Two-tone status pill (lime = on track, amber = behind) - same
-                semantic convention as the new Calendar dashboard tiles. Only
-                shown once there's a real target and real activity data to
-                judge it against, never a guessed default. */}
             {!activityLoading && profile?.target_frequency && (
               <span
                 className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap ${
@@ -326,7 +344,16 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+      </div>
 
+      {/* What needs my attention? / What does ALIGN recommend? - secondary
+          row, deliberately smaller than the pair above. Recent activity's
+          logic/copy is completely unchanged (see the comment on its
+          branches below); the AI panel is a pure navigation entry point
+          into the already-existing Ask Coach drawer - no new data, no new
+          behavior, just a visual signal consistent with the Coach AI
+          artwork's language. */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Recent Activity - a clean log of the single most recent item, no
             AI-generated text. A prior version fetched a one-off /agent/chat
             "tip" here per most-recent-activity; removed entirely, since that
@@ -372,6 +399,30 @@ export default function Dashboard() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="card p-6 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 shrink-0">
+              <CoachAIIndicator />
+            </div>
+            <div className="flex-1 min-w-0 sm:hidden">
+              <p className="text-xs uppercase tracking-wide text-slate-500">AI Coach</p>
+            </div>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs uppercase tracking-wide text-slate-500 hidden sm:block">AI Coach</p>
+            <p className="text-sm text-slate-400 mt-0.5">
+              Ask anything, or send a training dilemma to Coach Resolution.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={openAiCoach}
+            className="shrink-0 w-full sm:w-auto px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 text-sm font-heading font-semibold transition-colors"
+          >
+            Ask Coach
+          </button>
         </div>
       </div>
 
