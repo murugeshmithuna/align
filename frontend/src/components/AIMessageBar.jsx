@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { streamAgentChat } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
-import { MUTATING_TOOLS, notifyIfMutating } from '../utils/coachEvents.js'
+import { MUTATING_TOOLS, notifyIfMutating, OPEN_AI_COACH_EVENT } from '../utils/coachEvents.js'
 
 let nextId = 1
 
@@ -267,6 +267,15 @@ export default function AIMessageBar() {
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [messages, open])
+
+  // Lets other pages (e.g. Coach Resolution's "Ask Coach anything" panel
+  // button) open this drawer without any direct prop/ref link into it - see
+  // utils/coachEvents.js's OPEN_AI_COACH_EVENT.
+  useEffect(() => {
+    const handleOpen = () => setOpen(true)
+    window.addEventListener(OPEN_AI_COACH_EVENT, handleOpen)
+    return () => window.removeEventListener(OPEN_AI_COACH_EVENT, handleOpen)
+  }, [])
 
   // Restoring persisted messages must not collide with fresh ids the running
   // `nextId` module counter hands out next - bump it past whatever the

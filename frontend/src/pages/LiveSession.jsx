@@ -614,6 +614,92 @@ function SpeakerOffIcon() {
   )
 }
 
+// Plain inline SVGs, matching this app's existing icon convention (see
+// SpeakerOnIcon/SpeakerOffIcon above, WorkoutLog.jsx, Navbar.jsx) - replace
+// emoji glyphs (🎉 ⏱ 🎯 🔥 📈 🧭 ✅ ⚠️ ⏸️) in the redesigned JSX below with the
+// same underlying information, no data/logic change.
+function CheckCircleIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8.5 12.5 2.5 2.5 5-5" />
+    </svg>
+  )
+}
+
+function WarningTriangleIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M10.3 3.9 1.9 18a2 2 0 0 0 1.7 3h16.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4" />
+      <circle cx="12" cy="16.5" r="0.75" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function ClockIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 3" />
+    </svg>
+  )
+}
+
+function TargetIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="12" cy="12" r="0.75" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+function FlameIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.176 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" />
+    </svg>
+  )
+}
+
+function TrendUpIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 17 9 11l4 4 8-8" />
+      <path d="M15 7h6v6" />
+    </svg>
+  )
+}
+
+function CompassIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="m15 9-2 6-6 2 2-6z" />
+    </svg>
+  )
+}
+
+function PauseCircleIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M10 9v6M14 9v6" />
+    </svg>
+  )
+}
+
+function PartyIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m4 20 5-13 11 6-13 5Z" />
+      <path d="M14.5 3.5 16 5M19 7.5 20.5 9M17.5 2.5 18.5 3.5" />
+    </svg>
+  )
+}
+
 function tabClass(active) {
   return `px-4 py-2 rounded-lg text-sm font-heading font-semibold transition-colors ${
     active ? 'bg-coral-500' : 'bg-forest-900 text-slate-400 hover:text-slate-200'
@@ -860,9 +946,10 @@ export default function LiveSession() {
   const planId = statePlanId || autoPlanId
 
   return (
-    <div className="max-w-3xl mx-auto px-6 py-10 font-body space-y-6">
+    <div className="max-w-7xl mx-auto px-6 py-10 font-body space-y-6">
       <div>
-        <h1 className="font-heading font-bold text-2xl">Live Session</h1>
+        <p className="text-xs uppercase tracking-wide text-slate-500">Performance environment</p>
+        <h1 className="font-heading font-bold text-3xl mt-0.5">Live Session</h1>
         <p className="text-sm text-slate-400 mt-1">
           Live webcam rep counting with spoken cues, or upload a squat video for a detailed form check.
         </p>
@@ -1662,225 +1749,281 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   }, [resting])
 
   return (
-    <div className="card p-6 space-y-4">
-      {usingPlan && (
-        <div className="flex flex-wrap gap-2">
-          {queue.map((item, i) => (
-            <button
-              key={item.planExerciseId}
-              onClick={() => {
-                sessionRef.current.queueIndex = i
-                sessionRef.current.currentSet = 1
-                sessionRef.current.repCount = 0
-                sessionRef.current.restUntil = null
-                setQueueIndexState(i)
-                setCurrentSetState(1)
-                setRepCountState(0)
-                setResting(false)
-                resetRepState()
-              }}
-              disabled={status === 'running'}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
-                i === queueIndex ? 'bg-coral-500' : 'bg-forest-900 text-slate-400'
-              }`}
-            >
-              {item.name}
-            </button>
-          ))}
-        </div>
-      )}
-      {!usingPlan && status !== 'running' && !paused && (
-        <ExercisePicker value={manualExercise} onChange={setManualExercise} />
-      )}
-      {skipped.length > 0 && (
-        <p className="text-xs text-slate-500">
-          Not pose-trackable yet, skipped: {skipped.join(', ')}
-        </p>
-      )}
+    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+      {/* Video column - first in markup (mobile sees the athlete/performance
+          surface before setup controls) and the dominant column on desktop.
+          No outer .card wrapper here on purpose - the video's own rounded
+          frame is the focal surface, not a box nested inside another box. */}
+      <div className="xl:col-span-8 xl:order-1 space-y-3">
+        {skipped.length > 0 && (
+          <p className="text-xs text-slate-500">Not pose-trackable yet, skipped: {skipped.join(', ')}</p>
+        )}
 
-      <div className="relative rounded-xl overflow-hidden bg-black aspect-video">
-        <video ref={videoRef} className="w-full h-full object-cover -scale-x-100" playsInline muted />
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover -scale-x-100" />
-        {status === 'running' && !complete && (
-          <>
-            <div className="absolute top-4 left-4 bg-forest-950/80 rounded-xl px-4 py-2">
-              <span className="text-4xl font-heading font-extrabold text-coral-400 tabular-nums">
-                {repCount}
-              </span>
-              <span className="text-xs text-slate-400 ml-1">/ {targetReps} reps</span>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Set {currentSet}/{targetSets} · {config.label}
-              </p>
-            </div>
-            <div className="absolute top-4 right-4 bg-forest-950/80 rounded-xl px-3 py-2 text-xs font-heading font-bold">
-              <span className={cameraShifting ? 'text-amber-400' : formOk ? 'text-emerald-400' : 'text-red-400'}>
-                {cameraShifting ? 'HOLD STILL' : phase}
-              </span>
-            </div>
-            {injuryWarningActive && !cameraShifting && (
-              <div
-                role="alert"
-                className="absolute top-24 left-4 right-4 rounded-xl border-2 border-red-500 bg-red-950/95 px-4 py-3 text-center shadow-lg shadow-red-950/60 animate-pulse"
-              >
-                <p className="text-red-300 font-heading font-extrabold text-sm">⚠️ Form breakdown — injury risk</p>
-                <p className="text-red-100 text-xs mt-1">{injuryWarningText}</p>
+        <div className="relative rounded-2xl overflow-hidden bg-black aspect-video border border-forest-800">
+          <video ref={videoRef} className="w-full h-full object-cover -scale-x-100" playsInline muted />
+          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full object-cover -scale-x-100" />
+          {status === 'running' && !complete && (
+            <>
+              <div className="absolute top-4 left-4 bg-forest-950/75 backdrop-blur-md rounded-2xl px-5 py-3 border border-white/5">
+                <div className="flex items-baseline gap-1.5">
+                  <span className="text-5xl font-heading font-extrabold text-coral-400 tabular-nums leading-none">
+                    {repCount}
+                  </span>
+                  <span className="text-sm text-slate-400">/ {targetReps} reps</span>
+                </div>
+                <p className="text-xs uppercase tracking-wide text-slate-400 mt-1.5">
+                  Set {currentSet}/{targetSets} · {config.label}
+                </p>
               </div>
-            )}
-            <div className="absolute bottom-4 left-4 right-4 text-center">
-              <span
-                className={`inline-block bg-forest-950/80 rounded-xl px-4 py-2 text-sm font-heading font-semibold ${
-                  cameraShifting ? 'text-amber-400' : formOk ? 'text-slate-100' : 'text-red-400'
+              <div
+                className={`absolute top-4 right-4 flex items-center gap-1.5 backdrop-blur-md rounded-full px-3 py-1.5 text-xs font-heading font-bold border ${
+                  cameraShifting
+                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+                    : formOk
+                      ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
+                      : 'bg-red-500/10 border-red-500/40 text-red-400'
                 }`}
               >
-                {cameraShifting ? 'Camera shifting, please hold still' : resting ? `Resting… ${restRemaining}s` : cue}
-              </span>
-            </div>
-          </>
-        )}
-        {complete && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6 py-8 overflow-y-auto">
-            <span className="text-3xl">🎉</span>
-            <p className="font-heading font-bold text-lg">Workout complete!</p>
-            <p className="text-sm text-slate-400">Nice work - logged to your history.</p>
-
-            {sessionStats && (
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs text-slate-300">
-                <span>⏱ {sessionStats.durationLabel}</span>
-                {sessionStats.formAccuracyPct != null && <span>🎯 {sessionStats.formAccuracyPct}% form</span>}
-                <span className="text-coral-400 font-semibold">
-                  🔥{' '}
-                  {sessionStats.caloriesBurned != null
-                    ? `~${sessionStats.caloriesBurned} kcal (est.)`
-                    : 'Set your weight in Profile for a calorie estimate'}
+                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                {cameraShifting ? 'HOLD STILL' : phase}
+              </div>
+              {injuryWarningActive && !cameraShifting && (
+                <div
+                  role="alert"
+                  className="absolute top-24 left-4 right-4 rounded-2xl border-2 border-red-500 bg-red-950/95 px-4 py-3 text-center shadow-lg shadow-red-950/60 motion-safe:animate-pulse"
+                >
+                  <p className="text-red-300 font-heading font-extrabold text-sm flex items-center justify-center gap-1.5">
+                    <WarningTriangleIcon className="w-4 h-4" />
+                    Form breakdown — injury risk
+                  </p>
+                  <p className="text-red-100 text-xs mt-1">{injuryWarningText}</p>
+                </div>
+              )}
+              <div className="absolute bottom-4 left-4 right-4 text-center">
+                <span
+                  className={`inline-block bg-forest-950/75 backdrop-blur-md rounded-2xl px-4 py-2.5 text-sm font-heading font-semibold border border-white/5 ${
+                    cameraShifting ? 'text-amber-400' : formOk ? 'text-slate-100' : 'text-red-400'
+                  }`}
+                >
+                  {cameraShifting ? 'Camera shifting, please hold still' : resting ? `Resting… ${restRemaining}s` : cue}
                 </span>
               </div>
-            )}
+            </>
+          )}
+          {complete && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6 py-8 overflow-y-auto">
+              <PartyIcon className="w-8 h-8 text-coral-400" />
+              <p className="font-heading font-bold text-lg">Workout complete!</p>
+              <p className="text-sm text-slate-400">Nice work - logged to your history.</p>
 
-            {formFeedback === null ? (
-              <p className="text-xs text-slate-500 flex items-center gap-2">
-                <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
-                Checking your form…
-              </p>
-            ) : formFeedback.length === 0 ? (
-              <p className="text-xs text-slate-500 max-w-xs">
-                No completed reps to grade this session - a rep only counts once you go all the way through
-                and back. Stay fully in frame and finish the full range of motion to get form feedback.
-              </p>
-            ) : (
-              <div className="w-full max-w-sm space-y-2 text-left">
-                {formFeedback.map((f) => (
-                    <div
-                      key={f.exerciseName}
-                      className="rounded-lg border border-forest-700 bg-forest-900/70 p-3 space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-heading font-semibold">{f.exerciseName}</p>
-                        <div className="flex gap-2 text-[11px] font-semibold shrink-0">
-                          <span className="text-emerald-400">{f.good_depth_pct}% depth</span>
-                          <span className="text-sky-400">{f.good_form_pct}% form</span>
-                        </div>
-                      </div>
-                      {f.injury_risk_flagged ? (
-                        <div className="rounded-lg border-2 border-red-500 bg-red-950/70 px-2.5 py-2">
-                          <p className="text-red-300 font-heading font-bold text-xs">⚠️ Injury risk flagged</p>
-                          <p className="text-red-100 text-xs mt-0.5">{f.injury_risk_note}</p>
-                        </div>
-                      ) : (
-                        f.injury_risk_note && <p className="text-xs text-emerald-400/80">✅ {f.injury_risk_note}</p>
-                      )}
-                      {f.focus_areas.length > 0 && (
-                        <ul className="text-xs text-slate-300 space-y-0.5 list-disc list-inside">
-                          {f.focus_areas.map((area, i) => (
-                            <li key={i}>{area}</li>
-                          ))}
-                        </ul>
-                      )}
-                      <p className="text-xs text-slate-400">📈 {f.trend}</p>
-                      <p className="text-xs text-coral-300">🧭 {f.overall_insight}</p>
-                    </div>
-                  ))}
+              {sessionStats && (
+                <div className="flex flex-wrap justify-center gap-x-5 gap-y-1.5 text-xs text-slate-300">
+                  <span className="flex items-center gap-1.5">
+                    <ClockIcon className="w-3.5 h-3.5 text-slate-400" />
+                    {sessionStats.durationLabel}
+                  </span>
+                  {sessionStats.formAccuracyPct != null && (
+                    <span className="flex items-center gap-1.5">
+                      <TargetIcon className="w-3.5 h-3.5 text-slate-400" />
+                      {sessionStats.formAccuracyPct}% form
+                    </span>
+                  )}
+                  <span className="flex items-center gap-1.5 text-coral-400 font-semibold">
+                    <FlameIcon className="w-3.5 h-3.5" />
+                    {sessionStats.caloriesBurned != null
+                      ? `~${sessionStats.caloriesBurned} kcal (est.)`
+                      : 'Set your weight in Profile for a calorie estimate'}
+                  </span>
                 </div>
-            )}
+              )}
 
-            <button
-              onClick={handleExportPdf}
-              disabled={exportingPdf}
-              className="mt-2 px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
-            >
-              {exportingPdf ? 'Generating PDF…' : 'Export as PDF'}
-            </button>
-            {exportError && <p className="text-xs text-red-400">{exportError}</p>}
-          </div>
-        )}
-        {paused && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6">
-            <span className="text-3xl">⏸️</span>
-            <p className="font-heading font-bold text-lg">Session paused</p>
-            <p className="text-sm text-slate-400">
-              {pausedDraftRef.current &&
-                (pausedDraftRef.current.usingPlan
-                  ? queue[pausedDraftRef.current.queueIndex]?.name
-                  : EXERCISE_REGISTRY[pausedDraftRef.current.manualExercise]?.label) + ' - '}
-              Set {pausedDraftRef.current?.currentSet}, {pausedDraftRef.current?.repCount} rep
-              {pausedDraftRef.current?.repCount === 1 ? '' : 's'} so far
-            </p>
-            <div className="flex gap-3 mt-1">
+              {formFeedback === null ? (
+                <p className="text-xs text-slate-500 flex items-center gap-2">
+                  <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
+                  Checking your form…
+                </p>
+              ) : formFeedback.length === 0 ? (
+                <p className="text-xs text-slate-500 max-w-xs">
+                  No completed reps to grade this session - a rep only counts once you go all the way through
+                  and back. Stay fully in frame and finish the full range of motion to get form feedback.
+                </p>
+              ) : (
+                <div className="w-full max-w-sm space-y-2 text-left">
+                  {formFeedback.map((f) => (
+                      <div
+                        key={f.exerciseName}
+                        className="rounded-lg border border-forest-700 bg-forest-900/70 p-3 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-heading font-semibold">{f.exerciseName}</p>
+                          <div className="flex gap-2 text-[11px] font-semibold shrink-0">
+                            <span className="text-emerald-400">{f.good_depth_pct}% depth</span>
+                            <span className="text-sky-400">{f.good_form_pct}% form</span>
+                          </div>
+                        </div>
+                        {f.injury_risk_flagged ? (
+                          <div className="rounded-lg border-2 border-red-500 bg-red-950/70 px-2.5 py-2">
+                            <p className="text-red-300 font-heading font-bold text-xs flex items-center gap-1.5">
+                              <WarningTriangleIcon className="w-3.5 h-3.5" />
+                              Injury risk flagged
+                            </p>
+                            <p className="text-red-100 text-xs mt-0.5">{f.injury_risk_note}</p>
+                          </div>
+                        ) : (
+                          f.injury_risk_note && (
+                            <p className="text-xs text-emerald-400/80 flex items-center gap-1.5">
+                              <CheckCircleIcon className="w-3.5 h-3.5" />
+                              {f.injury_risk_note}
+                            </p>
+                          )
+                        )}
+                        {f.focus_areas.length > 0 && (
+                          <ul className="text-xs text-slate-300 space-y-0.5 list-disc list-inside">
+                            {f.focus_areas.map((area, i) => (
+                              <li key={i}>{area}</li>
+                            ))}
+                          </ul>
+                        )}
+                        <p className="text-xs text-slate-400 flex items-center gap-1.5">
+                          <TrendUpIcon className="w-3.5 h-3.5" />
+                          {f.trend}
+                        </p>
+                        <p className="text-xs text-coral-300 flex items-center gap-1.5">
+                          <CompassIcon className="w-3.5 h-3.5" />
+                          {f.overall_insight}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+              )}
+
               <button
-                onClick={() => start(pausedDraftRef.current)}
-                disabled={status === 'loading'}
-                className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+                onClick={handleExportPdf}
+                disabled={exportingPdf}
+                className="mt-2 px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
               >
-                {status === 'loading' ? 'Resuming…' : 'Resume session'}
+                {exportingPdf ? 'Generating PDF…' : 'Export as PDF'}
               </button>
-              <button
-                onClick={discardDraft}
-                disabled={status === 'loading'}
-                className="px-4 py-2 rounded-lg border border-forest-700 hover:border-red-400 disabled:opacity-50 text-sm font-heading font-semibold text-slate-300 transition-colors"
-              >
-                Discard
-              </button>
+              {exportError && <p className="text-xs text-red-400">{exportError}</p>}
             </div>
+          )}
+          {paused && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-forest-950/90 text-center px-6">
+              <PauseCircleIcon className="w-8 h-8 text-coral-400" />
+              <p className="font-heading font-bold text-lg">Session paused</p>
+              <p className="text-sm text-slate-400">
+                {pausedDraftRef.current &&
+                  (pausedDraftRef.current.usingPlan
+                    ? queue[pausedDraftRef.current.queueIndex]?.name
+                    : EXERCISE_REGISTRY[pausedDraftRef.current.manualExercise]?.label) + ' - '}
+                Set {pausedDraftRef.current?.currentSet}, {pausedDraftRef.current?.repCount} rep
+                {pausedDraftRef.current?.repCount === 1 ? '' : 's'} so far
+              </p>
+              <div className="flex gap-3 mt-1">
+                <button
+                  onClick={() => start(pausedDraftRef.current)}
+                  disabled={status === 'loading'}
+                  className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+                >
+                  {status === 'loading' ? 'Resuming…' : 'Resume session'}
+                </button>
+                <button
+                  onClick={discardDraft}
+                  disabled={status === 'loading'}
+                  className="px-4 py-2 rounded-lg border border-forest-700 hover:border-red-400 disabled:opacity-50 text-sm font-heading font-semibold text-slate-300 transition-colors"
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          )}
+          {status !== 'running' && !complete && !paused && (
+            <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm px-6 text-center">
+              {status === 'loading' ? 'Loading pose model…' : 'Camera off'}
+            </div>
+          )}
+        </div>
+
+        {!paused && (
+          <div className="flex justify-center items-center gap-3">
+            {status === 'running' ? (
+              <button
+                onClick={finalizeSession}
+                className="px-6 py-2.5 rounded-xl bg-forest-800 hover:bg-forest-700 text-sm font-heading font-semibold transition-colors"
+              >
+                Stop session
+              </button>
+            ) : (
+              <button
+                onClick={() => start()}
+                disabled={status === 'loading'}
+                className="px-6 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold transition-colors"
+              >
+                {status === 'loading' ? 'Starting…' : complete ? 'Start again' : 'Start live session'}
+              </button>
+            )}
+            <button
+              onClick={toggleVoice}
+              aria-label={voiceEnabled ? 'Mute voice cues' : 'Unmute voice cues'}
+              className="w-10 h-10 rounded-xl border border-forest-700 hover:border-coral-400 flex items-center justify-center text-slate-300 transition-colors"
+            >
+              {voiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
+            </button>
           </div>
         )}
-        {status !== 'running' && !complete && !paused && (
-          <div className="absolute inset-0 flex items-center justify-center text-slate-500 text-sm px-6 text-center">
-            {status === 'loading' ? 'Loading pose model…' : 'Camera off'}
-          </div>
-        )}
+        {error && <p className="text-sm text-red-400 mt-1 text-center">{error}</p>}
       </div>
 
-      {!paused && (
-        <div className="flex justify-center items-center gap-3">
-          {status === 'running' ? (
-            <button
-              onClick={finalizeSession}
-              className="px-5 py-2 rounded-lg bg-forest-800 hover:bg-forest-700 text-sm font-heading font-semibold"
-            >
-              Stop session
-            </button>
-          ) : (
-            <button
-              onClick={() => start()}
-              disabled={status === 'loading'}
-              className="px-5 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
-            >
-              {status === 'loading' ? 'Starting…' : complete ? 'Start again' : 'Start live session'}
-            </button>
-          )}
-          <button
-            onClick={toggleVoice}
-            aria-label={voiceEnabled ? 'Mute voice cues' : 'Unmute voice cues'}
-            className="w-9 h-9 rounded-lg border border-forest-700 hover:border-coral-400 flex items-center justify-center text-slate-300 transition-colors"
-          >
-            {voiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
-          </button>
-        </div>
-      )}
-      {error && <p className="text-sm text-red-400 mt-1 text-center">{error}</p>}
-      <p className="text-xs text-slate-500 text-center">
-        Pose tracking runs entirely in your browser - video never leaves your device.
-        {!usingPlan && ' Launch from a plan’s "Start today’s session" to auto-log completed sets.'}
-      </p>
+      {/* Setup sidebar - exercise selection, secondary to the video on both
+          desktop (narrower column) and mobile (renders after the video in
+          DOM order, since xl:order only applies at the xl breakpoint). */}
+      <div className="xl:col-span-4 xl:order-2 space-y-4">
+        {/* usingPlan always shows the queue (each pill's own disabled state
+            already handles the "running" case); manual mode only ever had a
+            picker to show before starting/while not paused - render nothing
+            here instead of an empty card shell once that picker's own
+            condition would hide it anyway. */}
+        {(usingPlan || (status !== 'running' && !paused)) && (
+          <div className="card p-5">
+            <h2 className="font-heading font-semibold mb-3">
+              {usingPlan ? "Today's exercises" : 'Exercise'}
+            </h2>
+            {usingPlan && (
+              <div className="flex flex-wrap gap-2">
+                {queue.map((item, i) => (
+                  <button
+                    key={item.planExerciseId}
+                    onClick={() => {
+                      sessionRef.current.queueIndex = i
+                      sessionRef.current.currentSet = 1
+                      sessionRef.current.repCount = 0
+                      sessionRef.current.restUntil = null
+                      setQueueIndexState(i)
+                      setCurrentSetState(1)
+                      setRepCountState(0)
+                      setResting(false)
+                      resetRepState()
+                    }}
+                    disabled={status === 'running'}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+                      i === queueIndex ? 'bg-coral-500' : 'bg-forest-900 text-slate-400'
+                    }`}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {!usingPlan && status !== 'running' && !paused && (
+              <ExercisePicker value={manualExercise} onChange={setManualExercise} />
+            )}
+          </div>
+        )}
+        <p className="text-xs text-slate-500">
+          Pose tracking runs entirely in your browser - video never leaves your device.
+          {!usingPlan && ' Launch from a plan’s "Start today’s session" to auto-log completed sets.'}
+        </p>
+      </div>
     </div>
   )
 }
@@ -1908,7 +2051,7 @@ function SquatVideoUpload({ userId }) {
   }
 
   return (
-    <div className="card p-6">
+    <div className="card p-6 max-w-2xl">
       <h2 className="font-heading font-semibold mb-1">Squat form check</h2>
       <p className="text-xs text-slate-500 mb-4">
         Upload a video of a squat set, filmed from the side or a slight angle with your full body in
@@ -1959,13 +2102,34 @@ function SquatVideoUpload({ userId }) {
                   <tr key={r.rep_index} className="border-b border-forest-800">
                     <td className="py-1">{r.rep_index}</td>
                     <td className="py-1">
-                      {r.depth_ok ? '✅' : '⚠️'} {r.min_knee_angle}°
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.depth_ok ? (
+                          <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <WarningTriangleIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        )}
+                        {r.min_knee_angle}°
+                      </span>
                     </td>
                     <td className="py-1">
-                      {r.knee_tracking_ok ? '✅' : '⚠️'} {r.knee_ankle_offset_pct}%
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.knee_tracking_ok ? (
+                          <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <WarningTriangleIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        )}
+                        {r.knee_ankle_offset_pct}%
+                      </span>
                     </td>
                     <td className="py-1">
-                      {r.back_angle_ok ? '✅' : '⚠️'} {r.back_angle_deg}°
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.back_angle_ok ? (
+                          <CheckCircleIcon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        ) : (
+                          <WarningTriangleIcon className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        )}
+                        {r.back_angle_deg}°
+                      </span>
                     </td>
                   </tr>
                 ))}
