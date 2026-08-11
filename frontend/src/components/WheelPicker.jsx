@@ -5,6 +5,11 @@ import { useEffect, useRef } from 'react'
 // everything else dims. No new dependency - pure scroll-snap CSS + a scroll
 // listener that rounds the settled scroll position back to the nearest item.
 const ITEM_SIZE = 44
+// Fixed height of the vertical track (matches the `h-[198px]` className
+// below) - needed as a real number, not just a Tailwind class, because the
+// centering padding must be computed in JS (see verticalCenterPad's comment
+// further down for why).
+const VERTICAL_TRACK_SIZE = 198
 
 export default function WheelPicker({ values, value, onChange, orientation = 'vertical', formatValue, trackClassName = '' }) {
   const containerRef = useRef(null)
@@ -44,7 +49,21 @@ export default function WheelPicker({ values, value, onChange, orientation = 've
     }, 90)
   }
 
-  const centerPad = `calc(50% - ${ITEM_SIZE / 2}px)`
+  // CSS resolves percentage `padding-top`/`padding-bottom` against the
+  // containing block's WIDTH, never its height (per spec - true even in a
+  // vertical flex/scroll layout). `calc(50% - Npx)` on paddingTop therefore
+  // computed against this track's 112px width (~34px), not its 198px height
+  // (~77px) - a real bug that silently centered the scroll padding ~43px
+  // short, landing the true center of the visible window one full item
+  // above where the selection bracket (a plain absolute box, correctly
+  // centered via `top: 50%` of the track's actual height) was drawn. Fixed
+  // by computing the vertical padding as a real pixel number from the
+  // track's known fixed height instead of a CSS percentage. The horizontal
+  // orientation is unaffected - its `w-full` track has no fixed height to
+  // compute against, and left/right percentage padding correctly resolves
+  // against width, which is exactly the dimension it needs here.
+  const verticalCenterPad = `${(VERTICAL_TRACK_SIZE - ITEM_SIZE) / 2}px`
+  const horizontalCenterPad = `calc(50% - ${ITEM_SIZE / 2}px)`
 
   return (
     <div className={`relative ${isVertical ? 'h-[198px] w-28' : 'h-14 w-full'}`}>
@@ -62,10 +81,10 @@ export default function WheelPicker({ values, value, onChange, orientation = 've
         className={`no-scrollbar h-full w-full ${isVertical ? 'overflow-y-scroll overflow-x-hidden' : 'overflow-x-scroll overflow-y-hidden flex'} ${trackClassName}`}
         style={{
           scrollSnapType: isVertical ? 'y mandatory' : 'x mandatory',
-          paddingTop: isVertical ? centerPad : 0,
-          paddingBottom: isVertical ? centerPad : 0,
-          paddingLeft: isVertical ? 0 : centerPad,
-          paddingRight: isVertical ? 0 : centerPad,
+          paddingTop: isVertical ? verticalCenterPad : 0,
+          paddingBottom: isVertical ? verticalCenterPad : 0,
+          paddingLeft: isVertical ? 0 : horizontalCenterPad,
+          paddingRight: isVertical ? 0 : horizontalCenterPad,
         }}
       >
         {values.map((v) => (
