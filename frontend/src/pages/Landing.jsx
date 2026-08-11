@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import heroAthlete from '../assets/hero-athlete.jpg'
 import AlignWordmark from '../components/AlignWordmark.jsx'
 import OrbitalRing from '../components/OrbitalRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
@@ -173,24 +174,25 @@ export default function Landing() {
             </Link>
           </div>
 
-          {/* Athlete visual - drop a real photo at src/assets/hero-athlete.jpg
-              (or any path) and replace the placeholder <div> below with an
-              <img src={...} alt="" className="absolute inset-0 w-full h-full
-              object-cover" /> - left as a duotone placeholder here since no
-              real photo asset exists in this project yet. Uses only existing
-              theme tokens (forest-800/900/950), no new color. */}
+          {/* Athlete visual - real photo (src/assets/hero-athlete.jpg),
+              object-cover with a right/top-biased object-position so the
+              frame's portrait 4:5 crop keeps her face and shoulders in view
+              rather than centering on the torso, and stays clear of the
+              source image's own left edge. The orbital ring and rounded
+              frame are unchanged from the placeholder version. */}
           <div
             className="hero-fade-in relative flex items-center justify-center"
             style={{ '--hero-delay': 5 }}
           >
             <div className="relative w-full max-w-md aspect-[4/5]">
               <OrbitalRing />
-              <div className="absolute inset-6 rounded-[2rem] overflow-hidden bg-gradient-to-b from-forest-800 via-forest-900 to-forest-950 border border-forest-700 flex items-center justify-center text-center px-8">
-                <p className="text-xs uppercase tracking-widest text-slate-600 leading-relaxed">
-                  Athlete photo goes here
-                  <br />
-                  <span className="text-slate-700">src/assets/hero-athlete.jpg</span>
-                </p>
+              <div className="absolute inset-6 rounded-[2rem] overflow-hidden border border-forest-700">
+                <img
+                  src={heroAthlete}
+                  alt=""
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{ objectPosition: '65% 15%' }}
+                />
               </div>
             </div>
           </div>

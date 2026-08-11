@@ -1,27 +1,36 @@
 @import "tailwindcss";
 
 @theme {
-  /* "Editorial luxury dark" pass - exact page/surface backgrounds requested
-     (#0c0c0e / #121214), 800/700/600 shifted down by the same delta so the
-     existing contrast steps between them are preserved, just anchored to
-     this darker baseline instead of re-guessed from scratch. Token names
+  /* "Luxury navy performance" re-theme - exact hexes specified for this
+     pass. The token *names* (forest-950=page bg ... forest-600=lightest)
+     stay the same 5-slot ladder, but forest-700 is deliberately assigned the
+     given "Borders" hex rather than the 4th surface tone in strict order:
+     forest-700 is the app's dominant real border token (87 uses of
+     `border-forest-700` vs. only 4 as a background, confirmed by grepping
+     every component before touching this file), so putting the border-
+     intended hex there is what actually produces "clearly perceptible"
+     borders everywhere `border-forest-700` is already used - assigning it
+     to the literal 4th surface slot instead would make every existing card/
+     input border nearly invisible against the new navy surfaces, the exact
+     "cards indistinguishable from the background" problem this pass exists
+     to fix. forest-600 (lightest step) is a derived continuation of the
+     same ramp for the smaller number of hover/emphasis borders. Token names
      kept as forest-N / coral-N rather than renamed throughout every
      component that references them (a much larger, riskier mechanical
      rename) - a real naming/color mismatch exists here, flagged honestly
      rather than hidden, not something to silently leave forever. */
-  --color-forest-950: #0c0c0e;
-  --color-forest-900: #121214;
-  --color-forest-800: #1c1c1f;
-  --color-forest-700: #2d2d31;
-  --color-forest-600: #404045;
+  --color-forest-950: #0b1220; /* page background */
+  --color-forest-900: #111a2b; /* primary surface / cards */
+  --color-forest-800: #162238; /* elevated surface */
+  --color-forest-700: #263650; /* borders - see note above */
+  --color-forest-600: #33456b; /* lighter/hover-emphasis border step */
 
-  /* Electric lime accent, exact requested hex (#ccff00) - 400/600 are
-     lighter/darker steps derived the same way the previous lime shades
-     related to each other (400 lighter+less saturated, 600 darker+more
-     saturated), not arbitrary. */
-  --color-coral-400: #d9ff4d;
-  --color-coral-500: #ccff00;
-  --color-coral-600: #a3cc00;
+  /* Restrained lime accent, exact requested hex (#C7F000, dimmer/less
+     saturated than the old #ccff00) - 400/600 are lighter/darker steps
+     derived the same way the previous lime shades related to each other. */
+  --color-coral-400: #d6f23d;
+  --color-coral-500: #c7f000;
+  --color-coral-600: #9fc000;
 
   --font-heading: "Sora", sans-serif;
   --font-body: "Inter", sans-serif;
@@ -41,16 +50,16 @@ body {
 .bg-coral-400,
 .bg-coral-500,
 .bg-coral-600 {
-  color: #0a0a0d;
+  color: #0b1220;
 }
 
 @keyframes pulse-dot {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(204, 255, 0, 0.6);
+    box-shadow: 0 0 0 0 rgba(199, 240, 0, 0.5);
   }
   70% {
-    box-shadow: 0 0 0 8px rgba(204, 255, 0, 0);
+    box-shadow: 0 0 0 8px rgba(199, 240, 0, 0);
   }
 }
 
@@ -59,8 +68,8 @@ body {
 }
 
 .card {
-  background: rgba(18, 18, 20, 0.6);
-  border: 1px solid rgba(45, 45, 49, 0.9);
+  background: rgba(17, 26, 43, 0.6);
+  border: 1px solid rgba(38, 54, 80, 0.9);
   border-radius: 0.75rem;
   backdrop-filter: blur(6px);
   transition:
@@ -70,7 +79,7 @@ body {
 
 .card:hover {
   transform: translateY(-2px);
-  border-color: rgba(204, 255, 0, 0.5);
+  border-color: rgba(199, 240, 0, 0.4);
 }
 
 /* ==========================================================================
@@ -119,7 +128,7 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 9999px;
-  border: 1px solid rgba(204, 255, 0, 0.16);
+  border: 1px solid rgba(199, 240, 0, 0.16);
 }
 
 .orbital-ring-spin {
@@ -137,7 +146,7 @@ body {
   margin-left: -3.5px;
   border-radius: 9999px;
   background: var(--color-coral-500);
-  box-shadow: 0 0 10px 2px rgba(204, 255, 0, 0.55);
+  box-shadow: 0 0 10px 2px rgba(199, 240, 0, 0.45);
   animation: orbital-pulse 3.2s ease-in-out infinite;
 }
 
@@ -240,7 +249,7 @@ body {
   position: absolute;
   inset: -18px;
   border-radius: inherit;
-  background: radial-gradient(closest-side, rgba(204, 255, 0, 0.28), transparent 80%);
+  background: radial-gradient(closest-side, rgba(199, 240, 0, 0.22), transparent 80%);
   filter: blur(18px);
   z-index: -1;
   animation: border-beam-bloom 3.5s ease-in-out infinite;
@@ -332,9 +341,16 @@ body {
   fill: url(#coachAiHeadGrad);
 }
 
+/* Silhouette + connective network + ambient particles all live in a cool
+   steel blue-gray now - only the travelling signal and the node points
+   themselves (the actual "neural signal") keep a restrained, dimmed lime.
+   Per the navy re-theme: this artwork should read as "precision performance
+   intelligence" sitting inside the navy environment, not a neon hologram -
+   geometry/paths/node positions are completely untouched, only these color
+   values changed. */
 .coach-ai-glow {
   fill: none;
-  stroke: rgba(204, 255, 0, 0.5);
+  stroke: rgba(154, 174, 199, 0.2);
   stroke-width: 5;
   stroke-linecap: round;
   filter: blur(6px);
@@ -343,39 +359,54 @@ body {
 
 .coach-ai-front {
   fill: none;
-  stroke: rgba(204, 255, 0, 0.7);
+  stroke: rgba(184, 199, 219, 0.55);
   stroke-width: 1.1;
   stroke-linecap: round;
 }
 
 .coach-ai-back {
   fill: none;
-  stroke: rgba(204, 255, 0, 0.22);
+  stroke: rgba(154, 174, 199, 0.2);
   stroke-width: 0.9;
   stroke-linecap: round;
 }
 
 .coach-ai-ear {
   fill: none;
-  stroke: rgba(204, 255, 0, 0.4);
+  stroke: rgba(154, 174, 199, 0.3);
   stroke-width: 0.8;
 }
 
 .coach-ai-link path {
   fill: none;
-  stroke: rgba(204, 255, 0, 0.35);
+  stroke: rgba(154, 174, 199, 0.25);
   stroke-width: 0.5;
 }
 
 /* Higher specificity than ".coach-ai-link path" on purpose - the travelling
    signal needs its own stroke/animation, not the generic dim connection
-   line style every other path in that group gets. */
+   line style every other path in that group gets. This is the one place in
+   the artwork that stays lime - "a restrained lime neural signal," not the
+   whole network. */
 .coach-ai-link .coach-ai-signal {
   stroke: var(--color-coral-500);
-  stroke-width: 1;
-  stroke-dasharray: 5 42;
-  opacity: 0.9;
+  stroke-width: 0.9;
+  stroke-dasharray: 3 24;
+  opacity: 0.6;
   animation: coach-ai-signal-travel 5s linear infinite;
+}
+
+/* Atmospheric internal glow behind the network, distinct from .coach-ai-glow
+   (which traces the outer front contour) - a soft, heavily-blurred, very
+   low-opacity wash so the skull region reads as faintly luminous from
+   within rather than flat line art on a dark fill. Kept extremely
+   restrained per the "premium, not flashy" direction - barely perceptible
+   at a glance. */
+.coach-ai-brain-glow {
+  fill: rgba(199, 240, 0, 0.045);
+  filter: blur(18px);
+  animation: coach-ai-glow-breathe 7s ease-in-out infinite;
+  animation-delay: 0.4s;
 }
 
 /* Each node/particle is a <g opacity="base"><circle class="...-dot" /></g> -
@@ -384,7 +415,7 @@ body {
    of replacing it, so the pulse/drift never flattens the hand-tuned
    brightness hierarchy between nodes. */
 .coach-ai-node-dot {
-  fill: rgba(204, 255, 0, 0.9);
+  fill: rgba(199, 240, 0, 0.55);
   transform-box: fill-box;
   transform-origin: center;
   animation: coach-ai-node-pulse 4.5s ease-in-out infinite;
@@ -392,11 +423,20 @@ body {
 }
 
 .coach-ai-node-hero {
-  filter: drop-shadow(0 0 3px rgba(204, 255, 0, 0.9));
+  filter: drop-shadow(0 0 3px rgba(199, 240, 0, 0.55));
 }
 
+/* Secondary luminosity tier - brighter/larger than the many dim background
+   nodes but deliberately dimmer than the one true hero, so the network reads
+   as layered brightness rather than "one bright dot, everything else flat." */
+.coach-ai-node-bright {
+  filter: drop-shadow(0 0 1.5px rgba(199, 240, 0, 0.35));
+}
+
+/* Ambient particle field - steel blue-gray, not lime, since these are
+   background atmosphere rather than the neural "signal" itself. */
 .coach-ai-particle-dot {
-  fill: rgba(204, 255, 0, 0.6);
+  fill: rgba(154, 174, 199, 0.4);
   transform-box: fill-box;
   transform-origin: center;
   animation: coach-ai-particle-drift 9s ease-in-out infinite;
@@ -427,7 +467,7 @@ body {
 
 @keyframes coach-ai-signal-travel {
   0% {
-    stroke-dashoffset: 47;
+    stroke-dashoffset: 27;
   }
   55% {
     stroke-dashoffset: 0;
@@ -453,6 +493,7 @@ body {
   .coach-ai-glow,
   .coach-ai-node-dot,
   .coach-ai-particle-dot,
+  .coach-ai-brain-glow,
   .coach-ai-link .coach-ai-signal {
     animation: none;
   }

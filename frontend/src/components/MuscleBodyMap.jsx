@@ -11,7 +11,7 @@ import Model from 'react-body-highlighter'
 // library's own default blue) - `bodyColor` also swaps its neutral gray
 // default for this app's dim charcoal outline tone, so it fits the rest of
 // the dark theme instead of looking like an unrelated widget dropped in.
-const MATCHED_COLOR = '#ccff00' // coral-500
+const MATCHED_COLOR = '#c7f000' // coral-500
 const BODY_COLOR = '#323238' // forest-700
 
 // 'shoulders' is a synthetic zone from utils/muscleZones.js, not one of the
