@@ -22,8 +22,8 @@ const macroDonutOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#17171b',
-      borderColor: 'rgba(198, 255, 61, 0.35)',
+      backgroundColor: '#121214',
+      borderColor: 'rgba(204, 255, 0, 0.35)',
       borderWidth: 1,
       titleColor: '#e2e8f0',
       bodyColor: '#e2e8f0',
@@ -676,7 +676,7 @@ export default function MealPhoto() {
                         {
                           data: [todaysTotals.protein, todaysTotals.carbs, todaysTotals.fat],
                           backgroundColor: [PROTEIN_COLOR, CARBS_COLOR, FAT_COLOR],
-                          borderColor: '#0c0c0f',
+                          borderColor: '#0c0c0e',
                           borderWidth: 2,
                         },
                       ],
