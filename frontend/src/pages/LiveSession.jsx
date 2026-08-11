@@ -623,30 +623,20 @@ function tabClass(active) {
 // Categorized/searchable exercise picker (Request 1, #3) - replaces the old
 // static <select> of 3 hardcoded exercises. Purely reads EXERCISE_REGISTRY,
 // so it never needs a change when a new registry entry is added.
+// A free-text search box implied the user could type ANY exercise name,
+// but the registry only ever has a small fixed set of pose-trackable
+// exercises (8 total) - typing something real but unsupported (e.g.
+// "burpee") dead-ended on "No exercises match" with no indication why.
+// Browse-only (category pills + a scrollable list) makes the actual
+// constraint obvious: pick from what's here, there's nothing to type.
 function ExercisePicker({ value, onChange }) {
-  const [search, setSearch] = useState('')
   const [category, setCategory] = useState('All')
   const entries = useMemo(() => Object.entries(EXERCISE_REGISTRY), [])
-  const filtered = entries.filter(([, config]) => {
-    if (category !== 'All' && config.category !== category) return false
-    const q = search.trim().toLowerCase()
-    if (!q) return true
-    return config.label.toLowerCase().includes(q) || config.keywords.some((kw) => kw.includes(q))
-  })
+  const filtered = entries.filter(([, config]) => category === 'All' || config.category === category)
 
   return (
     <div className="space-y-2">
-      <label className="block text-xs text-slate-500" htmlFor="exercise-search">
-        Exercise
-      </label>
-      <input
-        id="exercise-search"
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search exercises… (e.g. bench, row, squat)"
-        className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
-      />
+      <label className="block text-xs text-slate-500">Exercise</label>
       <div className="flex flex-wrap gap-1.5">
         {['All', ...CATEGORIES].map((c) => (
           <button
@@ -669,7 +659,7 @@ function ExercisePicker({ value, onChange }) {
           category moved to its own dimmer line underneath instead of
           crammed inline - reads as a clean tile grid instead of a jumble of
           differently-sized buttons. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-1">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
         {filtered.length === 0 ? (
           <p className="text-xs text-slate-500 py-1 col-span-full">No exercises match.</p>
         ) : (
