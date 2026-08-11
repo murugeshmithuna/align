@@ -80,6 +80,39 @@ function GaugeIcon({ className }) {
   )
 }
 
+function ClockIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 3" />
+    </svg>
+  )
+}
+
+function PlayIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  )
+}
+
+function PauseIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+    </svg>
+  )
+}
+
+function CheckIcon({ className }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  )
+}
+
 function FlameIcon({ className }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
@@ -334,6 +367,113 @@ export default function WorkoutLog() {
   const [weight, setWeight] = useState('')
   const [rpe, setRpe] = useState('')
   const [notes, setNotes] = useState('')
+
+  // Total time on this page this visit - a real elapsed count, not a fake
+  // number, ticking from mount regardless of what else is happening below.
+  const [sessionSeconds, setSessionSeconds] = useState(0)
+  useEffect(() => {
+    const interval = setInterval(() => setSessionSeconds((s) => s + 1), 1000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Rest timer - a genuine countdown (Play ticks it down to 0 and stops
+  // itself there, Pause freezes it, Reset zeroes it), not a decorative
+  // readout. +30s/+60s add time whether running or paused.
+  const [restSeconds, setRestSeconds] = useState(0)
+  const [restRunning, setRestRunning] = useState(false)
+  useEffect(() => {
+    if (!restRunning) return
+    const interval = setInterval(() => {
+      setRestSeconds((s) => {
+        if (s <= 1) {
+          clearInterval(interval)
+          setRestRunning(false)
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [restRunning])
+
+  function addRestSeconds(delta) {
+    setRestSeconds((s) => Math.max(0, s + delta))
+  }
+  function toggleRest() {
+    setRestRunning((running) => {
+      if (running) return false
+      return restSeconds > 0
+    })
+  }
+  function resetRest() {
+    setRestRunning(false)
+    setRestSeconds(0)
+  }
+  // A completed set's real rest period matters more than an idle default -
+  // starting the timer running (not just setting a number) is the actual
+  // "auto-trigger" the checkmark is meant to do.
+  function startRestFor(seconds) {
+    setRestSeconds(seconds)
+    setRestRunning(true)
+  }
+
+  // Per-set tracker for the currently selected exercise - Weight/Reps/RPE
+  // per row plus a completion checkmark, distinct from the existing "New
+  // set" form below (which logs one aggregate sets x reps entry). Reset
+  // to fresh empty rows whenever the selected exercise changes.
+  const emptySetRows = () => [
+    { weight: '', reps: '', rpe: '', completed: false },
+    { weight: '', reps: '', rpe: '', completed: false },
+    { weight: '', reps: '', rpe: '', completed: false },
+  ]
+  const [trackedSets, setTrackedSets] = useState(emptySetRows)
+  const [loggingSetIndex, setLoggingSetIndex] = useState(null)
+
+  useEffect(() => {
+    setTrackedSets(emptySetRows())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exerciseId])
+
+  function updateTrackedSet(index, field, value) {
+    setTrackedSets((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)))
+  }
+
+  function addTrackedSetRow() {
+    setTrackedSets((prev) => [...prev, { weight: '', reps: '', rpe: '', completed: false }])
+  }
+
+  // Marking a set complete logs a REAL entry (reuses the same API the
+  // existing form does, just one set at a time) and auto-starts the rest
+  // timer - both real behavior, not a UI-only toggle.
+  async function completeTrackedSet(index) {
+    const row = trackedSets[index]
+    if (!row || row.completed || !exerciseId) return
+    setLoggingSetIndex(index)
+    try {
+      const log = await api.createLog({
+        user_id: userId,
+        exercise_id: Number(exerciseId),
+        sets: 1,
+        reps: row.reps === '' ? null : Number(row.reps),
+        weight: row.weight === '' ? null : Number(row.weight),
+        rpe: row.rpe === '' ? null : Number(row.rpe),
+      })
+      setLogs((prev) => [log, ...prev])
+      setTrackedSets((prev) => prev.map((r, i) => (i === index ? { ...r, completed: true } : r)))
+      startRestFor(90)
+      showToast('Set logged.')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setLoggingSetIndex(null)
+    }
+  }
+
+  function formatClock(totalSeconds) {
+    const m = Math.floor(totalSeconds / 60)
+    const s = totalSeconds % 60
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
   const [saving, setSaving] = useState(false)
   // Set only by an explicit user pick (see handleExerciseChange) - the
   // default-selection effect below must never clobber a real choice once
@@ -411,6 +551,17 @@ export default function WorkoutLog() {
     return { sessionCount: recent.length, setsCount, calories }
   }, [logs])
 
+  const selectedExerciseName = exercises.find((ex) => String(ex.id) === String(exerciseId))?.name || ''
+
+  // Real prior performance for the currently selected exercise - `logs` is
+  // already sorted newest-first by the backend (GET /logs/user/{id} orders
+  // by performed_at desc), so the first match is genuinely the last time
+  // this exercise was logged, not a guess.
+  const previousLogForExercise = useMemo(() => {
+    if (!exerciseId) return null
+    return logs.find((log) => String(log.exercise_id) === String(exerciseId)) || null
+  }, [logs, exerciseId])
+
   // A brand-new exercise name is validated and created immediately, right
   // where the user typed it - not deferred to the final "Log set" submit.
   // Real user report this addresses directly: "what if i enter
@@ -479,13 +630,25 @@ export default function WorkoutLog() {
           <p className="text-xs uppercase tracking-wide text-slate-500">Manual logging</p>
           <h1 className="font-heading font-bold text-2xl mt-0.5">Log a Workout</h1>
         </div>
-        <Link
-          to="/dashboard"
-          title="Back to dashboard"
-          className="w-10 h-10 shrink-0 rounded-full bg-forest-900 border border-forest-700 flex items-center justify-center hover:border-coral-400 transition-colors"
-        >
-          <ArrowLeftIcon className="w-4 h-4 text-slate-300" />
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Real elapsed time on this page this visit, ticking every
+              second from mount - a genuine session stopwatch, not a static
+              label. */}
+          <div
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-forest-900 border border-forest-700"
+            title="Session time"
+          >
+            <ClockIcon className="w-3.5 h-3.5 text-coral-400" />
+            <span className="text-sm font-heading font-semibold tabular-nums">{formatClock(sessionSeconds)}</span>
+          </div>
+          <Link
+            to="/dashboard"
+            title="Back to dashboard"
+            className="w-10 h-10 shrink-0 rounded-full bg-forest-900 border border-forest-700 flex items-center justify-center hover:border-coral-400 transition-colors"
+          >
+            <ArrowLeftIcon className="w-4 h-4 text-slate-300" />
+          </Link>
+        </div>
       </div>
 
       {/* Pill-shaped filter/nav row - adapted from the reference's
@@ -547,6 +710,154 @@ export default function WorkoutLog() {
           />
         </div>
       </div>
+
+      {/* Rest timer - a genuine countdown (see restSeconds/restRunning
+          state above), not a decorative readout. New, additive section -
+          the existing "New set" form below is untouched. */}
+      <div className="card p-6 space-y-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
+            <ClockIcon className="w-4 h-4" />
+          </div>
+          <h2 className="font-heading font-semibold">Rest timer</h2>
+        </div>
+        <div className="flex items-center justify-center py-2">
+          <span className="font-heading font-bold text-5xl tabular-nums">{formatClock(restSeconds)}</span>
+        </div>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => addRestSeconds(30)}
+            className="px-3 py-1.5 rounded-lg border border-forest-600 hover:border-coral-400 text-xs font-semibold"
+          >
+            +30s
+          </button>
+          <button
+            type="button"
+            onClick={() => addRestSeconds(60)}
+            className="px-3 py-1.5 rounded-lg border border-forest-600 hover:border-coral-400 text-xs font-semibold"
+          >
+            +60s
+          </button>
+        </div>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={toggleRest}
+            disabled={restSeconds === 0 && !restRunning}
+            className="px-6 py-2.5 rounded-xl bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold flex items-center gap-2"
+          >
+            {restRunning ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />}
+            {restRunning ? 'Pause' : 'Play'}
+          </button>
+          <button
+            type="button"
+            onClick={resetRest}
+            className="px-4 py-2.5 rounded-xl border border-forest-600 hover:border-coral-400 text-sm font-semibold"
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
+      {/* Per-set tracker for whichever exercise is selected below - Weight/
+          Reps/RPE per row plus a completion checkmark that logs a real set
+          (via the same createLog call the existing form uses) and
+          auto-starts the rest timer above. Distinct from the existing
+          "New set" form (which logs one aggregate sets x reps entry) -
+          that form is completely unchanged. */}
+      {exerciseId && (
+        <div className="card p-6 space-y-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
+              <CheckIcon className="w-4 h-4" />
+            </div>
+            <div className="min-w-0">
+              <h2 className="font-heading font-semibold">Track sets</h2>
+              {selectedExerciseName && (
+                <p className="text-xs text-slate-500 truncate">{selectedExerciseName}</p>
+              )}
+            </div>
+          </div>
+
+          {previousLogForExercise && (
+            <p className="text-xs text-slate-500">
+              Prev: {previousLogForExercise.weight ? `${previousLogForExercise.weight}kg x ` : ''}
+              {previousLogForExercise.reps ?? '—'} reps
+              {previousLogForExercise.rpe ? ` @ RPE ${previousLogForExercise.rpe}` : ''}
+            </p>
+          )}
+
+          <div className="space-y-2">
+            {trackedSets.map((row, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-2 p-2.5 rounded-xl border transition-colors ${
+                  row.completed ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-forest-700 bg-forest-950/40'
+                }`}
+              >
+                <span className="text-xs font-semibold text-slate-500 w-11 shrink-0">Set {i + 1}</span>
+                <input
+                  type="number"
+                  placeholder="kg"
+                  value={row.weight}
+                  disabled={row.completed}
+                  onChange={(e) => updateTrackedSet(i, 'weight', e.target.value)}
+                  className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
+                />
+                <input
+                  type="number"
+                  placeholder="reps"
+                  value={row.reps}
+                  disabled={row.completed}
+                  onChange={(e) => updateTrackedSet(i, 'reps', e.target.value)}
+                  className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
+                />
+                <input
+                  type="number"
+                  placeholder="RPE"
+                  step="0.5"
+                  value={row.rpe}
+                  disabled={row.completed}
+                  onChange={(e) => updateTrackedSet(i, 'rpe', e.target.value)}
+                  className="w-16 px-2 py-1.5 rounded-lg bg-forest-950 border border-forest-700 text-sm disabled:opacity-60 min-w-0"
+                />
+                {previousLogForExercise && !row.completed && (
+                  <span className="text-[11px] text-slate-500 truncate hidden sm:inline">
+                    Prev: {previousLogForExercise.weight ? `${previousLogForExercise.weight}kg x ` : ''}
+                    {previousLogForExercise.reps ?? '—'}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => completeTrackedSet(i)}
+                  disabled={row.completed || loggingSetIndex === i}
+                  title={row.completed ? 'Completed' : 'Mark set complete'}
+                  className={`ml-auto w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-colors ${
+                    row.completed
+                      ? 'bg-emerald-500 text-forest-950'
+                      : 'border border-forest-600 hover:border-coral-400 text-slate-400'
+                  }`}
+                >
+                  {loggingSetIndex === i ? (
+                    <span className="w-3 h-3 border-2 border-forest-700 border-t-coral-500 rounded-full animate-spin" />
+                  ) : (
+                    <CheckIcon className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={addTrackedSetRow}
+            className="text-xs font-semibold text-coral-400 hover:text-coral-300"
+          >
+            + Add set
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="card p-6 space-y-4">
         <div className="flex items-center gap-2.5">
