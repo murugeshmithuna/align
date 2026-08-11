@@ -11,25 +11,14 @@ import {
   Legend,
   Tooltip,
 } from 'chart.js'
-import { Line, Bar, Doughnut } from 'react-chartjs-2'
+import { Line, Bar } from 'react-chartjs-2'
 import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
 import CoachAIIndicator from '../components/CoachAIIndicator.jsx'
-import MacroBar from '../components/MacroBar.jsx'
-import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
+import { classifyMuscleGroup, MUSCLE_ZONE_LABELS } from '../utils/muscleZones.js'
 
-// Plain inline SVGs, matching this app's existing icon convention - replace
-// emoji glyphs in the redesigned JSX below with the same underlying
-// information (a labeled stat still says exactly what it said before).
-function FlameIcon({ className }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M12.963 2.286a.75.75 0 00-1.071-.136 9.742 9.742 0 00-3.539 6.176 7.547 7.547 0 01-1.705-1.715.75.75 0 00-1.152-.082A9 9 0 1015.68 4.534a7.46 7.46 0 01-2.717-2.248zM15.75 14.25a3.75 3.75 0 11-7.313-1.172c.628.465 1.35.81 2.133 1a5.99 5.99 0 011.925-3.545 3.75 3.75 0 013.255 3.717z" />
-    </svg>
-  )
-}
-
+// Plain inline SVG, matching this app's existing icon convention.
 function TrophyIcon({ className }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -147,24 +136,6 @@ function buildSparklineData(dailyData, colors) {
   }
 }
 
-// --- Weekly AI Recap dashboard (moved here from Calendar.jsx) ---
-// This card used to be plain AI prose; it's now a real chart dashboard
-// (calories-per-day bar chart, streak ring, workouts-this-week goal tile,
-// a 3-tile insights row) computed client-side from this user's own logs/
-// meals/check-ins, with the AI-generated recap text rendered underneath as
-// a compact tinted "Snapshot" box - matching the Weekly Nutrition Audit
-// card's tile+tinted-box language instead of a lone paragraph. Nothing
-// here is fabricated: every number traces back to a real logged row.
-
-const STEEL_DIM = 'rgba(107, 140, 174, 0.45)'
-// Reuses this app's one pre-existing semantic amber tone (already used for
-// "surplus"/"attention" states - calorieBadge above, MacroTile's fat
-// sparkline) for the week's single peak-day highlight, rather than adding
-// a new hue just for this chart.
-const PEAK_COLOR = '#f59e0b'
-const WEEKDAY_SHORT_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
-const WEEKDAY_LONG_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'long' })
-
 function dateKeyFromLocalDate(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -192,119 +163,118 @@ function hasActivityOnDay(key, logsByDate, mealsByDate, checkinsByDate) {
   return !!(logsByDate[key]?.length || mealsByDate[key]?.length || checkinsByDate[key])
 }
 
-// Consecutive days of real logged activity (workout, meal, or check-in),
-// walking backward from today. If today itself has nothing logged yet,
-// that alone doesn't zero out an otherwise-real streak - counting starts
-// from yesterday in that case, same as any habit-tracker streak reads.
-function computeStreak(today, logsByDate, mealsByDate, checkinsByDate) {
-  const cursor = new Date(today)
-  if (!hasActivityOnDay(dateKeyFromLocalDate(cursor), logsByDate, mealsByDate, checkinsByDate)) {
-    cursor.setDate(cursor.getDate() - 1)
-  }
-  let streak = 0
-  while (hasActivityOnDay(dateKeyFromLocalDate(cursor), logsByDate, mealsByDate, checkinsByDate)) {
-    streak += 1
-    cursor.setDate(cursor.getDate() - 1)
-  }
-  return streak
+// Deterministic, real-data-only stats for three strictly-separated domains
+// (Weekly AI Recap = compliance/consistency, Weekly AI Insights = training,
+// Weekly Nutrition Audit = diet) - computed here instead of asking three
+// independent LLM calls to each stay in their lane, since free-generated
+// prose has no hard guarantee against repeating another card's numbers.
+// Each function below only ever touches the fields its own domain owns.
+
+function gradeForPct(pct) {
+  if (pct >= 90) return 'A'
+  if (pct >= 75) return 'B'
+  if (pct >= 60) return 'C'
+  if (pct >= 40) return 'D'
+  return 'F'
 }
 
-// Two tones only, per this app's dataviz convention: lime for "on track /
-// stable", the pre-existing amber warning tone for a swing worth
-// attention. Direction alone isn't inherently good or bad without knowing
-// the user's goal (cut vs. bulk), so tone is driven by magnitude.
-function TrendBadge({ pct }) {
-  if (pct == null) return null
-  const isBigSwing = Math.abs(pct) >= 20
-  const tone = isBigSwing ? 'text-amber-400 bg-amber-500/10' : 'text-coral-400 bg-coral-500/10'
-  const arrow = pct < 0 ? '↓' : pct > 0 ? '↑' : '→'
-  return (
-    <span
-      className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap ${tone}`}
-    >
-      {arrow} {Math.abs(pct)}% vs last week
-    </span>
-  )
+// RECAP DOMAIN: active days + calorie-target adherence only - no macro
+// breakdown, no exercise/set detail (that's Insights' and the Nutrition
+// Audit's territory respectively).
+function computeRecapStats(weekKeys, logsByDate, mealsByDate, checkinsByDate, calorieTarget) {
+  const activeDays = weekKeys.filter((k) => hasActivityOnDay(k, logsByDate, mealsByDate, checkinsByDate)).length
+  let adherenceDays = 0
+  let daysWithMealsAndTarget = 0
+  if (calorieTarget) {
+    for (const k of weekKeys) {
+      const meals = mealsByDate[k] || []
+      if (!meals.length) continue
+      daysWithMealsAndTarget += 1
+      const total = meals.reduce((s, m) => s + (m.estimated_calories || 0), 0)
+      if (Math.abs(total - calorieTarget) / calorieTarget <= 0.15) adherenceDays += 1
+    }
+  }
+  const adherencePct = daysWithMealsAndTarget > 0 ? Math.round((adherenceDays / daysWithMealsAndTarget) * 100) : null
+  const consistencyPct = Math.round((activeDays / weekKeys.length) * 100)
+  const overallPct = adherencePct != null ? Math.round((consistencyPct + adherencePct) / 2) : consistencyPct
+  return { activeDays, totalDays: weekKeys.length, adherencePct, consistencyPct, overallPct, grade: gradeForPct(overallPct) }
 }
 
-function buildCaloriesBarData(weekKeys, dailyCalories, peakIndex) {
-  return {
-    labels: weekKeys.map((k) => WEEKDAY_SHORT_FMT.format(new Date(`${k}T00:00:00`))),
-    datasets: [
-      {
-        data: dailyCalories,
-        backgroundColor: dailyCalories.map((_, i) => (i === peakIndex ? PEAK_COLOR : STEEL_DIM)),
-        borderRadius: 4,
-        maxBarThickness: 32,
+// PERFORMANCE DOMAIN: volume/sets/muscle split/progression only - no
+// calories, no protein grams, no meal intake (that's the Recap's and
+// Nutrition Audit's territory respectively).
+function muscleGroupBreakdown(logs) {
+  const counts = {}
+  for (const log of logs) {
+    const zone = classifyMuscleGroup(log.exercise?.muscle_group)
+    if (!zone) continue
+    counts[zone] = (counts[zone] || 0) + (log.sets || 1)
+  }
+  const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  return Object.entries(counts)
+    .map(([zone, count]) => ({ zone, label: MUSCLE_ZONE_LABELS[zone] || zone, count, pct: total ? Math.round((count / total) * 100) : 0 }))
+    .sort((a, b) => b.count - a.count)
+}
+
+function computeInsightsStats(weekKeys, prevWeekKeys, logsByDate) {
+  const sumFor = (keys) =>
+    keys.reduce(
+      (acc, k) => {
+        for (const log of logsByDate[k] || []) {
+          acc.volume += logVolume(log)
+          acc.sets += log.sets || 0
+        }
+        return acc
       },
-    ],
-  }
-}
-
-const caloriesBarOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  // Headroom for the direct value label drawn above the peak bar (see
-  // buildPeakLabelPlugin below).
-  layout: { padding: { top: 20 } },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: '#111a2b',
-      borderColor: 'rgba(107, 140, 174, 0.35)',
-      borderWidth: 1,
-      titleColor: '#e2e8f0',
-      bodyColor: '#e2e8f0',
-      padding: 10,
-      displayColors: false,
-      callbacks: { label: (ctx) => `${ctx.parsed.y.toLocaleString()} kcal` },
-    },
-  },
-  scales: {
-    x: { grid: { display: false }, ticks: { color: TEXT_MUTED } },
-    y: { display: false, beginAtZero: true },
-  },
-}
-
-// Direct-labels the week's peak calorie bar with its real value - a tiny
-// inline plugin object instead of adding the chartjs-plugin-datalabels
-// dependency for a single label.
-function buildPeakLabelPlugin(peakIndex) {
+      { volume: 0, sets: 0 },
+    )
+  const current = sumFor(weekKeys)
+  const previous = sumFor(prevWeekKeys)
+  const volumeChangePct =
+    previous.volume > 0 ? Math.round(((current.volume - previous.volume) / previous.volume) * 100) : null
+  const allLogsThisWeek = weekKeys.flatMap((k) => logsByDate[k] || [])
   return {
-    id: 'peakLabel',
-    afterDatasetsDraw(chart) {
-      if (peakIndex < 0) return
-      const meta = chart.getDatasetMeta(0)
-      const bar = meta.data[peakIndex]
-      const value = chart.data.datasets[0].data[peakIndex]
-      if (!bar || !value) return
-      const { ctx } = chart
-      ctx.save()
-      ctx.fillStyle = PEAK_COLOR
-      ctx.font = '600 11px Inter, sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(value.toLocaleString(), bar.x, bar.y - 6)
-      ctx.restore()
-    },
+    volume: current.volume,
+    sets: current.sets,
+    volumeChangePct,
+    muscleSplit: muscleGroupBreakdown(allLogsThisWeek).slice(0, 4),
+    workoutDays: weekKeys.filter((k) => (logsByDate[k] || []).length > 0).length,
   }
 }
 
-const macroDonutOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  cutout: '68%',
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: '#111a2b',
-      borderColor: 'rgba(107, 140, 174, 0.35)',
-      borderWidth: 1,
-      titleColor: '#e2e8f0',
-      bodyColor: '#e2e8f0',
-      padding: 8,
-      callbacks: { label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}g` },
-    },
-  },
+// DIET DOMAIN: protein-target hit rate + fat/carb split - the two precise
+// stats the spec calls for that the existing AI nutrition review doesn't
+// return as structured fields. No set totals, no workout stats.
+function computeDietStats(weekKeys, mealsByDate, proteinTarget) {
+  let proteinHitDays = 0
+  let daysWithMealsAndProteinTarget = 0
+  let totalFatG = 0
+  let totalCarbsG = 0
+  let daysWithMeals = 0
+  for (const k of weekKeys) {
+    const meals = mealsByDate[k] || []
+    if (!meals.length) continue
+    daysWithMeals += 1
+    const dayProtein = meals.reduce((s, m) => s + (m.protein_g || 0), 0)
+    totalFatG += meals.reduce((s, m) => s + (m.fat_g || 0), 0)
+    totalCarbsG += meals.reduce((s, m) => s + (m.carbs_g || 0), 0)
+    if (proteinTarget) {
+      daysWithMealsAndProteinTarget += 1
+      if (dayProtein >= proteinTarget * 0.9) proteinHitDays += 1
+    }
+  }
+  const fatCalories = totalFatG * 9
+  const carbCalories = totalCarbsG * 4
+  const totalMacroCalories = fatCalories + carbCalories
+  const fatPct = totalMacroCalories > 0 ? Math.round((fatCalories / totalMacroCalories) * 100) : null
+  const carbPct = totalMacroCalories > 0 ? 100 - fatPct : null
+  return {
+    proteinHitDays,
+    proteinEligibleDays: daysWithMealsAndProteinTarget,
+    fatPct,
+    carbPct,
+    daysWithMeals,
+  }
 }
 
 // A colored dot matching the tile's own sparkline color stands in for the
@@ -347,7 +317,7 @@ const PDF_CORAL = [122, 176, 24]
 const PDF_SLATE = [100, 116, 139]
 const PDF_INK = [15, 23, 42]
 
-function buildFullAnalyticsReport({ recap, digest, nutritionReview, progress, fatigue }) {
+function buildFullAnalyticsReport({ recapStats, insightsStats, dietStats, nutritionReview, progress, fatigue }) {
   const doc = new jsPDF()
   let y = 22
 
@@ -412,24 +382,33 @@ function buildFullAnalyticsReport({ recap, digest, nutritionReview, progress, fa
   y += 4
   sectionRule()
 
-  // Weekly Recap
+  // Weekly Recap - compliance/consistency only (see computeRecapStats)
   sectionTitle('Weekly Recap')
-  paragraph(recap || 'Not generated yet - visit AI Insights & Audits and click Generate.')
+  statLine('Active days', `${recapStats.activeDays}/${recapStats.totalDays}`)
+  statLine('Calorie target adherence', recapStats.adherencePct != null ? `${recapStats.adherencePct}%` : 'No calorie target set')
+  statLine('Consistency rating', `Grade ${recapStats.grade} - ${recapStats.overallPct}% On Track`)
   sectionRule()
 
-  // Weekly Insights
+  // Weekly Insights - training/strength only (see computeInsightsStats)
   sectionTitle('Weekly Insights')
-  if (digest) {
-    statLine('Win', digest.biggest_win || 'n/a')
-    statLine('Recovery', digest.recovery_note || 'n/a')
-    statLine('Focus', digest.next_week_focus || 'n/a')
-  } else {
-    paragraph('Not generated yet - visit AI Insights & Audits and click Generate.')
+  statLine('Volume lifted', `${Math.round(insightsStats.volume).toLocaleString()} lbs`)
+  statLine('Sets completed', insightsStats.sets)
+  statLine(
+    'Volume vs last week',
+    insightsStats.volumeChangePct != null ? `${insightsStats.volumeChangePct > 0 ? '+' : ''}${insightsStats.volumeChangePct}%` : 'No prior week to compare',
+  )
+  if (insightsStats.muscleSplit.length > 0) {
+    statLine('Muscle split', insightsStats.muscleSplit.map((m) => `${m.label} ${m.pct}%`).join(', '))
   }
   sectionRule()
 
-  // Weekly Nutrition Audit
+  // Weekly Nutrition Audit - diet only (see computeDietStats + the real AI nutritionReview)
   sectionTitle('Weekly Nutrition Audit')
+  statLine(
+    'Protein target hit rate',
+    dietStats.proteinEligibleDays > 0 ? `${dietStats.proteinHitDays}/${dietStats.proteinEligibleDays} days` : 'No protein target set',
+  )
+  statLine('Fat vs carb split', dietStats.fatPct != null ? `${dietStats.fatPct}% fat / ${dietStats.carbPct}% carbs` : 'No macros logged')
   if (nutritionReview) {
     const macroRows = [
       ['Calories', nutritionReview.avg_calories, nutritionReview.calorie_target, ' kcal'],
@@ -437,9 +416,7 @@ function buildFullAnalyticsReport({ recap, digest, nutritionReview, progress, fa
       ['Carbs', nutritionReview.avg_carbs, nutritionReview.carbs_target, 'g'],
       ['Fat', nutritionReview.avg_fat, nutritionReview.fat_target, 'g'],
     ].filter(([, value]) => value != null)
-    if (macroRows.length === 0) {
-      paragraph('No numeric macro data available for this period.')
-    } else {
+    if (macroRows.length > 0) {
       for (const [label, value, target, unit] of macroRows) {
         const pct = target ? Math.round((value / target) * 100) : null
         const valueLabel = target
@@ -699,12 +676,6 @@ export default function Progress() {
   const [progress, setProgress] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedExerciseId, setSelectedExerciseId] = useState(null)
-  const [recap, setRecap] = useState('')
-  const [recapLoading, setRecapLoading] = useState(false)
-  const [recapError, setRecapError] = useState('')
-  const [digest, setDigest] = useState(null)
-  const [digestLoading, setDigestLoading] = useState(false)
-  const [digestError, setDigestError] = useState('')
   const [nutritionReview, setNutritionReview] = useState(null)
   const [nutritionReviewLoading, setNutritionReviewLoading] = useState(false)
   const [nutritionReviewError, setNutritionReviewError] = useState('')
@@ -769,90 +740,15 @@ export default function Progress() {
       })
   }, [userId])
 
-  const distinctDaysLogged = useMemo(() => {
-    const days = new Set([...Object.keys(logsByDate), ...Object.keys(mealsByDate), ...Object.keys(checkinsByDate)])
-    return days.size
-  }, [logsByDate, mealsByDate, checkinsByDate])
-
-  const weekReady = distinctDaysLogged >= 7
-
+  // Shared 7-day window the three domain-scoped stats below all key off of -
+  // kept minimal since each card's own compute* helper (further down) now
+  // owns its own domain's actual numbers.
   const weekStats = useMemo(() => {
-    const today = new Date()
-    const weekKeys = lastNDayKeys(7, today)
-    const prevWeekEnd = new Date(today)
-    prevWeekEnd.setDate(prevWeekEnd.getDate() - 7)
-    const prevWeekKeys = lastNDayKeys(7, prevWeekEnd)
-
-    const caloriesFor = (key) => (mealsByDate[key] || []).reduce((s, m) => s + (m.estimated_calories || 0), 0)
-    const volumeFor = (key) => (logsByDate[key] || []).reduce((s, l) => s + logVolume(l), 0)
-
-    const dailyCalories = weekKeys.map(caloriesFor)
-    const daysWithMeals = weekKeys.filter((k) => (mealsByDate[k] || []).length > 0)
-    const totalCalories = dailyCalories.reduce((a, b) => a + b, 0)
-    const avgCalories = daysWithMeals.length > 0 ? Math.round(totalCalories / daysWithMeals.length) : null
-
-    const prevDaysWithMeals = prevWeekKeys.filter((k) => (mealsByDate[k] || []).length > 0)
-    const prevAvgCalories =
-      prevDaysWithMeals.length > 0
-        ? prevWeekKeys.reduce((s, k) => s + caloriesFor(k), 0) / prevDaysWithMeals.length
-        : null
-
-    // A trend needs two genuinely comparable weeks, not a percentage
-    // computed off one stray logged day.
-    let trendPct = null
-    if (avgCalories != null && prevAvgCalories && daysWithMeals.length >= 3 && prevDaysWithMeals.length >= 3) {
-      trendPct = Math.round(((avgCalories - prevAvgCalories) / prevAvgCalories) * 100)
-    }
-
-    let peakIndex = -1
-    let peakValue = 0
-    dailyCalories.forEach((v, i) => {
-      if (v > peakValue) {
-        peakValue = v
-        peakIndex = i
-      }
-    })
-
-    const macroTotals = weekKeys.reduce(
-      (acc, k) => {
-        for (const m of mealsByDate[k] || []) {
-          acc.protein += m.protein_g || 0
-          acc.carbs += m.carbs_g || 0
-          acc.fat += m.fat_g || 0
-        }
-        return acc
-      },
-      { protein: 0, carbs: 0, fat: 0 },
-    )
-    const hasMacroData = macroTotals.protein + macroTotals.carbs + macroTotals.fat > 0
-
-    // "Best day" prioritizes real training volume; falls back to calories
-    // logged on weeks with no workouts at all.
-    let bestDay = null
-    weekKeys.forEach((key, i) => {
-      const vol = volumeFor(key)
-      const cals = dailyCalories[i]
-      if (vol <= 0 && cals <= 0) return
-      const score = vol > 0 ? vol + 1e7 : cals
-      if (!bestDay || score > bestDay.score) bestDay = { key, score, vol, cals }
-    })
-
+    const weekKeys = lastNDayKeys(7, new Date())
+    const dailyCalories = weekKeys.map((k) => (mealsByDate[k] || []).reduce((s, m) => s + (m.estimated_calories || 0), 0))
     const workoutsThisWeek = weekKeys.filter((k) => (logsByDate[k] || []).length > 0).length
-    const streak = computeStreak(today, logsByDate, mealsByDate, checkinsByDate)
-
-    return {
-      weekKeys,
-      dailyCalories,
-      avgCalories,
-      trendPct,
-      peakIndex,
-      macroTotals,
-      hasMacroData,
-      bestDay,
-      workoutsThisWeek,
-      streak,
-    }
-  }, [logsByDate, mealsByDate, checkinsByDate])
+    return { weekKeys, dailyCalories, workoutsThisWeek }
+  }, [logsByDate, mealsByDate])
 
   const hasAnyWeekData = weekStats.dailyCalories.some((v) => v > 0) || weekStats.workoutsThisWeek > 0
 
@@ -861,31 +757,27 @@ export default function Progress() {
     [progress, selectedExerciseId],
   )
 
-  async function loadRecap() {
-    setRecapLoading(true)
-    setRecapError('')
-    try {
-      const data = await api.getWeeklyRecap(userId)
-      setRecap(data.recap)
-    } catch (err) {
-      setRecapError(err.message)
-    } finally {
-      setRecapLoading(false)
-    }
-  }
+  // Weekly AI Recap, Weekly AI Insights, and the Nutrition Audit's two
+  // precision stats are computed here instead of via separate LLM calls -
+  // each reads only the fields its own domain owns (see the three compute*
+  // helpers above), which is what actually guarantees zero overlap between
+  // the three cards rather than just asking three prompts nicely.
+  const recapStats = useMemo(
+    () => computeRecapStats(weekStats.weekKeys, logsByDate, mealsByDate, checkinsByDate, weekProfile?.daily_calorie_target),
+    [weekStats.weekKeys, logsByDate, mealsByDate, checkinsByDate, weekProfile],
+  )
 
-  async function loadDigest() {
-    setDigestLoading(true)
-    setDigestError('')
-    try {
-      const data = await api.getWeeklyDigest(userId)
-      setDigest(data)
-    } catch (err) {
-      setDigestError(err.message)
-    } finally {
-      setDigestLoading(false)
-    }
-  }
+  const insightsStats = useMemo(() => {
+    const prevWeekEnd = new Date()
+    prevWeekEnd.setDate(prevWeekEnd.getDate() - 7)
+    const prevWeekKeys = lastNDayKeys(7, prevWeekEnd)
+    return computeInsightsStats(weekStats.weekKeys, prevWeekKeys, logsByDate)
+  }, [weekStats.weekKeys, logsByDate])
+
+  const dietStats = useMemo(
+    () => computeDietStats(weekStats.weekKeys, mealsByDate, weekProfile?.daily_protein_target),
+    [weekStats.weekKeys, mealsByDate, weekProfile],
+  )
 
   async function loadNutritionReview() {
     setNutritionReviewLoading(true)
@@ -899,24 +791,16 @@ export default function Progress() {
     }
   }
 
-  // One PDF covering the whole tab, not just whichever card happened to have
-  // an export button - fills in any of the three AI sections that haven't
-  // been generated yet on this visit (best-effort per section; one section
-  // failing to fetch doesn't block the rest of the report), then builds from
-  // whatever's available. Training volume/calories/fatigue are always
-  // already loaded (no Generate step for those), so they're included as-is.
+  // One PDF covering the whole tab. Recap/Insights are always already
+  // computed client-side (no Generate step, no fetch needed); only the
+  // Nutrition Audit still involves a real AI call, so that's the one
+  // section fetched here if it hasn't been generated yet this visit.
   async function handleExportFullReport() {
     setExportingReport(true)
     try {
-      const [recapText, digestData, nutritionData] = await Promise.all([
-        recap ? Promise.resolve(recap) : api.getWeeklyRecap(userId).then((d) => d.recap).catch(() => recap),
-        digest ? Promise.resolve(digest) : api.getWeeklyDigest(userId).catch(() => digest),
-        nutritionReview ? Promise.resolve(nutritionReview) : api.getWeeklyNutritionReview(userId).catch(() => nutritionReview),
-      ])
-      if (recapText && recapText !== recap) setRecap(recapText)
-      if (digestData && digestData !== digest) setDigest(digestData)
+      const nutritionData = nutritionReview || (await api.getWeeklyNutritionReview(userId).catch(() => nutritionReview))
       if (nutritionData && nutritionData !== nutritionReview) setNutritionReview(nutritionData)
-      buildFullAnalyticsReport({ recap: recapText, digest: digestData, nutritionReview: nutritionData, progress, fatigue })
+      buildFullAnalyticsReport({ recapStats, insightsStats, dietStats, nutritionReview: nutritionData, progress, fatigue })
     } finally {
       setExportingReport(false)
     }
@@ -991,223 +875,107 @@ export default function Progress() {
         <div className="space-y-4">
           <div className="card py-3 px-4">
             <div className="flex justify-between items-center mb-2 gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 shrink-0">
-                  <CoachAIIndicator />
-                </div>
-                <h2 className="font-heading font-semibold text-sm">Weekly AI Recap</h2>
-              </div>
-              <button
-                onClick={loadRecap}
-                disabled={recapLoading || !weekReady}
-                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold shrink-0"
-              >
-                {recapLoading ? 'Generating…' : recap ? 'Regenerate' : 'Generate'}
-              </button>
+              <h2 className="font-heading font-semibold text-sm">Weekly AI Recap</h2>
             </div>
-            {recapError && <p className="text-sm text-red-400 mb-2">{recapError}</p>}
-
+            {/* RECAP DOMAIN: high-level compliance/consistency only - active
+                days, calorie-target adherence, and an overall grade. No
+                exercise detail, no per-macro breakdown (that's Insights' and
+                the Nutrition Audit's territory - see computeRecapStats). */}
             {hasAnyWeekData ? (
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div>
-                      <h3 className="text-xs uppercase tracking-wide text-slate-500">Calories logged</h3>
-                      <p className="font-heading font-bold text-2xl leading-none mt-1">
-                        {weekStats.avgCalories != null ? weekStats.avgCalories.toLocaleString() : '—'}
-                        {weekStats.avgCalories != null && (
-                          <span className="text-sm text-slate-400 font-normal ml-1">kcal avg</span>
-                        )}
-                      </p>
-                    </div>
-                    <TrendBadge pct={weekStats.trendPct} />
-                  </div>
-                  <div className="h-40 mt-3">
-                    <Bar
-                      data={buildCaloriesBarData(weekStats.weekKeys, weekStats.dailyCalories, weekStats.peakIndex)}
-                      options={caloriesBarOptions}
-                      plugins={[buildPeakLabelPlugin(weekStats.peakIndex)]}
-                    />
-                  </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Active days</p>
+                  <p className="text-xl font-heading font-bold tabular-nums leading-none">
+                    {recapStats.activeDays}
+                    <span className="text-sm text-slate-400 font-normal">/{recapStats.totalDays}</span>
+                  </p>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5 flex items-center justify-center">
-                    <ProgressRing value={weekStats.streak} label="Day streak" color={CORAL} />
-                  </div>
-                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5 flex flex-col justify-center">
-                    <MacroBar
-                      label="Workouts this week"
-                      value={weekStats.workoutsThisWeek}
-                      target={weekProfile?.target_frequency}
-                      unit=""
-                      color="bg-coral-500"
-                    />
-                  </div>
+                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Calorie target adherence</p>
+                  <p className="text-xl font-heading font-bold tabular-nums leading-none">
+                    {recapStats.adherencePct != null ? `${recapStats.adherencePct}%` : '—'}
+                  </p>
+                  {recapStats.adherencePct == null && (
+                    <p className="text-[11px] text-slate-500 mt-1">Set a calorie target to track this</p>
+                  )}
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                      <FlameIcon className="w-3 h-3 text-coral-400 shrink-0" />
-                      <span>Avg. calories</span>
-                    </div>
-                    <p className="text-lg font-bold tabular-nums">
-                      {weekStats.avgCalories != null ? weekStats.avgCalories.toLocaleString() : '—'}
-                      {weekStats.avgCalories != null && (
-                        <span className="text-xs font-normal text-slate-400 ml-1">kcal/day</span>
-                      )}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-1">Days with a logged meal, this week</p>
-                  </div>
-
-                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                      <span>Macro balance</span>
-                    </div>
-                    {weekStats.hasMacroData ? (
-                      <div className="flex items-center gap-2 mt-1">
-                        <div className="w-11 h-11 shrink-0">
-                          <Doughnut
-                            data={{
-                              labels: ['Protein', 'Carbs', 'Fat'],
-                              datasets: [
-                                {
-                                  data: [
-                                    weekStats.macroTotals.protein,
-                                    weekStats.macroTotals.carbs,
-                                    weekStats.macroTotals.fat,
-                                  ],
-                                  backgroundColor: [
-                                    SPARKLINE_COLORS.protein.line,
-                                    SPARKLINE_COLORS.carbs.line,
-                                    SPARKLINE_COLORS.fat.line,
-                                  ],
-                                  borderColor: '#0b1220',
-                                  borderWidth: 2,
-                                },
-                              ],
-                            }}
-                            options={macroDonutOptions}
-                          />
-                        </div>
-                        <div className="space-y-0.5 text-[10px] text-slate-400">
-                          <span className="flex items-center gap-1">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ background: SPARKLINE_COLORS.protein.line }}
-                            />
-                            P {Math.round(weekStats.macroTotals.protein)}g
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ background: SPARKLINE_COLORS.carbs.line }}
-                            />
-                            C {Math.round(weekStats.macroTotals.carbs)}g
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ background: SPARKLINE_COLORS.fat.line }}
-                            />
-                            F {Math.round(weekStats.macroTotals.fat)}g
-                          </span>
-                        </div>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-500 mt-1">No meals logged this week.</p>
-                    )}
-                  </div>
-
-                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500 mb-1">
-                      <TrophyIcon className="w-3 h-3 text-coral-400 shrink-0" />
-                      <span>Best day</span>
-                    </div>
-                    <p className="text-lg font-bold">
-                      {weekStats.bestDay
-                        ? WEEKDAY_LONG_FMT.format(new Date(`${weekStats.bestDay.key}T00:00:00`))
-                        : '—'}
-                    </p>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      {weekStats.bestDay
-                        ? weekStats.bestDay.vol > 0
-                          ? `${weekStats.bestDay.vol.toLocaleString()} lbs volume`
-                          : `${weekStats.bestDay.cals.toLocaleString()} kcal logged`
-                        : 'Nothing logged this week yet'}
-                    </p>
-                  </div>
+                <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
+                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">Consistency rating</p>
+                  <p className="text-lg font-heading font-bold leading-tight">
+                    Grade {recapStats.grade}
+                    <span className="text-sm text-slate-400 font-normal ml-1">- {recapStats.overallPct}% On Track</span>
+                  </p>
                 </div>
               </div>
             ) : (
               <p className="text-sm text-slate-500">
                 No activity logged in the last 7 days yet - once you log workouts, meals, or check in,
-                your weekly dashboard shows up here.
+                your weekly recap shows up here.
               </p>
-            )}
-
-            {!weekReady && (
-              <p className="text-xs text-slate-500 mt-3">
-                {distinctDaysLogged}/7 days logged - once a full week of activity is in, an AI snapshot
-                unlocks here.
-              </p>
-            )}
-            {recapLoading && (
-              <p className="text-sm text-slate-500 flex items-center gap-2 mt-3">
-                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
-                Generating…
-              </p>
-            )}
-            {recap && !recapLoading && (
-              <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5 mt-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-coral-400 mb-1">Snapshot</p>
-                <p className="text-sm text-slate-100">{recap}</p>
-              </div>
             )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
           <div className="card py-3 px-4">
             <div className="flex justify-between items-center mb-2">
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 shrink-0">
-                  <CoachAIIndicator />
-                </div>
-                <h2 className="font-heading font-semibold text-sm">Weekly AI Insights</h2>
-              </div>
-              <button
-                onClick={loadDigest}
-                disabled={digestLoading}
-                className="px-3 py-1.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-xs font-semibold shrink-0"
-              >
-                {digestLoading ? 'Synthesizing…' : digest ? 'Regenerate' : 'Generate'}
-              </button>
+              <h2 className="font-heading font-semibold text-sm">Weekly AI Insights</h2>
             </div>
-            {digestError && <p className="text-sm text-red-400">{digestError}</p>}
-            {digestLoading ? (
-              <p className="text-sm text-slate-500 flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
-                Synthesizing…
-              </p>
-            ) : digest ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Win</p>
-                  <p className="text-sm font-semibold text-slate-100">{digest.biggest_win}</p>
+            {/* PERFORMANCE DOMAIN: training/strength/fatigue only - volume,
+                sets, muscle split, week-over-week progression. No calorie
+                numbers, no protein grams, no meal intake (see
+                computeInsightsStats). */}
+            {insightsStats.workoutDays > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Volume lifted</p>
+                    <p className="text-lg font-bold tabular-nums">
+                      {Math.round(insightsStats.volume).toLocaleString()}
+                      <span className="text-xs font-normal text-slate-400 ml-1">lbs</span>
+                    </p>
+                    {insightsStats.volumeChangePct != null ? (
+                      <p
+                        className={`text-[11px] font-semibold mt-1 ${
+                          insightsStats.volumeChangePct >= 0 ? 'text-coral-400' : 'text-sky-400'
+                        }`}
+                      >
+                        {insightsStats.volumeChangePct >= 0 ? '↑' : '↓'} {Math.abs(insightsStats.volumeChangePct)}% vs last week
+                      </p>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 mt-1">No prior week to compare</p>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Sets completed</p>
+                    <p className="text-lg font-bold tabular-nums">{insightsStats.sets}</p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      {insightsStats.workoutDays} workout day{insightsStats.workoutDays === 1 ? '' : 's'}
+                    </p>
+                  </div>
                 </div>
-                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Recovery</p>
-                  <p className="text-sm font-semibold text-slate-100">{digest.recovery_note}</p>
-                </div>
-                <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">Focus</p>
-                  <p className="text-sm font-semibold text-slate-100">{digest.next_week_focus}</p>
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1.5">Muscle group split</p>
+                  {insightsStats.muscleSplit.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {insightsStats.muscleSplit.map((m) => (
+                        <div key={m.zone} className="flex items-center gap-2">
+                          <span className="text-xs text-slate-300 w-20 shrink-0 truncate">{m.label}</span>
+                          <div className="flex-1 h-1.5 rounded-full bg-forest-800 overflow-hidden">
+                            <div className="h-full bg-coral-500" style={{ width: `${m.pct}%` }} />
+                          </div>
+                          <span className="text-xs text-slate-500 w-9 text-right shrink-0">{m.pct}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">No exercise catalog with a muscle group logged this week.</p>
+                  )}
                 </div>
               </div>
             ) : (
               <p className="text-sm text-slate-500">
-                Workouts, readiness, and meals from the last 7 days into three bullets.
+                No workouts logged in the last 7 days - once you log a session, your training breakdown
+                shows up here.
               </p>
             )}
           </div>
@@ -1231,6 +999,31 @@ export default function Progress() {
               </div>
             </div>
             {nutritionReviewError && <p className="text-sm text-red-400">{nutritionReviewError}</p>}
+            {/* DIET DOMAIN: macro balance/micronutrient precision only - the
+                two exact stats the domain spec calls for (protein hit rate,
+                fat vs. carb split), computed directly from logged meals so
+                they're always available, independent of the Generate button
+                below. No workout stats, no set totals (see
+                computeDietStats). */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Protein target hit rate</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {dietStats.proteinEligibleDays > 0 ? `${dietStats.proteinHitDays}/${dietStats.proteinEligibleDays}` : '—'}
+                  <span className="text-xs font-normal text-slate-400 ml-1">days</span>
+                </p>
+                {dietStats.proteinEligibleDays === 0 && (
+                  <p className="text-[11px] text-slate-500 mt-1">Set a protein target to track this</p>
+                )}
+              </div>
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Fat vs. carb split</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {dietStats.fatPct != null ? `${dietStats.fatPct}% / ${dietStats.carbPct}%` : '—'}
+                </p>
+                {dietStats.fatPct == null && <p className="text-[11px] text-slate-500 mt-1">No macros logged yet</p>}
+              </div>
+            </div>
             {nutritionReviewLoading ? (
               <p className="text-sm text-slate-500 flex items-center gap-2">
                 <span className="w-3.5 h-3.5 border-2 border-forest-700 border-t-coral-500 rounded-full motion-safe:animate-spin" />
