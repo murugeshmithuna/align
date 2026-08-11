@@ -175,18 +175,6 @@ body {
   }
 }
 
-/* Landing hero athlete photo (src/pages/Landing.jsx) - a soft elliptical
-   mask fades the photo's edges to fully transparent so its own near-black
-   studio background dissolves into the page's dark background underneath,
-   rather than sitting on top of the orbital ring as a hard-edged rectangular
-   card. The ellipse's proportions loosely track the ring's own shape (a
-   circle stretched into the parent's 4:5 box), fully opaque through the
-   center where the athlete is, only fading in the outer margin. */
-.hero-athlete-photo {
-  mask-image: radial-gradient(ellipse 68% 64% at 50% 42%, black 0%, black 55%, transparent 96%);
-  -webkit-mask-image: radial-gradient(ellipse 68% 64% at 50% 42%, black 0%, black 55%, transparent 96%);
-}
-
 /* ==========================================================================
    Profile wizard - step transition + hidden scrollbars for WheelPicker
    (see src/pages/Profile.jsx, src/components/WheelPicker.jsx)

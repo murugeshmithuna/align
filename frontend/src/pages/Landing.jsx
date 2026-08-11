@@ -1,8 +1,20 @@
 import { Link } from 'react-router-dom'
-import heroAthlete from '../assets/hero-athlete.jpg'
 import AlignWordmark from '../components/AlignWordmark.jsx'
 import OrbitalRing from '../components/OrbitalRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
+
+// Illustrative preview numbers for the hero's "Performance Intelligence"
+// card - not fetched data (this is the public, pre-login Landing page, no
+// session exists yet). Each metric maps to a real, already-built feature
+// (Banister fatigue model's Training Load, the daily check-in's readiness/
+// recovery score, MET-formula Calories Burned - see fatigue.py/checkin.py/
+// logs.py), so this previews genuine product output rather than inventing
+// a capability that doesn't exist.
+const PREVIEW_METRICS = [
+  { label: 'Training Load', value: '8.6', detail: 'Excellent' },
+  { label: 'Recovery Score', value: '87%', detail: 'Optimal', accent: true },
+  { label: 'Calories Burned', value: '842', detail: 'Today' },
+]
 
 // Plain inline SVGs, matching this app's existing icon convention everywhere
 // else (see WorkoutLog.jsx/Navbar.jsx) - no icon library dependency.
@@ -174,26 +186,41 @@ export default function Landing() {
             </Link>
           </div>
 
-          {/* Athlete visual - real photo (src/assets/hero-athlete.jpg). No
-              card frame/border around it - the photo itself already has a
-              near-black studio background, so a soft radial mask (see
-              .hero-athlete-photo in index.css) fades its edges to fully
-              transparent, letting the page's own dark background show
-              through underneath. The result reads as one continuous dark
-              surface with the athlete emerging from it inside the orbital
-              ring, not a rectangular photo card sitting on top of the ring. */}
+          {/* Performance Intelligence preview card - replaces the earlier
+              photo entirely (no image/illustration here at all). The
+              orbital ring stays as a quiet decorative frame behind it; the
+              card itself sits centered rather than stretched to the ring's
+              full portrait box, so the ring reads as ambient context, not a
+              tight outline around the card. */}
           <div
             className="hero-fade-in relative flex items-center justify-center"
             style={{ '--hero-delay': 5 }}
           >
-            <div className="relative w-full max-w-md aspect-[4/5]">
+            <div className="relative w-full max-w-md aspect-[4/5] flex items-center justify-center">
               <OrbitalRing />
-              <img
-                src={heroAthlete}
-                alt=""
-                className="hero-athlete-photo absolute inset-0 w-full h-full object-cover"
-                style={{ objectPosition: '65% 15%' }}
-              />
+              <div className="relative w-full rounded-2xl border border-forest-700 bg-forest-900/70 px-8 py-9">
+                <p className="text-xs uppercase tracking-widest text-slate-500">Performance intelligence</p>
+                <h2 className="font-heading font-bold text-2xl mt-2 leading-snug">
+                  See exactly
+                  <br />
+                  where you stand.
+                </h2>
+                <div className="mt-7 pt-6 border-t border-forest-800 grid grid-cols-3 gap-4">
+                  {PREVIEW_METRICS.map(({ label, value, detail, accent }) => (
+                    <div key={label}>
+                      <p className="text-[10px] uppercase tracking-wide text-slate-500 leading-tight">{label}</p>
+                      <p
+                        className={`font-heading font-bold text-2xl tabular-nums mt-1.5 ${
+                          accent ? 'text-coral-400' : 'text-slate-100'
+                        }`}
+                      >
+                        {value}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-0.5">{detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </main>
