@@ -27,7 +27,12 @@ def upsert_user_profile(payload: schemas.UserProfileUpdate, db: Session = Depend
     # The baseline plan must exist automatically from profile settings, with
     # no chat message required - generate one the first time onboarding
     # completes (i.e. no plan exists yet). Re-saving the profile later never
-    # regenerates it; that's what the chat's adjust_plan tool is for.
+    # regenerates it; from then on, all plan changes go through Coach
+    # Resolution exclusively (the general chat no longer has generate_
+    # workout_plan/adjust_plan in its own tool list at all - see
+    # orchestrator.py's _tools_for_chat). allow_plan_tools=True is what lets
+    # THIS specific internal call still use generate_workout_plan - it runs
+    # before the user has ever seen a plan to send to Coach Resolution about.
     has_plan = db.scalar(select(models.Plan).where(models.Plan.user_id == user.id)) is not None
     if user.experience_level and not has_plan:
         try:
@@ -49,6 +54,7 @@ def upsert_user_profile(payload: schemas.UserProfileUpdate, db: Session = Depend
                 "of 4-6 exercises per training day appropriate to my goals, experience level, and "
                 "available equipment. Do not create a single-exercise placeholder or 'starter' plan - "
                 "this is the only plan I will have until I ask for changes.",
+                allow_plan_tools=True,
             )
         except Exception:
             logger.exception("Baseline plan auto-generation failed for user %s", user.id)

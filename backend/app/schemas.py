@@ -313,10 +313,16 @@ class AgentChoiceWidget(BaseModel):
     options: list[str]
 
 
+class AgentRedirectWidget(BaseModel):
+    prompt: str
+    dilemma: str | None = None
+
+
 class AgentChatResponse(BaseModel):
     reply: str
     tool_calls: list[AgentToolCall] = []
     widget: AgentChoiceWidget | None = None
+    redirect: AgentRedirectWidget | None = None
     history: list[dict] = []
 
 

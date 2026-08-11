@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { streamAgentChat } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
@@ -214,6 +215,27 @@ function ChoiceWidget({ message, disabled, onOptionClick, onToggleOption, onMult
   )
 }
 
+// Renders the backend's `redirect` payload (see orchestrator.py's hard plan-
+// mutation boundary: the chat model no longer has generate_workout_plan/
+// adjust_plan at all, it calls redirect_to_coach_resolution instead) as a
+// real clickable navigation link - not just text - so "lead to that page"
+// actually happens. Closes the drawer on click so the destination page is
+// immediately visible rather than sitting behind the still-open overlay.
+function RedirectWidget({ redirect, onNavigate }) {
+  return (
+    <div className="mt-2">
+      <Link
+        to="/coach-resolution"
+        state={{ dilemma: redirect.dilemma }}
+        onClick={onNavigate}
+        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 text-sm font-semibold text-forest-950 transition-colors"
+      >
+        Open Coach Resolution →
+      </Link>
+    </div>
+  )
+}
+
 // Floating AI assistant available from any authenticated page - a slide-over
 // drawer over a FAB, reusing the same streaming chat backend as the
 // Dashboard's inline ChatPanel, just accessible globally rather than only
@@ -279,6 +301,10 @@ export default function AIMessageBar() {
     setActiveWidget({ messageId: id, ...widget })
   }
 
+  function attachRedirect(id, redirect) {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, redirect } : m)))
+  }
+
   function markAnswered(messageId, answerText) {
     setMessages((prev) =>
       prev.map((m) => (m.id === messageId ? { ...m, widget: { ...m.widget, answered: answerText } } : m)),
@@ -326,6 +352,8 @@ export default function AIMessageBar() {
             }
           } else if (payload.widget) {
             attachWidget(agentId, payload.widget)
+          } else if (payload.redirect) {
+            attachRedirect(agentId, payload.redirect)
           } else if (payload.history) {
             historyRef.current = payload.history
           } else if (payload.error) {
@@ -442,6 +470,7 @@ export default function AIMessageBar() {
                   onMultiConfirm={handleMultiConfirm}
                 />
               )}
+              {m.redirect && <RedirectWidget redirect={m.redirect} onNavigate={() => setOpen(false)} />}
             </div>
           ))}
         </div>
