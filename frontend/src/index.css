@@ -74,69 +74,94 @@ body {
 }
 
 /* ==========================================================================
-   LiveSignalBg - looping EKG-style hero backdrop
-   (see src/components/LiveSignalBg.jsx)
+   Landing hero - editorial two-column layout (src/pages/Landing.jsx)
+   Replaces the earlier scrolling-EKG/AI-core-glow backdrop (LiveSignalBg/
+   AiCoreGlow, both removed) - the new reference direction calls for a
+   single restrained animated element (the orbital ring) rather than
+   multiple competing background effects, so those two are gone rather
+   than left as unused dead code.
    ========================================================================== */
 
-.signal-track {
-  width: 200%;
-  animation: signal-scroll 14s linear infinite;
+/* Sequenced entrance fade - each hero element gets the same fade+rise, just
+   staggered via a data-attribute delay index rather than 6 near-identical
+   keyframe/class pairs. */
+.hero-fade-in {
+  opacity: 0;
+  animation: hero-fade-in 0.7s ease forwards;
+  animation-delay: calc(var(--hero-delay, 0) * 120ms);
 }
 
-@keyframes signal-scroll {
+@keyframes hero-fade-in {
   from {
-    transform: translateX(0);
+    opacity: 0;
+    transform: translateY(10px);
   }
   to {
-    transform: translateX(-50%);
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .signal-track {
+  .hero-fade-in {
     animation: none;
+    opacity: 1;
   }
 }
 
-/* ==========================================================================
-   AiCoreGlow - futuristic pulsing/rotating hero centerpiece
-   (see src/components/AiCoreGlow.jsx)
-   ========================================================================== */
-
-.ai-core-pulse {
-  animation: ai-core-pulse 4s ease-in-out infinite;
+/* Orbital ring (src/components/OrbitalRing.jsx) - a thin static ring with
+   one small glowing point traveling slowly around its circumference, using
+   the app's existing accent token (var(--color-coral-500)) - no new color.
+   The ring itself never rotates or scales; only the dot's wrapper does, via
+   the classic clock-hand technique (rotate a full-size wrapper, position
+   the dot at its edge) rather than animating along an SVG path. */
+.orbital-ring-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid rgba(204, 255, 0, 0.16);
 }
 
-@keyframes ai-core-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.85;
-    transform: scale(1.08);
-  }
+.orbital-ring-spin {
+  position: absolute;
+  inset: 0;
+  animation: orbital-rotate 16s linear infinite;
 }
 
-.ai-core-spin-slow {
-  animation: ai-core-spin 18s linear infinite;
+.orbital-ring-dot {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  border-radius: 9999px;
+  background: var(--color-coral-500);
+  box-shadow: 0 0 10px 2px rgba(204, 255, 0, 0.55);
+  animation: orbital-pulse 3.2s ease-in-out infinite;
 }
 
-.ai-core-spin-fast {
-  animation: ai-core-spin 9s linear infinite reverse;
-}
-
-@keyframes ai-core-spin {
+@keyframes orbital-rotate {
   to {
     transform: rotate(360deg);
   }
 }
 
+@keyframes orbital-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.35);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ai-core-pulse,
-  .ai-core-spin-slow,
-  .ai-core-spin-fast {
+  .orbital-ring-spin,
+  .orbital-ring-dot {
     animation: none;
   }
 }
