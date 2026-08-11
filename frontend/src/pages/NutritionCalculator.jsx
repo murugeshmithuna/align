@@ -53,19 +53,21 @@ function Stepper({ id, value, onChange, step, min = 0, max = Infinity }) {
   )
 }
 
-// A visual target card - emoji + label header, the current value in large
-// type, then a stepper row to adjust it. Distinct from a plain labeled input
-// so the five targets read as "goals to hit" rather than a form field.
-function MacroTargetCard({ id, emoji, label, value, onChange, step, unit, max }) {
+// A visual target card - plain uppercase-tracked label header (no emoji -
+// an icon here would just be decorative filler for something a text label
+// already identifies unambiguously), the computed value in large bold
+// editorial type with a small muted unit alongside it, then a stepper row
+// to adjust it. Distinct from a plain labeled input so the five targets
+// read as "goals to hit" rather than a form field.
+function MacroTargetCard({ id, label, value, onChange, step, unit, max }) {
   return (
-    <div className="card p-4 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <span className="text-xl">{emoji}</span>
-        <span className="text-xs uppercase tracking-wide text-slate-500 font-semibold">{label}</span>
-      </div>
-      <div className="text-2xl font-heading font-bold tabular-nums">
-        {value === '' ? '—' : value}
-        <span className="text-sm text-slate-500 ml-1">{unit}</span>
+    <div className="card p-4 flex flex-col gap-3">
+      <span className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">{label}</span>
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-3xl font-heading font-bold tabular-nums leading-none">
+          {value === '' ? '—' : value}
+        </span>
+        <span className="text-xs text-slate-500 font-medium">{unit}</span>
       </div>
       <Stepper id={id} value={value} onChange={onChange} step={step} max={max} />
     </div>
@@ -254,7 +256,8 @@ export default function NutritionCalculator() {
   return (
     <div className="max-w-5xl mx-auto px-6 py-8 font-body space-y-4">
       <div>
-        <h1 className="font-heading font-bold text-2xl">Nutritional &amp; Macro Calculator</h1>
+        <p className="text-xs uppercase tracking-wide text-slate-500">Baseline goals</p>
+        <h1 className="font-heading font-bold text-2xl mt-0.5">Nutritional &amp; Macro Calculator</h1>
         <p className="text-sm text-slate-400 mt-1">
           Auto-calculate a baseline from your stats (Mifflin-St Jeor), then adjust anything before saving.
         </p>
@@ -287,7 +290,7 @@ export default function NutritionCalculator() {
                 placeholder={`5'4"`}
                 value={heightDisplay}
                 onChange={(e) => setHeightDisplay(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
               />
             ) : (
               <input
@@ -298,7 +301,7 @@ export default function NutritionCalculator() {
                 step="0.1"
                 value={heightDisplay}
                 onChange={(e) => setHeightDisplay(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+                className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
               />
             )}
           </div>
@@ -314,7 +317,7 @@ export default function NutritionCalculator() {
               step="0.1"
               value={weightDisplay}
               onChange={(e) => setWeightDisplay(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
             />
           </div>
           <div>
@@ -328,7 +331,7 @@ export default function NutritionCalculator() {
               max="120"
               value={age}
               onChange={(e) => setAge(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
             />
           </div>
           <div>
@@ -339,7 +342,7 @@ export default function NutritionCalculator() {
               id="sex"
               value={sex}
               onChange={(e) => setSex(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
             >
               <option value="male">Male</option>
               <option value="female">Female</option>
@@ -353,7 +356,7 @@ export default function NutritionCalculator() {
               id="activity-level"
               value={activityLevel}
               onChange={(e) => setActivityLevel(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
             >
               {Object.entries(ACTIVITY_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -370,7 +373,7 @@ export default function NutritionCalculator() {
               id="nutrition-goal"
               value={nutritionGoal}
               onChange={(e) => setNutritionGoal(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-forest-950 border border-forest-700 text-sm"
+              className="w-full px-3 py-2 rounded-xl bg-forest-950 border border-forest-700 text-sm"
             >
               {Object.entries(GOAL_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
@@ -407,7 +410,7 @@ export default function NutritionCalculator() {
           <button
             type="button"
             onClick={handleAutoCalculate}
-            className="px-4 py-2 rounded-lg border border-coral-500 text-coral-300 hover:bg-coral-500/10 transition-colors text-sm font-heading font-semibold whitespace-nowrap"
+            className="px-4 py-2 rounded-full border border-coral-500/60 text-coral-300 hover:bg-coral-500/10 transition-colors text-sm font-heading font-semibold whitespace-nowrap"
           >
             Auto-Calculate Baseline Goals
           </button>
@@ -416,7 +419,6 @@ export default function NutritionCalculator() {
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <MacroTargetCard
             id="calorie-target"
-            emoji="🎯"
             label="Calories"
             value={calorieTarget}
             onChange={setCalorieTarget}
@@ -426,7 +428,6 @@ export default function NutritionCalculator() {
           />
           <MacroTargetCard
             id="protein-target"
-            emoji="🥩"
             label="Protein"
             value={proteinTarget}
             onChange={setProteinTarget}
@@ -436,7 +437,6 @@ export default function NutritionCalculator() {
           />
           <MacroTargetCard
             id="carbs-target"
-            emoji="🍞"
             label="Carbs"
             value={carbsTarget}
             onChange={setCarbsTarget}
@@ -446,7 +446,6 @@ export default function NutritionCalculator() {
           />
           <MacroTargetCard
             id="fat-target"
-            emoji="🥑"
             label="Fat"
             value={fatTarget}
             onChange={setFatTarget}
@@ -456,7 +455,6 @@ export default function NutritionCalculator() {
           />
           <MacroTargetCard
             id="fiber-target"
-            emoji="🌾"
             label="Fiber"
             value={fiberTarget}
             onChange={setFiberTarget}
@@ -469,7 +467,7 @@ export default function NutritionCalculator() {
         <button
           type="submit"
           disabled={saving || saved}
-          className="px-4 py-2 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+          className="px-6 py-2.5 rounded-full bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold transition-colors"
         >
           {saving ? 'Saving…' : saved ? 'Saved ✓' : 'Save Goals'}
         </button>
