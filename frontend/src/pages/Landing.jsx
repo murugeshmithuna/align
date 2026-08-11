@@ -174,26 +174,26 @@ export default function Landing() {
             </Link>
           </div>
 
-          {/* Athlete visual - real photo (src/assets/hero-athlete.jpg),
-              object-cover with a right/top-biased object-position so the
-              frame's portrait 4:5 crop keeps her face and shoulders in view
-              rather than centering on the torso, and stays clear of the
-              source image's own left edge. The orbital ring and rounded
-              frame are unchanged from the placeholder version. */}
+          {/* Athlete visual - real photo (src/assets/hero-athlete.jpg). No
+              card frame/border around it - the photo itself already has a
+              near-black studio background, so a soft radial mask (see
+              .hero-athlete-photo in index.css) fades its edges to fully
+              transparent, letting the page's own dark background show
+              through underneath. The result reads as one continuous dark
+              surface with the athlete emerging from it inside the orbital
+              ring, not a rectangular photo card sitting on top of the ring. */}
           <div
             className="hero-fade-in relative flex items-center justify-center"
             style={{ '--hero-delay': 5 }}
           >
             <div className="relative w-full max-w-md aspect-[4/5]">
               <OrbitalRing />
-              <div className="absolute inset-6 rounded-[2rem] overflow-hidden border border-forest-700">
-                <img
-                  src={heroAthlete}
-                  alt=""
-                  className="absolute inset-0 w-full h-full object-cover"
-                  style={{ objectPosition: '65% 15%' }}
-                />
-              </div>
+              <img
+                src={heroAthlete}
+                alt=""
+                className="hero-athlete-photo absolute inset-0 w-full h-full object-cover"
+                style={{ objectPosition: '65% 15%' }}
+              />
             </div>
           </div>
         </main>
