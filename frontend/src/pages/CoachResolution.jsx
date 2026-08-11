@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { api } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
@@ -9,27 +10,48 @@ import { useToast } from '../context/ToastContext.jsx'
 export default function CoachResolution() {
   const { userId } = useSession()
   const { showToast } = useToast()
-  const [question, setQuestion] = useState('')
+  const location = useLocation()
+  const [question, setQuestion] = useState(location.state?.dilemma || '')
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [applying, setApplying] = useState(false)
   const [applied, setApplied] = useState(false)
+  // Auto-submits exactly once when the AI Coach hands off a plan-change
+  // request here (redirect_to_coach_resolution, orchestrator.py) - the user
+  // already stated their dilemma once in chat, so re-typing/re-clicking
+  // "Get the resolution" would defeat the point of a seamless handoff.
+  // Guarded by a ref (not state) so React StrictMode's double-invoke of
+  // effects in dev can't fire this request twice.
+  const autoSubmittedRef = useRef(false)
 
-  async function handleSubmit(event) {
-    event.preventDefault()
+  async function runResolution(questionText) {
     setLoading(true)
     setError('')
     setResult(null)
     setApplied(false)
     try {
-      const data = await api.getCoachResolution({ user_id: userId, question: question.trim() || undefined })
+      const data = await api.getCoachResolution({ user_id: userId, question: questionText || undefined })
       setResult(data)
     } catch (err) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
+  }
+
+  useEffect(() => {
+    const dilemma = location.state?.dilemma
+    if (dilemma && !autoSubmittedRef.current) {
+      autoSubmittedRef.current = true
+      runResolution(dilemma)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    runResolution(question.trim())
   }
 
   async function handleApply() {

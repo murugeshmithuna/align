@@ -14,35 +14,66 @@ from app.models import _today, _utcnow
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are the orchestrator agent for ALIGN, a coach that watches, \
-listens, and adapts.
-
-ROLE: The user's baseline training plan is generated automatically from their profile settings - you \
-are a fine-tuning assistant and Q&A expert, not the primary plan generator in normal conversation. Use \
-adjust_plan when the user wants to tweak their existing plan's future structure/prescription (its \
-`additions` field adds a brand-new exercise the plan doesn't already have; its `updates` field changes \
-sets/reps/weight/day of an exercise already on the plan; its `removals` field deletes an exercise from \
-the plan entirely by plan_exercise_id - never confuse these three, and NEVER tell the user something was \
-removed/undone unless you actually called adjust_plan with that exercise's ID in `removals` - there is no \
-other way to delete an exercise, and a confident "done, removed that" with no matching tool call leaves \
-the exercise sitting on the plan while the user is told it's gone), log_workout when the \
-user reports a workout they ALREADY did (e.g. "log 3x10 squats at 135lb") so it's recorded in their real \
-history rather than changing what's planned next, update_log when they want to correct a specific entry \
-already in their real activity log (context below), delete_log when they want one removed entirely, \
-generate_workout_plan only when there's no active plan yet or they explicitly want a full replacement, \
-ask_schedule for grounded \
-scheduling questions ("when should I train legs again?", "what's next?"), suggest_supplements for \
-supplement questions, analyze_form for squat-form questions ("how was my squat form?", "what should I \
-work on?"), ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating enough?"), \
-and plain conversation for everything else.
+# The plan-mutation boundary section is conditional (see _system_prompt()
+# below): the ONE internal caller that runs with allow_plan_tools=True
+# (user_profile.py's baseline-plan auto-generation, before the user has any
+# plan yet to send to Coach Resolution about) genuinely DOES have
+# generate_workout_plan in its real tool list - telling it "you don't have
+# access to generate_workout_plan" anyway (as a single unconditional prompt
+# once did) contradicted its actual tools and produced an empty, confused
+# reply with no tool call at all instead of a generated plan.
+_PLAN_BOUNDARY_RESTRICTED = """
+WORKOUT PLAN CHANGES ALWAYS GO TO COACH RESOLUTION - NOT YOU. You do not generate plans, add exercises, \
+change sets/reps/weight, swap exercises, or remove exercises from the plan yourself anymore - \
+generate_workout_plan and adjust_plan are not tools you have access to. The moment a request is about \
+changing what's planned - "add glutes today", "swap this exercise", "give me a new plan", "reduce \
+today's volume", "I feel sore but it's heavy squat day", literally anything that would change the plan's \
+structure or prescription - call redirect_to_coach_resolution immediately. Do not attempt the change \
+yourself, do not describe what the change would look like, do not apologize at length - one short \
+sentence acknowledging the request, then call the tool. Put the user's actual request into `dilemma` \
+verbatim (or lightly cleaned up) so Coach Resolution can act on it directly without the user re-typing \
+anything. This is a hard boundary, not a suggestion - there is no other way for you to touch the plan.
 
 ask_schedule, analyze_form, and ask_nutrition return facts only (the user's training history, most \
 recent squat video analysis, or recent meal-photo analyses) - compose the actual answer yourself from \
-those facts. If your answer implies a schedule or volume change the user wants, follow up by calling \
-adjust_plan in the same turn rather than just describing the change. If analyze_form or ask_nutrition \
+those facts. If your answer implies the user wants a schedule or volume change, call \
+redirect_to_coach_resolution rather than describing the change yourself. If analyze_form or ask_nutrition \
 report no analysis yet, tell the user to upload a squat video on the Live Session page or a meal photo \
 on the Meal Photo page, respectively.
+"""
 
+_PLAN_BOUNDARY_ALLOWED = """
+This specific call is the one exception to the usual rule: you DO have generate_workout_plan (and \
+adjust_plan) available right now, because this is the one-time internal baseline-plan generation that \
+runs immediately after onboarding, before the user has any plan yet to send to Coach Resolution about. \
+Call generate_workout_plan directly to build their full weekly program from the profile below - do not \
+look for or mention a redirect tool, it is not relevant to this call.
+"""
+
+
+def _system_prompt(allow_plan_tools: bool) -> str:
+    plan_section = _PLAN_BOUNDARY_ALLOWED if allow_plan_tools else _PLAN_BOUNDARY_RESTRICTED
+    domain_tools_note = (
+        "Only call a domain tool (generate_workout_plan, adjust_plan, log_workout, update_log, delete_log, "
+        "suggest_supplements, ask_schedule, analyze_form, ask_nutrition) when the request requires a "
+        "database change or a grounded data lookup."
+        if allow_plan_tools
+        else "Only call a domain tool (log_workout, update_log, delete_log, suggest_supplements, "
+        "ask_schedule, analyze_form, ask_nutrition, redirect_to_coach_resolution) when the request requires "
+        "a database change, a grounded data lookup, or is a plan-change request."
+    )
+    return f"""You are the orchestrator agent for ALIGN, a coach that watches, \
+listens, and adapts.
+
+ROLE: you are a Q&A and logging assistant. You handle everything EXCEPT changing what's planned - \
+log_workout when the user reports a workout they ALREADY did (e.g. "log 3x10 squats at 135lb") so it's \
+recorded in their real history, update_log when they want to correct a specific entry already in their \
+real activity log (context below), delete_log when they want one removed entirely, ask_schedule for \
+grounded scheduling questions ("when should I train legs again?", "what's next?"), suggest_supplements \
+for supplement questions, analyze_form for squat-form questions ("how was my squat form?", "what should \
+I work on?"), ask_nutrition for meal/nutrition questions ("how's my protein been?", "am I eating \
+enough?"), and plain conversation for everything else.
+{plan_section}
 CONTEXT YOU ALREADY HAVE, provided below on every turn: the user's onboarding profile (experience \
 level, target frequency, available equipment, primary goals/focus areas, physical limitations), their \
 active plan and its full weekly schedule, and today's readiness check-in score. These are already known \
@@ -50,57 +81,34 @@ facts, not open questions - NEVER ask the user to restate, re-confirm, or re-sel
 goals, experience level, or current plan. If the profile says "Dumbbells", use dumbbells without asking.
 
 NO TEXT QUESTIONNAIRES. When you genuinely need the user to choose or confirm something before you can \
-proceed - session length, which muscle groups to focus on, whether to apply a proposed change - call \
-present_choice. Never ask a question as a numbered list, a bulleted list, or multiple prose questions in \
-a row; present_choice renders as real buttons/checkboxes in the UI and the user's next message is their \
+proceed with a NON-plan action (e.g. which of several logged entries they mean) - call present_choice. \
+Never ask a question as a numbered list, a bulleted list, or multiple prose questions in a row; \
+present_choice renders as real buttons/checkboxes in the UI and the user's next message is their \
 selection, so it always replaces a text question, never supplements one.
 
-ACT FIRST. For standard requests ("abs workout", "leg day", "adjust today's session"), IMMEDIATELY call \
-generate_workout_plan or adjust_plan using the existing profile/plan/check-in context - do not ask about \
-session length, exercise preferences, or baseline details first. Output the result directly. Only use \
-present_choice when something is truly impossible to proceed without (e.g. the request is genuinely \
-open-ended, like "give me a session" with no other detail); in every other case, act first and explain \
-your choice afterward in at most one sentence.
-
-SAFETY CHECK. Before applying any request, weigh it against the real facts you're given below - \
-bodyweight/height/age, experience level, noted physical limitations, and recent soreness/injury notes. If \
-a request is inconsistent with those facts - a load or volume implausible for this person's bodyweight/ \
-experience (e.g. a beginner asking for a 300kg squat), an exercise that stresses a noted physical \
-limitation, or adding/increasing volume on a muscle group with a severity 4-5 soreness note in the last \
-few days - do NOT silently comply as if nothing's unusual. Say so plainly in one short sentence citing the \
-specific fact (their bodyweight, the limitation, the soreness note), then either apply a sensible, safer \
-version and explain what you changed and why, or if it's a genuine safety concern (not just a stretch \
-goal), use present_choice to confirm before applying anything. Never invent a precise medical/physiological \
-threshold you don't actually have - reason from the concrete facts provided, and if you're genuinely \
-unsure whether something is advisable, say that honestly rather than asserting false confidence either way.
-
-COACH RESOLUTION AWARENESS. A separate page, Coach Resolution, exists specifically for genuine training \
-dilemmas - conflicting signals like soreness vs. a heavy planned day, or fatigue vs. a goal - where the \
-user wants one weighed-through verdict resolved into a concrete plan change in a single step. You have \
-the exact same underlying ability to weigh those factors yourself and call adjust_plan directly - keep \
-helping and never refuse or deflect a request just because it resembles a dilemma. But when a message \
-reads as exactly that kind of open, conflicting-signal call (not a direct request like "add glutes \
-today"), it's fine to also mention briefly, after you've helped, that Coach Resolution exists for a \
-single dedicated verdict on calls like this - a helpful pointer for next time, never instead of answering \
-now.
+SAFETY CHECK. Before logging anything or answering a question, weigh it against the real facts you're \
+given below - bodyweight/height/age, experience level, noted physical limitations, and recent \
+soreness/injury notes. If something is inconsistent with those facts - a load implausible for this \
+person's bodyweight/experience, or a pattern that stresses a noted physical limitation or a severity 4-5 \
+soreness note - say so plainly in one short sentence citing the specific fact, rather than silently \
+complying or logging it as if nothing's unusual. Never invent a precise medical/physiological threshold \
+you don't actually have - reason from the concrete facts provided, and if you're genuinely unsure whether \
+something is advisable, say that honestly rather than asserting false confidence either way.
 
 Today's plan status (see context below) may already be auto-adjusted based on a low readiness score \
 before the user ever opens chat: a low score (1-2) means today's baseline routine has already been \
 marked "Scaled Down" or "Rest / Mobility" in the database, with no chat message required. If the user \
-asks about today's session, reflect that status, and if they want the specifics use adjust_plan to \
-apply the actual reduced sets/reps/intensity. A high score (4-5) means the planned volume/intensity is \
-fine, or can be nudged up if the user wants to push.
+asks about today's session, reflect that status - if they want it changed further, that's still a plan \
+change, so call redirect_to_coach_resolution.
 
-Only call a domain tool (generate_workout_plan, adjust_plan, log_workout, suggest_supplements, \
-ask_schedule, analyze_form, ask_nutrition) when the request requires a database change or grounded data \
-lookup. For general conversation, respond directly without calling a tool. Every tool call is \
-automatically scoped to the current user - never ask the user for their user_id.
+{domain_tools_note} For general conversation, respond directly without calling a tool. Every tool call \
+is automatically scoped to the current user - never ask the user for their user_id.
 
-OUTPUT FORMAT: at most 2 short sentences of explanation, then the result (the plan/adjustment, or a \
-present_choice widget) immediately after - no greetings, no "I'd be happy to help!", no "Here is your \
-tailored plan", no restating the user's question back to them. NEVER mention an internal tool/function \
-name in your reply (e.g. never say "adjust_plan" or "log_workout" to the user) - describe what you did \
-in plain language instead (e.g. "updated your plan", "logged that workout")."""
+OUTPUT FORMAT: at most 2 short sentences of explanation, then the result (the logged entry, the answer, \
+or the Coach Resolution handoff) immediately after - no greetings, no "I'd be happy to help!", no \
+restating the user's question back to them. NEVER mention an internal tool/function name in your reply \
+(e.g. never say "adjust_plan" or "log_workout" to the user) - describe what you did in plain language \
+instead (e.g. "logged that workout", "sent that over to Coach Resolution")."""
 
 MAX_TURNS = 6
 
@@ -139,6 +147,39 @@ PRESENT_CHOICE_TOOL = {
             },
         },
         "required": ["prompt", "widget_type", "options"],
+    },
+}
+
+# Another "soft" tool, same pattern as present_choice above (never touches
+# the database, intercepted specially by the loop below). Real requirement:
+# the general chat agent should never modify the plan itself anymore -
+# generate_workout_plan/adjust_plan are deliberately excluded from its real
+# tool list (see the `tools` construction in run_agent_turn/stream_agent_turn)
+# so this is the ONLY path left for a plan-change request, not just a prompt
+# suggestion the model might ignore. The frontend renders this as a real
+# navigation link into Coach Resolution with the dilemma pre-filled, not
+# just a text mention.
+REDIRECT_TO_COACH_RESOLUTION_TOOL = {
+    "name": "redirect_to_coach_resolution",
+    "description": (
+        "Call this for ANY request that would change the training plan - adding, removing, or modifying "
+        "exercises, sets, reps, weight, or generating a new plan. You cannot make plan changes yourself; "
+        "this hands the request to the Coach Resolution page, which can. Always call this instead of "
+        "attempting the change or just describing what you would do."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "prompt": {
+                "type": "string",
+                "description": "One short sentence telling the user you're sending this to Coach Resolution.",
+            },
+            "dilemma": {
+                "type": "string",
+                "description": "The user's actual plan-change request, verbatim or lightly cleaned up.",
+            },
+        },
+        "required": ["prompt", "dilemma"],
     },
 }
 
@@ -423,23 +464,49 @@ def _serialize_content(content) -> list[dict]:
     return serialized
 
 
+_PLAN_MUTATION_TOOLS = {"generate_workout_plan", "adjust_plan"}
+
+
+def _tools_for_chat(allow_plan_tools: bool) -> list[dict]:
+    """The general user-facing chat never gets generate_workout_plan/
+    adjust_plan in its actual tool list anymore - a real product requirement,
+    not just a prompt suggestion the model could ignore: plan changes go
+    through Coach Resolution exclusively (see redirect_to_coach_resolution).
+    `allow_plan_tools=True` is only for the one internal caller that
+    legitimately still needs it - the synchronous baseline-plan-generation
+    call in routers/user_profile.py, which runs before the user ever sees a
+    plan at all and has nothing to redirect to yet."""
+    if allow_plan_tools:
+        return TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL]
+    domain_tools = [t for t in TOOL_SCHEMAS if t["name"] not in _PLAN_MUTATION_TOOLS]
+    return domain_tools + [PRESENT_CHOICE_TOOL, REDIRECT_TO_COACH_RESOLUTION_TOOL]
+
+
 def run_agent_turn(
-    db: Session, user_id: int, message: str, history: list[dict] | None = None, client_date: str | None = None
+    db: Session,
+    user_id: int,
+    message: str,
+    history: list[dict] | None = None,
+    client_date: str | None = None,
+    allow_plan_tools: bool = False,
 ) -> dict:
     """`history` is the full prior conversation (as returned in a previous
     call's `history` field) - this API is stateless, so the caller is
     responsible for echoing it back on every turn. Without it, a short reply
     like "2" or "yes" has no context to resolve against and looks like a
     non-sequitur to the model. `client_date` is the browser's own local
-    calendar date - see _resolve_today()."""
+    calendar date - see _resolve_today(). `allow_plan_tools` - see
+    _tools_for_chat()."""
     client = _get_client()
     user = _get_user_or_raise(db, user_id)
     today = _resolve_today(client_date)
     system_prompt = (
-        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id, today)}\n\n"
+        f"{_system_prompt(allow_plan_tools)}\n\n{_build_profile_context(user)}\n\n"
+        f"{_build_plan_context(db, user_id, today)}\n\n"
         f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id, today)}\n\n"
         f"{_build_soreness_context(db, user_id)}"
     )
+    tools = _tools_for_chat(allow_plan_tools)
 
     history = list(history or [])
 
@@ -468,9 +535,31 @@ def run_agent_turn(
             ]
             return {"reply": reply, "tool_calls": [], "widget": None, "history": new_history}
 
-    # Tool path: the heavier reasoning model actually authors the plan/
-    # adjustment, and can pause the turn via present_choice for real
-    # structured user input instead of guessing or asking in prose.
+        # A plan-change request never needs the reasoning model at all when
+        # plan tools aren't even available - short-circuit straight to a
+        # Coach Resolution handoff instead of spending an Opus call just to
+        # have it call redirect_to_coach_resolution itself.
+        if not allow_plan_tools:
+            routed_tool = next(
+                (b.input.get("tool_name") for b in router_response.content if b.type == "tool_use"), None
+            )
+            if routed_tool in _PLAN_MUTATION_TOOLS:
+                reply = "That's a plan change, so I'm sending it to Coach Resolution for a real, applied verdict."
+                new_history = [
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": [{"type": "text", "text": reply}]},
+                ]
+                return {
+                    "reply": reply,
+                    "tool_calls": [],
+                    "widget": None,
+                    "redirect": {"prompt": reply, "dilemma": message},
+                    "history": new_history,
+                }
+
+    # Tool path: the reasoning model handles logging/Q&A, can pause the turn
+    # via present_choice for real structured input, or hand a plan-change
+    # request to Coach Resolution via redirect_to_coach_resolution.
     messages: list[dict] = history + [{"role": "user", "content": message}]
     tool_call_log: list[dict] = []
 
@@ -480,7 +569,7 @@ def run_agent_turn(
                 model=CLAUDE_MODEL,
                 max_tokens=4096,
                 system=system_prompt,
-                tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
+                tools=tools,
                 messages=messages,
             )
         except anthropic.APIError:
@@ -493,6 +582,7 @@ def run_agent_turn(
             return {"reply": final_text, "tool_calls": tool_call_log, "widget": None, "history": messages}
 
         widget_payload = None
+        redirect_payload = None
         tool_results = []
         for block in response.content:
             if block.type != "tool_use":
@@ -508,6 +598,18 @@ def run_agent_turn(
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": json.dumps({"status": "presented_to_user_awaiting_response"}),
+                    }
+                )
+                continue
+            if block.name == "redirect_to_coach_resolution":
+                # Same pattern - UI-only, the real "result" is the user
+                # clicking through to Coach Resolution, not a database change.
+                redirect_payload = block.input
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({"status": "redirected_to_coach_resolution"}),
                     }
                 )
                 continue
@@ -529,6 +631,14 @@ def run_agent_turn(
                 "widget": widget_payload,
                 "history": messages,
             }
+        if redirect_payload is not None:
+            return {
+                "reply": redirect_payload.get("prompt", ""),
+                "tool_calls": tool_call_log,
+                "widget": None,
+                "redirect": redirect_payload,
+                "history": messages,
+            }
 
     return {
         "reply": "I couldn't finish that within the allotted steps - please try rephrasing.",
@@ -543,7 +653,12 @@ def _sse(event: dict) -> str:
 
 
 def stream_agent_turn(
-    db: Session, user_id: int, message: str, history: list[dict] | None = None, client_date: str | None = None
+    db: Session,
+    user_id: int,
+    message: str,
+    history: list[dict] | None = None,
+    client_date: str | None = None,
+    allow_plan_tools: bool = False,
 ) -> Iterator[str]:
     """Yields SSE-formatted `data: {...}\\n\\n` frames as the agent responds.
 
@@ -565,10 +680,12 @@ def stream_agent_turn(
 
     today = _resolve_today(client_date)
     system_prompt = (
-        f"{SYSTEM_PROMPT}\n\n{_build_profile_context(user)}\n\n{_build_plan_context(db, user_id, today)}\n\n"
+        f"{_system_prompt(allow_plan_tools)}\n\n{_build_profile_context(user)}\n\n"
+        f"{_build_plan_context(db, user_id, today)}\n\n"
         f"{_build_recent_logs_context(db, user_id)}\n\n{_build_checkin_context(db, user_id, today)}\n\n"
         f"{_build_soreness_context(db, user_id)}"
     )
+    tools = _tools_for_chat(allow_plan_tools)
 
     history = list(history or [])
 
@@ -610,8 +727,27 @@ def stream_agent_turn(
             yield _sse({"done": True})
             return
 
-    # Tool path: hand off to the heavier reasoning model, which can pause the
-    # turn via present_choice for real structured user input.
+        # Same short-circuit as run_agent_turn - a plan-change request never
+        # needs the reasoning model at all when plan tools aren't available.
+        if not allow_plan_tools:
+            routed_tool = next(
+                (b.input.get("tool_name") for b in router_response.content if b.type == "tool_use"), None
+            )
+            if routed_tool in _PLAN_MUTATION_TOOLS:
+                reply = "That's a plan change, so I'm sending it to Coach Resolution for a real, applied verdict."
+                yield _sse({"content": reply})
+                new_history = [
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": [{"type": "text", "text": reply}]},
+                ]
+                yield _sse({"redirect": {"prompt": reply, "dilemma": message}})
+                yield _sse({"history": new_history})
+                yield _sse({"done": True})
+                return
+
+    # Tool path: hand off to the reasoning model, which can pause the turn
+    # via present_choice for real structured input, or hand a plan-change
+    # request to Coach Resolution via redirect_to_coach_resolution.
     messages: list[dict] = history + [{"role": "user", "content": message}]
 
     for _ in range(MAX_TURNS):
@@ -620,7 +756,7 @@ def stream_agent_turn(
                 model=CLAUDE_MODEL,
                 max_tokens=4096,
                 system=system_prompt,
-                tools=TOOL_SCHEMAS + [PRESENT_CHOICE_TOOL],
+                tools=tools,
                 messages=messages,
             ) as stream:
                 for text in stream.text_stream:
@@ -648,6 +784,7 @@ def stream_agent_turn(
             return
 
         widget_payload = None
+        redirect_payload = None
         tool_results = []
         for block in response.content:
             if block.type != "tool_use":
@@ -659,6 +796,16 @@ def stream_agent_turn(
                         "type": "tool_result",
                         "tool_use_id": block.id,
                         "content": json.dumps({"status": "presented_to_user_awaiting_response"}),
+                    }
+                )
+                continue
+            if block.name == "redirect_to_coach_resolution":
+                redirect_payload = block.input
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps({"status": "redirected_to_coach_resolution"}),
                     }
                 )
                 continue
@@ -676,6 +823,11 @@ def stream_agent_turn(
 
         if widget_payload is not None:
             yield _sse({"widget": widget_payload})
+            yield _sse({"history": messages})
+            yield _sse({"done": True})
+            return
+        if redirect_payload is not None:
+            yield _sse({"redirect": redirect_payload})
             yield _sse({"history": messages})
             yield _sse({"done": True})
             return
