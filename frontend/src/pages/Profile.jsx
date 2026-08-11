@@ -186,7 +186,15 @@ export default function Profile() {
         setPreferredUnits(units)
         setHeightDisplay(heightMetricToDisplay(data.height_cm, units) || (units === 'imperial' ? `5'8"` : '173'))
         setWeightDisplay(Math.round(metricToDisplay(data.weight_kg, units, KG_PER_LB)) || (units === 'imperial' ? 154 : 70))
-        setHasSaved(Boolean(data.experience_level))
+        const alreadySaved = Boolean(data.experience_level)
+        setHasSaved(alreadySaved)
+        // `step` otherwise always defaults to 0 regardless of what's loaded,
+        // so a returning user with a real saved profile would land back on
+        // "Step 1 of 8" every single visit - the fields underneath are
+        // correctly pre-filled, but visually indistinguishable from the
+        // wizard restarting from scratch. Jump straight to the Review step
+        // instead, which shows everything they already saved.
+        if (alreadySaved) setStep(STEPS.length - 1)
       })
       .catch((err) => {
         // A genuine 404 here means the user row itself doesn't exist, which
