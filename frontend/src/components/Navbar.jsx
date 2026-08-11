@@ -93,9 +93,9 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="bg-coral-500">
+    <nav className="bg-forest-900 border-b border-forest-800">
       <div className="max-w-7xl mx-auto flex items-center justify-between w-full px-4 md:px-8 py-3">
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 text-slate-100">
           <AlignWordmark className="font-heading font-bold tracking-tight text-sm md:text-base" size="1.15em" />
         </div>
 
@@ -107,8 +107,8 @@ export default function Navbar() {
               className={({ isActive }) =>
                 `font-heading text-xs font-bold whitespace-nowrap px-2 py-1.5 border-b-2 transition-colors ${
                   isActive
-                    ? 'text-forest-950 border-forest-950'
-                    : 'text-forest-950/55 border-transparent hover:text-forest-950 hover:border-forest-950/40'
+                    ? 'text-coral-400 border-coral-500'
+                    : 'text-slate-400 border-transparent hover:text-slate-100 hover:border-forest-600'
                 }`
               }
             >

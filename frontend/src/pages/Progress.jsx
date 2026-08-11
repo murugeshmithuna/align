@@ -61,9 +61,15 @@ ChartJS.register(
   Tooltip,
 )
 
-// Single-series charts - one hue throughout (brand accent, electric lime),
-// no legend needed.
-const CORAL = '#ccff00'
+// Single-series charts - one hue throughout, no legend needed. CORAL (the
+// brand accent) is reserved for Training Volume specifically - the one
+// genuinely primary trend on this tab (full-width, hero stat, per its own
+// section comment below). STEEL is the muted blue-gray used for the smaller
+// supporting charts (Calories Burned, Exercise Progression) so lime doesn't
+// flood every chart on the page - "reserved for the key data series," not
+// the default color for every line.
+const CORAL = '#c7f000'
+const STEEL = '#6b8cae'
 const GRID_COLOR = 'rgba(148, 163, 184, 0.12)'
 const TEXT_MUTED = '#94a3b8'
 
@@ -110,7 +116,7 @@ function macroTargetBadge(value, target) {
 // hue per macro, matching the brand colors already used elsewhere (bg-coral-500/
 // bg-emerald-500/bg-sky-500/bg-amber-500), each with its own low-opacity fill.
 const SPARKLINE_COLORS = {
-  calories: { line: '#ccff00', fill: 'rgba(204, 255, 0, 0.15)' },
+  calories: { line: '#c7f000', fill: 'rgba(199, 240, 0, 0.15)' },
   protein: { line: '#10b981', fill: 'rgba(16, 185, 129, 0.15)' },
   carbs: { line: '#0ea5e9', fill: 'rgba(14, 165, 233, 0.15)' },
   fat: { line: '#f59e0b', fill: 'rgba(245, 158, 11, 0.15)' },
@@ -150,7 +156,7 @@ function buildSparklineData(dailyData, colors) {
 // card's tile+tinted-box language instead of a lone paragraph. Nothing
 // here is fabricated: every number traces back to a real logged row.
 
-const CORAL_DIM = 'rgba(204, 255, 0, 0.35)'
+const STEEL_DIM = 'rgba(107, 140, 174, 0.45)'
 // Reuses this app's one pre-existing semantic amber tone (already used for
 // "surplus"/"attention" states - calorieBadge above, MacroTile's fat
 // sparkline) for the week's single peak-day highlight, rather than adding
@@ -227,7 +233,7 @@ function buildCaloriesBarData(weekKeys, dailyCalories, peakIndex) {
     datasets: [
       {
         data: dailyCalories,
-        backgroundColor: dailyCalories.map((_, i) => (i === peakIndex ? PEAK_COLOR : CORAL_DIM)),
+        backgroundColor: dailyCalories.map((_, i) => (i === peakIndex ? PEAK_COLOR : STEEL_DIM)),
         borderRadius: 4,
         maxBarThickness: 32,
       },
@@ -244,8 +250,8 @@ const caloriesBarOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#121214',
-      borderColor: 'rgba(204, 255, 0, 0.35)',
+      backgroundColor: '#111a2b',
+      borderColor: 'rgba(107, 140, 174, 0.35)',
       borderWidth: 1,
       titleColor: '#e2e8f0',
       bodyColor: '#e2e8f0',
@@ -290,8 +296,8 @@ const macroDonutOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#121214',
-      borderColor: 'rgba(204, 255, 0, 0.35)',
+      backgroundColor: '#111a2b',
+      borderColor: 'rgba(107, 140, 174, 0.35)',
       borderWidth: 1,
       titleColor: '#e2e8f0',
       bodyColor: '#e2e8f0',
@@ -532,17 +538,17 @@ function buildVolumeChartData(volumeByDate) {
         pointRadius: 0,
         pointHoverRadius: 5,
         pointHoverBackgroundColor: CORAL,
-        pointHoverBorderColor: '#0c0c0e',
+        pointHoverBorderColor: '#0b1220',
         pointHoverBorderWidth: 2,
         tension: 0.25,
         fill: true,
         backgroundColor: (ctx) => {
           const { chart } = ctx
           const { ctx: canvasCtx, chartArea } = chart
-          if (!chartArea) return 'rgba(204, 255, 0, 0.12)'
+          if (!chartArea) return 'rgba(199, 240, 0, 0.1)'
           const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-          gradient.addColorStop(0, 'rgba(204, 255, 0, 0.28)')
-          gradient.addColorStop(1, 'rgba(204, 255, 0, 0.02)')
+          gradient.addColorStop(0, 'rgba(199, 240, 0, 0.22)')
+          gradient.addColorStop(1, 'rgba(199, 240, 0, 0.02)')
           return gradient
         },
       },
@@ -560,22 +566,22 @@ function buildCaloriesChartData(caloriesByDate) {
       {
         label: 'Calories Burned (est.)',
         data: caloriesByDate.map((p) => p.total_calories),
-        borderColor: CORAL,
+        borderColor: STEEL,
         borderWidth: 2,
         pointRadius: 0,
         pointHoverRadius: 5,
-        pointHoverBackgroundColor: CORAL,
-        pointHoverBorderColor: '#0c0c0e',
+        pointHoverBackgroundColor: STEEL,
+        pointHoverBorderColor: '#0b1220',
         pointHoverBorderWidth: 2,
         tension: 0.25,
         fill: true,
         backgroundColor: (ctx) => {
           const { chart } = ctx
           const { ctx: canvasCtx, chartArea } = chart
-          if (!chartArea) return 'rgba(204, 255, 0, 0.12)'
+          if (!chartArea) return 'rgba(107, 140, 174, 0.12)'
           const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-          gradient.addColorStop(0, 'rgba(204, 255, 0, 0.28)')
-          gradient.addColorStop(1, 'rgba(204, 255, 0, 0.02)')
+          gradient.addColorStop(0, 'rgba(107, 140, 174, 0.28)')
+          gradient.addColorStop(1, 'rgba(107, 140, 174, 0.02)')
           return gradient
         },
       },
@@ -590,7 +596,7 @@ function buildExerciseChartData(history) {
       {
         label: 'Weight',
         data: history.map((p) => p.weight),
-        borderColor: CORAL,
+        borderColor: STEEL,
         borderWidth: 2,
         tension: 0.15,
         fill: false,
@@ -598,8 +604,8 @@ function buildExerciseChartData(history) {
         // small so the line - not a field of dots - carries the trend.
         pointRadius: history.map((p) => (p.is_pr ? 6 : 2)),
         pointHoverRadius: history.map((p) => (p.is_pr ? 8 : 5)),
-        pointBackgroundColor: CORAL,
-        pointBorderColor: '#0c0c0e',
+        pointBackgroundColor: STEEL,
+        pointBorderColor: '#0b1220',
         pointBorderWidth: history.map((p) => (p.is_pr ? 2 : 1)),
       },
     ],
@@ -649,8 +655,8 @@ const baseChartOptions = {
   plugins: {
     legend: { display: false },
     tooltip: {
-      backgroundColor: '#121214',
-      borderColor: 'rgba(204, 255, 0, 0.35)',
+      backgroundColor: '#111a2b',
+      borderColor: 'rgba(107, 140, 174, 0.35)',
       borderWidth: 1,
       titleColor: '#e2e8f0',
       bodyColor: '#e2e8f0',
@@ -1077,7 +1083,7 @@ export default function Progress() {
                                     SPARKLINE_COLORS.carbs.line,
                                     SPARKLINE_COLORS.fat.line,
                                   ],
-                                  borderColor: '#0c0c0e',
+                                  borderColor: '#0b1220',
                                   borderWidth: 2,
                                 },
                               ],
