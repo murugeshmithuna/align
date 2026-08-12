@@ -18,6 +18,7 @@ const LINKS = [
   { to: '/nutrition', label: 'Meal Photo' },
   { to: '/nutrition/calculator', label: 'Macro Calculator' },
   { to: '/analytics', label: 'Analytics' },
+  { to: '/calendar', label: 'Calendar' },
   { to: '/coach-resolution', label: 'Coach Resolution' },
   { to: '/profile', label: 'Profile Settings' },
   { to: '/admin', label: 'Admin' },

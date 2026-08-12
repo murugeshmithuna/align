@@ -888,7 +888,19 @@ export default function WorkoutLog() {
             </div>
           </div>
 
-          <form onSubmit={handleSubmit} className="card p-6 space-y-4">
+          {/* noValidate: same silent-submit-block bug already found and fixed
+              for NutritionCalculator.jsx (see that file's own comment) -
+              confirmed live here too: weight=45.3 or rpe=7.3 (a completely
+              plausible real value, not a multiple of the 0.5 step below)
+              fired zero network requests and showed no error at all on
+              submit. min/max/step still work as visual hints and still
+              clamp the native up/down spinner arrows; disabling constraint
+              validation just stops them from silently swallowing a real
+              submit. The backend's own Pydantic Field(ge=/le=) bounds
+              remain the actual source of truth and already surface a clear
+              toast via formatErrorDetail() on rejection (see handleSubmit's
+              catch block above). */}
+          <form onSubmit={handleSubmit} className="card p-6 space-y-4" noValidate>
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-coral-500/15 flex items-center justify-center text-coral-400 shrink-0">
                 <DumbbellIcon className="w-4 h-4" />
