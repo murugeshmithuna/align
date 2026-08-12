@@ -11,11 +11,17 @@ list, never an exception. get_relevant_form_tips() being unusable for any
 reason must be indistinguishable, to its caller, from "no flags were raised
 today." See tools.py's analyze_form integration for how that guarantee is
 used: the new key is only added to the response when this returns something.
+
+chromadb and the embedding function (which pulls in sentence-transformers/
+torch) are deliberately imported inside _get_collection() rather than at
+module level - importing this module at all must stay cheap; the heavy ML
+stack should only load the first time a flagged form issue actually reaches
+retrieval, not merely because tools.py imports this module. This is fixing
+a real production incident: sentence-transformers pulls in a full
+CUDA-enabled torch build on Linux, and with that import at module top,
+every backend boot paid that cost - on Render's free tier it was slow/heavy
+enough to blow the platform's port-bind timeout and take the whole app down.
 """
-
-import chromadb
-
-from app.rag.embedding_function import get_embedding_function
 
 VECTOR_STORE_DIR = "app/rag/vector_store"
 COLLECTION_NAME = "exercise_form_knowledge"
@@ -49,7 +55,11 @@ _client = None
 def _get_collection():
     global _client
     if _client is None:
+        import chromadb
+
         _client = chromadb.PersistentClient(path=VECTOR_STORE_DIR)
+    from app.rag.embedding_function import get_embedding_function
+
     return _client.get_collection(COLLECTION_NAME, embedding_function=get_embedding_function())
 
 

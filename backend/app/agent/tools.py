@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.models import _today
-from app.rag.retrieve import get_relevant_form_tips
 from app.schemas import REPS_BOUNDS, RPE_BOUNDS, SETS_BOUNDS, WEIGHT_BOUNDS
 
 TOOL_SCHEMAS = [
@@ -548,6 +547,12 @@ def execute_analyze_form(db: Session, user_id: int, tool_input: dict) -> dict:
         if good_count < analysis.rep_count
     ]
     if flagged_topics:
+        # Imported here, not at module top - this is the one place in the
+        # whole app that needs chromadb/sentence-transformers/torch, and
+        # they should only ever load when a form issue is actually flagged,
+        # not merely because tools.py (imported at app startup) exists.
+        from app.rag.retrieve import get_relevant_form_tips
+
         tips = get_relevant_form_tips(analysis.exercise_name, flagged_topics)
         if tips:
             result["relevant_form_guidance"] = tips
