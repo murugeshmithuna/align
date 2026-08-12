@@ -21,7 +21,6 @@ const LINKS = [
   { to: '/calendar', label: 'Calendar' },
   { to: '/coach-resolution', label: 'Coach Resolution' },
   { to: '/profile', label: 'Profile Settings' },
-  { to: '/admin', label: 'Admin' },
 ]
 
 function ProfileMenu({ profile, userId, onLogout, className = '' }) {
@@ -63,6 +62,20 @@ function ProfileMenu({ profile, userId, onLogout, className = '' }) {
             className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-forest-800 hover:text-coral-300 transition-colors"
           >
             Profile Settings
+          </Link>
+          {/* Moved out of the horizontal LINKS row - that row measured
+              1031px of content in a 965px box (overflowing, with no visible
+              scrollbar) at every desktop width, since it's capped by the
+              nav's own max-w-7xl - Admin (the last/10th link) was the one
+              silently pushed out of view. This dropdown has no such width
+              constraint, so it's never clipped regardless of how many
+              links the main row ever grows to. */}
+          <Link
+            to="/admin"
+            onClick={() => setOpen(false)}
+            className="block px-4 py-2.5 text-sm text-slate-200 hover:bg-forest-800 hover:text-coral-300 transition-colors"
+          >
+            Admin
           </Link>
           <button
             onClick={onLogout}
