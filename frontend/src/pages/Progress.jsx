@@ -54,12 +54,15 @@ ChartJS.register(
 // Single-series charts - one hue throughout, no legend needed. CORAL (the
 // brand accent) is reserved for Training Volume specifically - the one
 // genuinely primary trend on this tab (full-width, hero stat, per its own
-// section comment below). STEEL is the muted blue-gray used for the smaller
-// supporting charts (Calories Burned, Exercise Progression) so lime doesn't
-// flood every chart on the page - "reserved for the key data series," not
-// the default color for every line.
+// section comment below). The two supporting charts (Calories Burned,
+// Exercise Progression) get their own vibrant hues - amber for Calories
+// Burned (matches the "logged activity" amber used in the Recap bar chart),
+// sky blue for Exercise Progression (matches the sky accent already used
+// for carbs/negative-trend text elsewhere in this file) - each color still
+// only ever means one specific series, never a default line color.
 const CORAL = '#c7f000'
-const STEEL = '#6b8cae'
+const AMBER = '#f97316'
+const SKY = '#38bdf8'
 const GRID_COLOR = 'rgba(148, 163, 184, 0.12)'
 const TEXT_MUTED = '#94a3b8'
 
@@ -147,7 +150,7 @@ const WEEKDAY_SHORT_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 // exactly like the peak-day treatment already used elsewhere in this app's
 // charts. Both colors encode real information (logged vs. not, peak vs.
 // not) rather than being decorative.
-const RECAP_ACTIVE_COLOR = '#f97316'
+const RECAP_ACTIVE_COLOR = AMBER
 const RECAP_ACTIVE_HOVER = '#fb923c'
 
 function buildRecapChartData(weekKeys, dailyCalories) {
@@ -716,11 +719,11 @@ function buildCaloriesChartData(caloriesByDate) {
       {
         label: 'Calories Burned (est.)',
         data: caloriesByDate.map((p) => p.total_calories),
-        borderColor: STEEL,
+        borderColor: AMBER,
         borderWidth: 2,
         pointRadius: 0,
-        pointHoverRadius: 5,
-        pointHoverBackgroundColor: STEEL,
+        pointHoverRadius: 6,
+        pointHoverBackgroundColor: AMBER,
         pointHoverBorderColor: '#0b1220',
         pointHoverBorderWidth: 2,
         tension: 0.25,
@@ -728,10 +731,10 @@ function buildCaloriesChartData(caloriesByDate) {
         backgroundColor: (ctx) => {
           const { chart } = ctx
           const { ctx: canvasCtx, chartArea } = chart
-          if (!chartArea) return 'rgba(107, 140, 174, 0.12)'
+          if (!chartArea) return 'rgba(249, 115, 22, 0.14)'
           const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
-          gradient.addColorStop(0, 'rgba(107, 140, 174, 0.28)')
-          gradient.addColorStop(1, 'rgba(107, 140, 174, 0.02)')
+          gradient.addColorStop(0, 'rgba(249, 115, 22, 0.3)')
+          gradient.addColorStop(1, 'rgba(249, 115, 22, 0.02)')
           return gradient
         },
       },
@@ -746,15 +749,26 @@ function buildExerciseChartData(history) {
       {
         label: 'Weight',
         data: history.map((p) => p.weight),
-        borderColor: STEEL,
+        borderColor: SKY,
         borderWidth: 2,
         tension: 0.15,
-        fill: false,
-        // PRs get a bigger marker with a surface ring; everything else stays
-        // small so the line - not a field of dots - carries the trend.
-        pointRadius: history.map((p) => (p.is_pr ? 6 : 2)),
-        pointHoverRadius: history.map((p) => (p.is_pr ? 8 : 5)),
-        pointBackgroundColor: STEEL,
+        fill: true,
+        backgroundColor: (ctx) => {
+          const { chart } = ctx
+          const { ctx: canvasCtx, chartArea } = chart
+          if (!chartArea) return 'rgba(56, 189, 248, 0.1)'
+          const gradient = canvasCtx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom)
+          gradient.addColorStop(0, 'rgba(56, 189, 248, 0.22)')
+          gradient.addColorStop(1, 'rgba(56, 189, 248, 0.02)')
+          return gradient
+        },
+        // PRs get a bigger marker in the brand lime accent with a surface
+        // ring - a real PR is the single most exciting data point on this
+        // chart, so it earns the hero color; everything else stays a small
+        // sky-blue dot so the line, not a field of dots, carries the trend.
+        pointRadius: history.map((p) => (p.is_pr ? 7 : 2)),
+        pointHoverRadius: history.map((p) => (p.is_pr ? 9 : 6)),
+        pointBackgroundColor: history.map((p) => (p.is_pr ? CORAL : SKY)),
         pointBorderColor: '#0b1220',
         pointBorderWidth: history.map((p) => (p.is_pr ? 2 : 1)),
       },
@@ -1358,7 +1372,13 @@ export default function Progress() {
               <h2 className="font-heading font-semibold text-sm">Performance Overview</h2>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+              <div
+                className={`rounded-lg border p-2.5 ${
+                  insightsStats.volumeChangePct != null && insightsStats.volumeChangePct >= 0
+                    ? 'border-emerald-500/40 bg-emerald-500/5'
+                    : 'border-forest-700 bg-forest-950/40'
+                }`}
+              >
                 <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Training volume</p>
                 <p className="text-lg font-bold tabular-nums">
                   {hasVolume
@@ -1366,9 +1386,19 @@ export default function Progress() {
                     : '—'}
                   {hasVolume && <span className="text-xs font-normal text-slate-400 ml-1">lbs</span>}
                 </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  {hasVolume ? 'Most recent session' : 'No workouts logged yet'}
-                </p>
+                {insightsStats.volumeChangePct != null ? (
+                  <p
+                    className={`text-[11px] font-semibold mt-1 ${
+                      insightsStats.volumeChangePct >= 0 ? 'text-emerald-400' : 'text-sky-400'
+                    }`}
+                  >
+                    {insightsStats.volumeChangePct >= 0 ? '↑' : '↓'} {Math.abs(insightsStats.volumeChangePct)}% vs last week
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    {hasVolume ? 'Most recent session' : 'No workouts logged yet'}
+                  </p>
+                )}
               </div>
               <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Calories burned</p>
