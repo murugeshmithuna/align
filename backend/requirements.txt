@@ -15,5 +15,14 @@ psycopg2-binary==2.9.10
 # RAG knowledge-base retrieval for analyze_form (backend/app/rag/) - isolated
 # addition, unrelated to the rest of the app's direct-context-injection AI
 # features. See backend/app/rag/embed_knowledge_base.py for how these are used.
+# torch is pinned to the CPU-only wheel from PyTorch's own index - the
+# default PyPI wheel on Linux pulls a full CUDA build (torch + ~15
+# nvidia-cu* packages, several GB) that isn't needed for CPU-only inference
+# on a small embedding model, and was the real cause of a production
+# incident: Render's free-tier web service couldn't finish importing it in
+# time and never bound its port. sentence-transformers only requires
+# torch>=1.11.0, so this CPU build (2.9.1) satisfies it.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.9.1+cpu
 chromadb==1.5.9
 sentence-transformers==5.7.0
