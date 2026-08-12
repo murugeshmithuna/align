@@ -11,10 +11,11 @@ import {
   Legend,
   Tooltip,
 } from 'chart.js'
-import { Line, Bar } from 'react-chartjs-2'
+import { Line, Bar, Doughnut } from 'react-chartjs-2'
 import { jsPDF } from 'jspdf'
 import { api } from '../api.js'
 import CoachAIIndicator from '../components/CoachAIIndicator.jsx'
+import ProgressRing from '../components/ProgressRing.jsx'
 import { useSession } from '../context/SessionContext.jsx'
 import { classifyMuscleGroup, MUSCLE_ZONE_LABELS } from '../utils/muscleZones.js'
 
@@ -136,6 +137,133 @@ function buildSparklineData(dailyData, colors) {
   }
 }
 
+const WEEKDAY_SHORT_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
+
+// Bars colored by whether that day's logged calories fell within tolerance
+// of the weekly target - visualizes "adherence" directly rather than just
+// raw magnitude. Muted gray when there's no target to compare against yet.
+function buildRecapChartData(weekKeys, dailyCalories, calorieTarget) {
+  return {
+    labels: weekKeys.map((k) => WEEKDAY_SHORT_FMT.format(new Date(`${k}T00:00:00`))),
+    datasets: [
+      {
+        data: dailyCalories,
+        backgroundColor: dailyCalories.map((v) => {
+          if (!v) return 'rgba(107, 140, 174, 0.25)'
+          if (!calorieTarget) return 'rgba(107, 140, 174, 0.55)'
+          const withinTolerance = Math.abs(v - calorieTarget) / calorieTarget <= 0.15
+          return withinTolerance ? CORAL : 'rgba(245, 158, 11, 0.6)'
+        }),
+        borderRadius: 4,
+        maxBarThickness: 28,
+      },
+    ],
+  }
+}
+
+const recapChartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  layout: { padding: { top: 6 } },
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#111a2b',
+      borderColor: 'rgba(107, 140, 174, 0.35)',
+      borderWidth: 1,
+      titleColor: '#e2e8f0',
+      bodyColor: '#e2e8f0',
+      padding: 8,
+      displayColors: false,
+      callbacks: { label: (ctx) => `${ctx.parsed.y.toLocaleString()} kcal` },
+    },
+  },
+  scales: {
+    x: { grid: { display: false }, ticks: { color: TEXT_MUTED, font: { size: 10 } } },
+    y: { display: false, beginAtZero: true },
+  },
+}
+
+// Draws a dashed reference line at the calorie target's pixel position - a
+// tiny inline plugin instead of pulling in a full annotation plugin
+// dependency for one line.
+function buildTargetLinePlugin(target) {
+  return {
+    id: 'targetLine',
+    afterDraw(chart) {
+      if (!target) return
+      const { ctx, chartArea, scales } = chart
+      const y = scales.y.getPixelForValue(target)
+      if (y < chartArea.top || y > chartArea.bottom) return
+      ctx.save()
+      ctx.strokeStyle = 'rgba(226, 232, 240, 0.45)'
+      ctx.setLineDash([4, 4])
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(chartArea.left, y)
+      ctx.lineTo(chartArea.right, y)
+      ctx.stroke()
+      ctx.restore()
+    },
+  }
+}
+
+// Daily training volume for the week, single-hue - the "workout volume
+// visual" alongside Insights' number tiles.
+function buildInsightsVolumeChartData(weekKeys, logsByDate) {
+  return {
+    labels: weekKeys.map((k) => WEEKDAY_SHORT_FMT.format(new Date(`${k}T00:00:00`))),
+    datasets: [
+      {
+        data: weekKeys.map((k) => (logsByDate[k] || []).reduce((s, l) => s + logVolume(l), 0)),
+        backgroundColor: CORAL,
+        borderRadius: 3,
+        maxBarThickness: 20,
+      },
+    ],
+  }
+}
+
+const miniBarChartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#111a2b',
+      borderColor: 'rgba(107, 140, 174, 0.35)',
+      borderWidth: 1,
+      titleColor: '#e2e8f0',
+      bodyColor: '#e2e8f0',
+      padding: 8,
+      displayColors: false,
+      callbacks: { label: (ctx) => `${Math.round(ctx.parsed.y).toLocaleString()} lbs` },
+    },
+  },
+  scales: {
+    x: { display: false },
+    y: { display: false, beginAtZero: true },
+  },
+}
+
+const macroDonutOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  cutout: '68%',
+  plugins: {
+    legend: { display: false },
+    tooltip: {
+      backgroundColor: '#111a2b',
+      borderColor: 'rgba(107, 140, 174, 0.35)',
+      borderWidth: 1,
+      titleColor: '#e2e8f0',
+      bodyColor: '#e2e8f0',
+      padding: 8,
+      callbacks: { label: (ctx) => `${ctx.label}: ${Math.round(ctx.parsed)}g` },
+    },
+  },
+}
+
 function dateKeyFromLocalDate(d) {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
@@ -196,8 +324,13 @@ function computeRecapStats(weekKeys, logsByDate, mealsByDate, checkinsByDate, ca
   }
   const adherencePct = daysWithMealsAndTarget > 0 ? Math.round((adherenceDays / daysWithMealsAndTarget) * 100) : null
   const consistencyPct = Math.round((activeDays / weekKeys.length) * 100)
-  const overallPct = adherencePct != null ? Math.round((consistencyPct + adherencePct) / 2) : consistencyPct
-  return { activeDays, totalDays: weekKeys.length, adherencePct, consistencyPct, overallPct, grade: gradeForPct(overallPct) }
+  // The grade reflects ACTIVITY consistency alone - literally "how
+  // consistent were you" - rather than a 50/50 blend with calorie
+  // adherence. Blending them let an unrelated, strict diet metric (a
+  // narrow +/-15% tolerance) drag a fully-active week down to a failing
+  // grade; adherence is still shown, just as its own honest, separate
+  // stat instead of silently halving the grade.
+  return { activeDays, totalDays: weekKeys.length, adherencePct, consistencyPct, grade: gradeForPct(consistencyPct) }
 }
 
 // PERFORMANCE DOMAIN: volume/sets/muscle split/progression only - no
@@ -250,12 +383,14 @@ function computeDietStats(weekKeys, mealsByDate, proteinTarget) {
   let daysWithMealsAndProteinTarget = 0
   let totalFatG = 0
   let totalCarbsG = 0
+  let totalProteinG = 0
   let daysWithMeals = 0
   for (const k of weekKeys) {
     const meals = mealsByDate[k] || []
     if (!meals.length) continue
     daysWithMeals += 1
     const dayProtein = meals.reduce((s, m) => s + (m.protein_g || 0), 0)
+    totalProteinG += dayProtein
     totalFatG += meals.reduce((s, m) => s + (m.fat_g || 0), 0)
     totalCarbsG += meals.reduce((s, m) => s + (m.carbs_g || 0), 0)
     if (proteinTarget) {
@@ -274,6 +409,10 @@ function computeDietStats(weekKeys, mealsByDate, proteinTarget) {
     fatPct,
     carbPct,
     daysWithMeals,
+    totalProteinG,
+    totalCarbsG,
+    totalFatG,
+    hasMacroData: totalProteinG + totalCarbsG + totalFatG > 0,
   }
 }
 
@@ -386,7 +525,7 @@ function buildFullAnalyticsReport({ recapStats, insightsStats, dietStats, nutrit
   sectionTitle('Weekly Recap')
   statLine('Active days', `${recapStats.activeDays}/${recapStats.totalDays}`)
   statLine('Calorie target adherence', recapStats.adherencePct != null ? `${recapStats.adherencePct}%` : 'No calorie target set')
-  statLine('Consistency rating', `Grade ${recapStats.grade} - ${recapStats.overallPct}% On Track`)
+  statLine('Consistency rating', `Grade ${recapStats.grade} - ${recapStats.consistencyPct}% On Track`)
   sectionRule()
 
   // Weekly Insights - training/strength only (see computeInsightsStats)
@@ -584,6 +723,40 @@ function buildExerciseChartData(history) {
         pointBackgroundColor: STEEL,
         pointBorderColor: '#0b1220',
         pointBorderWidth: history.map((p) => (p.is_pr ? 2 : 1)),
+      },
+    ],
+  }
+}
+
+// Supporting chart for the Performance Overview - distinct active workout
+// DAYS per Sunday-start calendar week (not raw log-row counts, so a single
+// session that logged five exercises still only counts as one active day).
+// Sourced from logsByDate (already keyed 'YYYY-MM-DD' -> that day's logs).
+function buildWorkoutFrequencyData(logsByDate) {
+  const activeDayKeys = Object.keys(logsByDate)
+    .filter((k) => (logsByDate[k] || []).length > 0)
+    .sort()
+  if (activeDayKeys.length === 0) return { labels: [], datasets: [{ data: [] }] }
+  const weekStartKey = (dayKey) => {
+    const d = new Date(`${dayKey}T00:00:00`)
+    d.setDate(d.getDate() - d.getDay())
+    return dateKeyFromLocalDate(d)
+  }
+  const counts = {}
+  for (const dayKey of activeDayKeys) {
+    const wk = weekStartKey(dayKey)
+    counts[wk] = (counts[wk] || 0) + 1
+  }
+  const weeks = Object.keys(counts).sort()
+  return {
+    labels: weeks,
+    datasets: [
+      {
+        label: 'Active days',
+        data: weeks.map((w) => counts[w]),
+        backgroundColor: CORAL,
+        borderRadius: 4,
+        maxBarThickness: 28,
       },
     ],
   }
@@ -880,31 +1053,29 @@ export default function Progress() {
             {/* RECAP DOMAIN: high-level compliance/consistency only - active
                 days, calorie-target adherence, and an overall grade. No
                 exercise detail, no per-macro breakdown (that's Insights' and
-                the Nutrition Audit's territory - see computeRecapStats). */}
+                the Nutrition Audit's territory - see computeRecapStats). The
+                bar chart visualizes the same adherence number (bars colored
+                by whether that day's calories fell within tolerance of the
+                target), it isn't a second, different metric. */}
             {hasAnyWeekData ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Active days</p>
-                  <p className="text-xl font-heading font-bold tabular-nums leading-none">
-                    {recapStats.activeDays}
-                    <span className="text-sm text-slate-400 font-normal">/{recapStats.totalDays}</span>
-                  </p>
+              <div className="space-y-3">
+                <div className="h-32">
+                  <Bar
+                    data={buildRecapChartData(weekStats.weekKeys, weekStats.dailyCalories, weekProfile?.daily_calorie_target)}
+                    options={recapChartOptions}
+                    plugins={[buildTargetLinePlugin(weekProfile?.daily_calorie_target)]}
+                  />
                 </div>
-                <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Calorie target adherence</p>
-                  <p className="text-xl font-heading font-bold tabular-nums leading-none">
-                    {recapStats.adherencePct != null ? `${recapStats.adherencePct}%` : '—'}
-                  </p>
-                  {recapStats.adherencePct == null && (
-                    <p className="text-[11px] text-slate-500 mt-1">Set a calorie target to track this</p>
-                  )}
-                </div>
-                <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
-                  <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">Consistency rating</p>
-                  <p className="text-lg font-heading font-bold leading-tight">
-                    Grade {recapStats.grade}
-                    <span className="text-sm text-slate-400 font-normal ml-1">- {recapStats.overallPct}% On Track</span>
-                  </p>
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-forest-950/40 border border-forest-700 text-slate-300">
+                    Active days: {recapStats.activeDays}/{recapStats.totalDays}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-forest-950/40 border border-forest-700 text-slate-300">
+                    Calorie adherence: {recapStats.adherencePct != null ? `${recapStats.adherencePct}%` : 'No target set'}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-coral-500/10 border border-coral-500/40 text-coral-400">
+                    Grade {recapStats.grade} - {recapStats.consistencyPct}% On Track
+                  </span>
                 </div>
               </div>
             ) : (
@@ -926,31 +1097,39 @@ export default function Progress() {
                 computeInsightsStats). */}
             {insightsStats.workoutDays > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Volume lifted</p>
-                    <p className="text-lg font-bold tabular-nums">
-                      {Math.round(insightsStats.volume).toLocaleString()}
-                      <span className="text-xs font-normal text-slate-400 ml-1">lbs</span>
-                    </p>
-                    {insightsStats.volumeChangePct != null ? (
-                      <p
-                        className={`text-[11px] font-semibold mt-1 ${
-                          insightsStats.volumeChangePct >= 0 ? 'text-coral-400' : 'text-sky-400'
-                        }`}
-                      >
-                        {insightsStats.volumeChangePct >= 0 ? '↑' : '↓'} {Math.abs(insightsStats.volumeChangePct)}% vs last week
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Volume lifted</p>
+                      <p className="text-lg font-bold tabular-nums">
+                        {Math.round(insightsStats.volume).toLocaleString()}
+                        <span className="text-xs font-normal text-slate-400 ml-1">lbs</span>
                       </p>
-                    ) : (
-                      <p className="text-[11px] text-slate-500 mt-1">No prior week to compare</p>
-                    )}
+                      {insightsStats.volumeChangePct != null ? (
+                        <p
+                          className={`text-[11px] font-semibold mt-1 ${
+                            insightsStats.volumeChangePct >= 0 ? 'text-coral-400' : 'text-sky-400'
+                          }`}
+                        >
+                          {insightsStats.volumeChangePct >= 0 ? '↑' : '↓'} {Math.abs(insightsStats.volumeChangePct)}% vs last week
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-slate-500 mt-1">No prior week to compare</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Sets completed</p>
+                      <p className="text-lg font-bold tabular-nums">{insightsStats.sets}</p>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        {insightsStats.workoutDays} workout day{insightsStats.workoutDays === 1 ? '' : 's'}
+                      </p>
+                    </div>
                   </div>
                   <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Sets completed</p>
-                    <p className="text-lg font-bold tabular-nums">{insightsStats.sets}</p>
-                    <p className="text-[11px] text-slate-500 mt-1">
-                      {insightsStats.workoutDays} workout day{insightsStats.workoutDays === 1 ? '' : 's'}
-                    </p>
+                    <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Daily volume</p>
+                    <div className="h-20">
+                      <Bar data={buildInsightsVolumeChartData(weekStats.weekKeys, logsByDate)} options={miniBarChartOptions} />
+                    </div>
                   </div>
                 </div>
                 <div>
@@ -1006,22 +1185,52 @@ export default function Progress() {
                 below. No workout stats, no set totals (see
                 computeDietStats). */}
             <div className="grid grid-cols-2 gap-2 mb-3">
-              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Protein target hit rate</p>
-                <p className="text-lg font-bold tabular-nums">
-                  {dietStats.proteinEligibleDays > 0 ? `${dietStats.proteinHitDays}/${dietStats.proteinEligibleDays}` : '—'}
-                  <span className="text-xs font-normal text-slate-400 ml-1">days</span>
-                </p>
-                {dietStats.proteinEligibleDays === 0 && (
-                  <p className="text-[11px] text-slate-500 mt-1">Set a protein target to track this</p>
-                )}
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5 flex items-center gap-2">
+                <ProgressRing
+                  value={dietStats.proteinHitDays}
+                  target={dietStats.proteinEligibleDays || undefined}
+                  label=""
+                  color="#10b981"
+                />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Protein target hit rate</p>
+                  <p className="text-lg font-bold tabular-nums">
+                    {dietStats.proteinEligibleDays > 0 ? `${dietStats.proteinHitDays}/${dietStats.proteinEligibleDays}` : '—'}
+                    <span className="text-xs font-normal text-slate-400 ml-1">days</span>
+                  </p>
+                  {dietStats.proteinEligibleDays === 0 && (
+                    <p className="text-[11px] text-slate-500 mt-1">Set a protein target to track this</p>
+                  )}
+                </div>
               </div>
-              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Fat vs. carb split</p>
-                <p className="text-lg font-bold tabular-nums">
-                  {dietStats.fatPct != null ? `${dietStats.fatPct}% / ${dietStats.carbPct}%` : '—'}
-                </p>
-                {dietStats.fatPct == null && <p className="text-[11px] text-slate-500 mt-1">No macros logged yet</p>}
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5 flex items-center gap-2">
+                {dietStats.hasMacroData ? (
+                  <div className="w-11 h-11 shrink-0">
+                    <Doughnut
+                      data={{
+                        labels: ['Protein', 'Carbs', 'Fat'],
+                        datasets: [
+                          {
+                            data: [dietStats.totalProteinG, dietStats.totalCarbsG, dietStats.totalFatG],
+                            backgroundColor: [SPARKLINE_COLORS.protein.line, SPARKLINE_COLORS.carbs.line, SPARKLINE_COLORS.fat.line],
+                            borderColor: '#0b1220',
+                            borderWidth: 2,
+                          },
+                        ],
+                      }}
+                      options={macroDonutOptions}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-11 h-11 shrink-0 rounded-full border-2 border-dashed border-forest-700" />
+                )}
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Fat vs. carb split</p>
+                  <p className="text-lg font-bold tabular-nums">
+                    {dietStats.fatPct != null ? `${dietStats.fatPct}% / ${dietStats.carbPct}%` : '—'}
+                  </p>
+                  {dietStats.fatPct == null && <p className="text-[11px] text-slate-500 mt-1">No macros logged yet</p>}
+                </div>
               </div>
             </div>
             {nutritionReviewLoading ? (
@@ -1095,18 +1304,70 @@ export default function Progress() {
 
       {activeTab === 'performance' && (
         <div className="space-y-4">
-          {/* Training Volume is the primary trend on this tab - full width,
-              taller, with its own hero stat - rather than one of three
-              equal-weight chart cards in a uniform grid. */}
-          <div className="card py-4 px-5">
+          {/* Performance Overview - compact at-a-glance tiles, same tile
+              pattern as the Insights tab's Weekly AI Recap card, so this tab
+              reads as part of the same dashboard instead of a set of
+              oversized, mostly-empty chart panels. */}
+          <div className="card py-3 px-4">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="font-heading font-semibold text-sm">Performance Overview</h2>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Training volume</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {hasVolume
+                    ? progress.volume_by_date[progress.volume_by_date.length - 1].total_volume.toLocaleString()
+                    : '—'}
+                  {hasVolume && <span className="text-xs font-normal text-slate-400 ml-1">lbs</span>}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {hasVolume ? 'Most recent session' : 'No workouts logged yet'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Calories burned</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {hasCalories
+                    ? `~${Math.round(
+                        progress.calories_by_date[progress.calories_by_date.length - 1].total_calories,
+                      ).toLocaleString()}`
+                    : '—'}
+                  {hasCalories && <span className="text-xs font-normal text-slate-400 ml-1">kcal</span>}
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  {hasCalories ? 'Most recent session' : 'No estimate yet'}
+                </p>
+              </div>
+              <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Workouts</p>
+                <p className="text-lg font-bold tabular-nums">
+                  {weekStats.workoutsThisWeek}
+                  <span className="text-sm text-slate-400 font-normal">/{weekStats.weekKeys.length}</span>
+                </p>
+                <p className="text-[11px] text-slate-500 mt-1">Last 7 days</p>
+              </div>
+              <div className="rounded-lg border border-coral-500/40 bg-coral-500/10 p-2.5">
+                <p className="text-[10px] uppercase tracking-wide text-coral-400 mb-1">Consistency</p>
+                <p className="text-lg font-heading font-bold tabular-nums">{recapStats.consistencyPct}%</p>
+                <p className="text-[11px] text-slate-500 mt-1">Active days this week</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Performance Trends - same compact card/chart-container language
+              as every other tab, just carrying Chart.js content instead of
+              tiles. Heights trimmed so a chart with real data reads as part
+              of a tight dashboard rather than an oversized, empty-looking box. */}
+          <div className="card py-3 px-4">
             <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
               <div>
-                <h2 className="font-heading font-semibold">Training Volume</h2>
+                <h2 className="font-heading font-semibold text-sm">Training Volume</h2>
                 <p className="text-xs text-slate-500 mt-0.5">Total sets × reps × weight, per day.</p>
               </div>
               {hasVolume && (
                 <div className="text-right shrink-0">
-                  <p className="text-3xl font-heading font-bold tabular-nums leading-none">
+                  <p className="text-xl font-heading font-bold tabular-nums leading-none">
                     {progress.volume_by_date[progress.volume_by_date.length - 1].total_volume.toLocaleString()}
                   </p>
                   <p className="text-[11px] text-slate-500 mt-1">Most recent session</p>
@@ -1115,7 +1376,7 @@ export default function Progress() {
             </div>
             {hasVolume ? (
               <>
-                <div className="h-64 mt-2">
+                <div className="h-48 mt-2">
                   <Line data={buildVolumeChartData(progress.volume_by_date)} options={baseChartOptions} />
                 </div>
                 <button
@@ -1150,8 +1411,6 @@ export default function Progress() {
             )}
           </div>
 
-          {/* Supporting charts - same data/behavior, deliberately smaller and
-              quieter than the primary trend above. */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card py-3 px-4">
               <h2 className="font-heading font-semibold text-sm mb-1">Calories Burned</h2>
@@ -1160,7 +1419,7 @@ export default function Progress() {
               </p>
               {hasCalories ? (
                 <>
-                  <div className="h-56">
+                  <div className="h-48">
                     <Line data={buildCaloriesChartData(progress.calories_by_date)} options={baseChartOptions} />
                   </div>
                   <button
@@ -1219,7 +1478,7 @@ export default function Progress() {
               <p className="text-xs text-slate-500 mb-3">Weight over time - larger points mark a PR.</p>
               {hasExercises && selectedExercise ? (
                 <>
-                  <div className="h-56">
+                  <div className="h-48">
                     <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
                   </div>
                   <button
@@ -1261,6 +1520,23 @@ export default function Progress() {
                 </p>
               )}
             </div>
+          </div>
+
+          {/* Workout Frequency - distinct active workout days per Sunday-start
+              week, from logsByDate (already gathered for the Insights tab's
+              stats). Small supporting chart, not a hero - kept short. */}
+          <div className="card py-3 px-4">
+            <h2 className="font-heading font-semibold text-sm mb-1">Workout Frequency</h2>
+            <p className="text-xs text-slate-500 mb-3">Distinct active workout days per week.</p>
+            {Object.values(logsByDate).some((v) => (v || []).length > 0) ? (
+              <div className="h-40">
+                <Bar data={buildWorkoutFrequencyData(logsByDate)} options={baseChartOptions} />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No workouts logged yet - once you log a few sessions, your weekly frequency shows up here.
+              </p>
+            )}
           </div>
         </div>
       )}
