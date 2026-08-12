@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.models import _today
+from app.rag.retrieve import get_relevant_form_tips
 from app.schemas import REPS_BOUNDS, RPE_BOUNDS, SETS_BOUNDS, WEIGHT_BOUNDS
 
 TOOL_SCHEMAS = [
@@ -139,9 +140,11 @@ TOOL_SCHEMAS = [
             "Gather the current user's most recent uploaded squat-video analysis (MediaPipe pose "
             "detection: rep count, and per-rep depth/knee-tracking/back-angle pass-fail flags), so you "
             "can answer questions like 'how was my squat form?' or 'what should I work on?' grounded in "
-            "real measurements rather than generic cues. Returns facts only - compose the actual "
-            "critique yourself. If there's no analysis yet, say so and suggest uploading a squat video "
-            "on the Live Session page."
+            "real measurements rather than generic cues. When a specific issue is detected, also "
+            "returns 1-2 relevant coaching-knowledge excerpts retrieved for that issue - ground your "
+            "critique in those excerpts when present. Returns facts only - compose the actual critique "
+            "yourself. If there's no analysis yet, say so and suggest uploading a squat video on the "
+            "Live Session page."
         ),
         "input_schema": {"type": "object", "properties": {}},
     },
@@ -520,7 +523,7 @@ def execute_analyze_form(db: Session, user_id: int, tool_input: dict) -> dict:
     if not analysis:
         return {"has_analysis": False}
 
-    return {
+    result = {
         "has_analysis": True,
         "exercise_name": analysis.exercise_name,
         "analyzed_at": analysis.analyzed_at.isoformat(),
@@ -529,6 +532,27 @@ def execute_analyze_form(db: Session, user_id: int, tool_input: dict) -> dict:
         "reps_with_good_knee_tracking": analysis.reps_with_good_knee_tracking,
         "reps_with_good_back_angle": analysis.reps_with_good_back_angle,
     }
+
+    # RAG augmentation (backend/app/rag/) - only ever adds a new key, never
+    # changes anything above. If no flag is raised, or retrieval finds
+    # nothing above the relevance threshold, or retrieval fails for any
+    # reason, `tips` is [] and this key is not added at all - the returned
+    # dict is byte-identical to today's.
+    flagged_topics = [
+        topic
+        for topic, good_count in (
+            ("depth", analysis.reps_with_good_depth),
+            ("knee_tracking", analysis.reps_with_good_knee_tracking),
+            ("back_angle", analysis.reps_with_good_back_angle),
+        )
+        if good_count < analysis.rep_count
+    ]
+    if flagged_topics:
+        tips = get_relevant_form_tips(analysis.exercise_name, flagged_topics)
+        if tips:
+            result["relevant_form_guidance"] = tips
+
+    return result
 
 
 def execute_ask_nutrition(db: Session, user_id: int, tool_input: dict) -> dict:

@@ -11,3 +11,9 @@ opencv-python-headless==5.0.0.93
 google-auth==2.36.0
 requests==2.34.2
 psycopg2-binary==2.9.10
+
+# RAG knowledge-base retrieval for analyze_form (backend/app/rag/) - isolated
+# addition, unrelated to the rest of the app's direct-context-injection AI
+# features. See backend/app/rag/embed_knowledge_base.py for how these are used.
+chromadb==1.5.9
+sentence-transformers==5.7.0
