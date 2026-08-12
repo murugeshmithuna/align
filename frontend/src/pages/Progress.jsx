@@ -877,6 +877,22 @@ const baseChartOptions = {
   },
 }
 
+// Workout Frequency's y-axis is a small whole-number day count (0-7) - with
+// only 1-2 weeks of history, Chart.js's default autoscale can pick a max of
+// 1 and label the axis in 0.2 decimal steps, which reads as broken for a
+// literal day-count. `precision: 0` + a forced integer stepSize keeps it to
+// whole numbers regardless of how little history exists yet.
+const workoutFrequencyChartOptions = {
+  ...baseChartOptions,
+  scales: {
+    ...baseChartOptions.scales,
+    y: {
+      ...baseChartOptions.scales.y,
+      ticks: { ...baseChartOptions.scales.y.ticks, precision: 0, stepSize: 1 },
+    },
+  },
+}
+
 // 3-series chart: legend on, tooltip markers on - color is now the only way
 // to tell Fitness/Fatigue/Form apart, so both must show it.
 const fatigueChartOptions = {
@@ -980,6 +996,13 @@ export default function Progress() {
     [progress, selectedExerciseId],
   )
 
+  // Bodyweight exercises (or a brand-new entry with only reps logged so
+  // far) legitimately have no `weight` value at all - a real, valid state,
+  // not missing data. Rendering the weight-over-time chart against an
+  // all-null/zero series produces a degenerate 0-1 Chart.js axis, so this
+  // gates on there being at least one real weighted data point instead.
+  const selectedExerciseHasWeight = selectedExercise?.history.some((p) => p.weight > 0) ?? false
+
   // Weekly AI Recap, Weekly AI Insights, and the Nutrition Audit's two
   // precision stats are computed here instead of via separate LLM calls -
   // each reads only the fields its own domain owns (see the three compute*
@@ -1065,8 +1088,15 @@ export default function Progress() {
     return <p className="text-slate-400 text-sm px-6 py-12">Loading your progress…</p>
   }
 
-  const hasVolume = progress.volume_by_date.length > 0
-  const hasCalories = (progress.calories_by_date || []).length > 0
+  // Require at least one genuinely non-zero data point, not just a non-empty
+  // array - a brand-new account's first logged set (or a bodyweight
+  // exercise with no external weight) can produce a real row whose value is
+  // 0/null. Rendering a line chart against all-zero data doesn't fail, but
+  // Chart.js's default beginAtZero autoscale picks a degenerate 0-1 axis
+  // for it (decimal gridlines, no visible line) - worse than the honest
+  // "not enough data yet" empty state this app uses everywhere else.
+  const hasVolume = progress.volume_by_date.some((p) => p.total_volume > 0)
+  const hasCalories = (progress.calories_by_date || []).some((p) => p.total_calories > 0)
   const hasExercises = progress.exercises.length > 0
 
   return (
@@ -1481,7 +1511,9 @@ export default function Progress() {
               </>
             ) : (
               <p className="text-sm text-slate-500 mt-3">
-                No workouts logged yet - once you log a few sessions, your volume trend shows up here.
+                {progress.volume_by_date.length > 0
+                  ? 'Your logged sessions so far have no external weight (bodyweight-only) - volume trends show up once a weighted set is logged.'
+                  : 'No workouts logged yet - once you log a few sessions, your volume trend shows up here.'}
               </p>
             )}
           </div>
@@ -1553,9 +1585,16 @@ export default function Progress() {
               <p className="text-xs text-slate-500 mb-3">Weight over time - larger points mark a PR.</p>
               {hasExercises && selectedExercise ? (
                 <>
-                  <div className="h-48">
-                    <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
-                  </div>
+                  {selectedExerciseHasWeight ? (
+                    <div className="h-48">
+                      <Line data={buildExerciseChartData(selectedExercise.history)} options={baseChartOptions} />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">
+                      No weight logged for this exercise yet - it may be a bodyweight movement. Set/rep
+                      history is below.
+                    </p>
+                  )}
                   <button
                     onClick={() => setShowExerciseTable((v) => !v)}
                     className="text-xs text-slate-500 hover:text-slate-300 mt-3"
@@ -1605,7 +1644,7 @@ export default function Progress() {
             <p className="text-xs text-slate-500 mb-3">Distinct active workout days per week.</p>
             {Object.values(logsByDate).some((v) => (v || []).length > 0) ? (
               <div className="h-40">
-                <Bar data={buildWorkoutFrequencyData(logsByDate)} options={baseChartOptions} />
+                <Bar data={buildWorkoutFrequencyData(logsByDate)} options={workoutFrequencyChartOptions} />
               </div>
             ) : (
               <p className="text-sm text-slate-500">
