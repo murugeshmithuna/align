@@ -142,7 +142,16 @@ const WEEKDAY_SHORT_FMT = new Intl.DateTimeFormat('en-US', { weekday: 'short' })
 // Bars colored by whether that day's logged calories fell within tolerance
 // of the weekly target - visualizes "adherence" directly rather than just
 // raw magnitude. Muted gray when there's no target to compare against yet.
-function buildRecapChartData(weekKeys, dailyCalories, calorieTarget) {
+// Active/logged days render in amber - the peak day of the week (the
+// single highest bar) gets the brand lime accent as the "hero" highlight,
+// exactly like the peak-day treatment already used elsewhere in this app's
+// charts. Both colors encode real information (logged vs. not, peak vs.
+// not) rather than being decorative.
+const RECAP_ACTIVE_COLOR = '#f97316'
+const RECAP_ACTIVE_HOVER = '#fb923c'
+
+function buildRecapChartData(weekKeys, dailyCalories) {
+  const peakValue = Math.max(0, ...dailyCalories)
   return {
     labels: weekKeys.map((k) => WEEKDAY_SHORT_FMT.format(new Date(`${k}T00:00:00`))),
     datasets: [
@@ -150,11 +159,14 @@ function buildRecapChartData(weekKeys, dailyCalories, calorieTarget) {
         data: dailyCalories,
         backgroundColor: dailyCalories.map((v) => {
           if (!v) return 'rgba(107, 140, 174, 0.25)'
-          if (!calorieTarget) return 'rgba(107, 140, 174, 0.55)'
-          const withinTolerance = Math.abs(v - calorieTarget) / calorieTarget <= 0.15
-          return withinTolerance ? CORAL : 'rgba(245, 158, 11, 0.6)'
+          return v === peakValue ? CORAL : RECAP_ACTIVE_COLOR
         }),
-        borderRadius: 4,
+        hoverBackgroundColor: dailyCalories.map((v) => {
+          if (!v) return 'rgba(107, 140, 174, 0.4)'
+          return v === peakValue ? CORAL : RECAP_ACTIVE_HOVER
+        }),
+        borderRadius: { topLeft: 6, topRight: 6, bottomLeft: 0, bottomRight: 0 },
+        borderSkipped: false,
         maxBarThickness: 28,
       },
     ],
@@ -217,7 +229,9 @@ function buildInsightsVolumeChartData(weekKeys, logsByDate) {
       {
         data: weekKeys.map((k) => (logsByDate[k] || []).reduce((s, l) => s + logVolume(l), 0)),
         backgroundColor: CORAL,
-        borderRadius: 3,
+        hoverBackgroundColor: '#d6f23d',
+        borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
+        borderSkipped: false,
         maxBarThickness: 20,
       },
     ],
@@ -245,6 +259,7 @@ const miniBarChartOptions = {
     y: { display: false, beginAtZero: true },
   },
 }
+
 
 const macroDonutOptions = {
   responsive: true,
@@ -291,6 +306,24 @@ function hasActivityOnDay(key, logsByDate, mealsByDate, checkinsByDate) {
   return !!(logsByDate[key]?.length || mealsByDate[key]?.length || checkinsByDate[key])
 }
 
+// Consecutive days of real logged activity (workout, meal, or check-in),
+// walking backward from today - a consistency metric, same domain as
+// "active days" above, not diet- or training-specific. If today itself has
+// nothing logged yet, that alone doesn't zero out an otherwise-real streak -
+// counting starts from yesterday in that case, same as any habit tracker.
+function computeStreak(today, logsByDate, mealsByDate, checkinsByDate) {
+  const cursor = new Date(today)
+  if (!hasActivityOnDay(dateKeyFromLocalDate(cursor), logsByDate, mealsByDate, checkinsByDate)) {
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  let streak = 0
+  while (hasActivityOnDay(dateKeyFromLocalDate(cursor), logsByDate, mealsByDate, checkinsByDate)) {
+    streak += 1
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return streak
+}
+
 // Deterministic, real-data-only stats for three strictly-separated domains
 // (Weekly AI Recap = compliance/consistency, Weekly AI Insights = training,
 // Weekly Nutrition Audit = diet) - computed here instead of asking three
@@ -330,7 +363,8 @@ function computeRecapStats(weekKeys, logsByDate, mealsByDate, checkinsByDate, ca
   // narrow +/-15% tolerance) drag a fully-active week down to a failing
   // grade; adherence is still shown, just as its own honest, separate
   // stat instead of silently halving the grade.
-  return { activeDays, totalDays: weekKeys.length, adherencePct, consistencyPct, grade: gradeForPct(consistencyPct) }
+  const streak = computeStreak(new Date(), logsByDate, mealsByDate, checkinsByDate)
+  return { activeDays, totalDays: weekKeys.length, adherencePct, consistencyPct, streak, grade: gradeForPct(consistencyPct) }
 }
 
 // PERFORMANCE DOMAIN: volume/sets/muscle split/progression only - no
@@ -755,7 +789,9 @@ function buildWorkoutFrequencyData(logsByDate) {
         label: 'Active days',
         data: weeks.map((w) => counts[w]),
         backgroundColor: CORAL,
-        borderRadius: 4,
+        hoverBackgroundColor: '#d6f23d',
+        borderRadius: { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 },
+        borderSkipped: false,
         maxBarThickness: 28,
       },
     ],
@@ -1054,17 +1090,20 @@ export default function Progress() {
                 days, calorie-target adherence, and an overall grade. No
                 exercise detail, no per-macro breakdown (that's Insights' and
                 the Nutrition Audit's territory - see computeRecapStats). The
-                bar chart visualizes the same adherence number (bars colored
-                by whether that day's calories fell within tolerance of the
-                target), it isn't a second, different metric. */}
+                bar chart visualizes real daily activity - amber for a
+                logged day, lime for the week's peak day - it isn't a second,
+                different metric. */}
             {hasAnyWeekData ? (
               <div className="space-y-3">
-                <div className="h-32">
-                  <Bar
-                    data={buildRecapChartData(weekStats.weekKeys, weekStats.dailyCalories, weekProfile?.daily_calorie_target)}
-                    options={recapChartOptions}
-                    plugins={[buildTargetLinePlugin(weekProfile?.daily_calorie_target)]}
-                  />
+                <div className="flex flex-col sm:flex-row gap-4 items-center">
+                  <ProgressRing value={recapStats.streak} label="Day streak" color={CORAL} />
+                  <div className="h-32 flex-1 w-full">
+                    <Bar
+                      data={buildRecapChartData(weekStats.weekKeys, weekStats.dailyCalories)}
+                      options={recapChartOptions}
+                      plugins={[buildTargetLinePlugin(weekProfile?.daily_calorie_target)]}
+                    />
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-forest-950/40 border border-forest-700 text-slate-300">
@@ -1099,7 +1138,13 @@ export default function Progress() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-lg border border-forest-700 bg-forest-950/40 p-2.5">
+                    <div
+                      className={`rounded-lg border p-2.5 ${
+                        insightsStats.volumeChangePct != null && insightsStats.volumeChangePct >= 0
+                          ? 'border-emerald-500/40 bg-emerald-500/5'
+                          : 'border-forest-700 bg-forest-950/40'
+                      }`}
+                    >
                       <p className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Volume lifted</p>
                       <p className="text-lg font-bold tabular-nums">
                         {Math.round(insightsStats.volume).toLocaleString()}
@@ -1108,7 +1153,7 @@ export default function Progress() {
                       {insightsStats.volumeChangePct != null ? (
                         <p
                           className={`text-[11px] font-semibold mt-1 ${
-                            insightsStats.volumeChangePct >= 0 ? 'text-coral-400' : 'text-sky-400'
+                            insightsStats.volumeChangePct >= 0 ? 'text-emerald-400' : 'text-sky-400'
                           }`}
                         >
                           {insightsStats.volumeChangePct >= 0 ? '↑' : '↓'} {Math.abs(insightsStats.volumeChangePct)}% vs last week
