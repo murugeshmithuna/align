@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { setAdminToken } from '../api.js'
 
 const STORAGE_KEY = 'fitness_agent_user_id'
 const SessionContext = createContext(null)
@@ -25,6 +26,10 @@ export function SessionProvider({ children }) {
 
   const logout = useCallback(() => {
     setUserIdState(null)
+    // An admin token otherwise survives logout indefinitely (up to its own
+    // 12h expiry) in this browser's localStorage - clear it here so it
+    // can't be picked up by whoever signs in next on the same device.
+    setAdminToken(null)
   }, [])
 
   const isAuthenticated = userId != null

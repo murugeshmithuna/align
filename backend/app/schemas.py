@@ -93,6 +93,9 @@ class GoogleAuthRequest(BaseModel):
 class GoogleAuthOut(BaseModel):
     user: UserOut
     is_new_user: bool
+    # Only set when `user.email` is in ADMIN_EMAILS at sign-in time - see
+    # app/admin_auth.py. Absent (None) for every non-admin sign-in.
+    admin_token: str | None = None
 
 
 # ---------- Exercises ----------

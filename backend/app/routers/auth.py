@@ -13,7 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.config import FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_STATE_SECRET
+from app.admin_auth import sign_admin_token
+from app.config import ADMIN_EMAILS, FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_STATE_SECRET
 from app.database import get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -114,7 +115,8 @@ def google_sign_in(payload: schemas.GoogleAuthRequest, db: Session = Depends(get
         raise HTTPException(status_code=401, detail=f"Invalid Google token: {exc}") from exc
 
     user, is_new_user = _upsert_user_from_claims(db, claims)
-    return {"user": user, "is_new_user": is_new_user}
+    admin_token = sign_admin_token(user.email) if user.email.lower() in ADMIN_EMAILS else None
+    return {"user": user, "is_new_user": is_new_user, "admin_token": admin_token}
 
 
 @router.get("/google/start")
@@ -203,4 +205,7 @@ def google_sign_in_callback(
     except HTTPException as exc:
         return fail(str(exc.detail).replace(" ", "_"))
 
-    return RedirectResponse(f"{FRONTEND_URL}/login?uid={user.id}&is_new={str(is_new_user).lower()}")
+    redirect_params = {"uid": user.id, "is_new": str(is_new_user).lower()}
+    if user.email.lower() in ADMIN_EMAILS:
+        redirect_params["admin_token"] = sign_admin_token(user.email)
+    return RedirectResponse(f"{FRONTEND_URL}/login?{urlencode(redirect_params)}")

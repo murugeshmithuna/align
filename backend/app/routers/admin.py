@@ -3,17 +3,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
-from app.config import ADMIN_EMAILS
+from app.admin_auth import require_admin
 from app.database import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _require_admin(requester_id: int, db: Session) -> models.User:
-    requester = db.get(models.User, requester_id)
-    if requester is None or requester.email.lower() not in ADMIN_EMAILS:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return requester
 
 
 def _count(db: Session, model, user_id: int) -> int:
@@ -21,8 +14,7 @@ def _count(db: Session, model, user_id: int) -> int:
 
 
 @router.get("/users", response_model=list[schemas.AdminUserSummary])
-def list_all_users(requester_id: int, db: Session = Depends(get_db)):
-    _require_admin(requester_id, db)
+def list_all_users(admin_email: str = Depends(require_admin), db: Session = Depends(get_db)):
     users = db.scalars(select(models.User).order_by(models.User.created_at.desc())).all()
     return [
         schemas.AdminUserSummary(
@@ -41,8 +33,7 @@ def list_all_users(requester_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/users/{user_id}", response_model=schemas.AdminUserDetail)
-def get_user_detail(user_id: int, requester_id: int, db: Session = Depends(get_db)):
-    _require_admin(requester_id, db)
+def get_user_detail(user_id: int, admin_email: str = Depends(require_admin), db: Session = Depends(get_db)):
     user = db.get(models.User, user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")

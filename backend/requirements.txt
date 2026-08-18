@@ -26,3 +26,9 @@ psycopg2-binary==2.9.10
 torch==2.9.1+cpu
 chromadb==1.5.9
 sentence-transformers==5.7.0
+
+# Testing (backend/tests/) - httpx is already pulled in transitively by
+# anthropic, but declared directly here since FastAPI's TestClient needs it
+# and a future dependency change shouldn't be able to silently remove it.
+pytest==9.1.1
+httpx==0.28.1

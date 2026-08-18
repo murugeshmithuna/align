@@ -1,5 +1,22 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
+const ADMIN_TOKEN_KEY = 'fitness_agent_admin_token'
+
+// Set once, right after a real Google Sign-In resolves to an ADMIN_EMAILS
+// address (see Login.jsx's redirect-callback handling) - never trust a
+// plain user_id for /admin/* the way the rest of this app trusts one for
+// everything else (see backend/app/admin_auth.py for why that mattered).
+// Called with null to clear it on logout (see SessionContext.jsx).
+export function setAdminToken(token) {
+  if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token)
+  else localStorage.removeItem(ADMIN_TOKEN_KEY)
+}
+
+function adminAuthHeader() {
+  const token = localStorage.getItem(ADMIN_TOKEN_KEY)
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 // The browser's own local calendar date ("2026-08-11"), NOT UTC - `new
 // Date().toISOString()` would shift to UTC internally, defeating the whole
 // point. Sent on every agent chat request as `client_date` so the
@@ -131,11 +148,15 @@ export const api = {
   getDailyNutritionReview: (userId) => request(`/agent/nutrition-review/daily/${userId}`),
   getWeeklyNutritionReview: (userId) => request(`/agent/nutrition-review/weekly/${userId}`),
 
-  // Admin-only - gated server-side by ADMIN_EMAILS (backend/app/config.py).
-  // requesterId is the signed-in viewer; the backend 403s unless their email
-  // is on the allowlist.
-  adminListUsers: (requesterId) => request(`/admin/users?requester_id=${requesterId}`),
-  adminGetUserDetail: (requesterId, userId) => request(`/admin/users/${userId}?requester_id=${requesterId}`),
+  // Admin-only - gated server-side by a signed admin token (see
+  // backend/app/admin_auth.py), not a client-supplied user id. The token is
+  // set via setAdminToken() below once, right after a Google Sign-In that
+  // resolves to an ADMIN_EMAILS address (see Login.jsx). Sending no/an
+  // invalid token gets a real 401/403 from the backend - there's nothing to
+  // special-case here, the missing-token case is just "no Authorization
+  // header," which adminAuthHeader() naturally produces.
+  adminListUsers: () => request('/admin/users', { headers: adminAuthHeader() }),
+  adminGetUserDetail: (userId) => request(`/admin/users/${userId}`, { headers: adminAuthHeader() }),
 }
 
 // Streams an agent chat reply via SSE. Calls onEvent(payload) for every

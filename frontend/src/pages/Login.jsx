@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { API_BASE_URL, api } from '../api.js'
+import { API_BASE_URL, api, setAdminToken } from '../api.js'
 import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
@@ -40,6 +40,10 @@ export default function Login() {
     const uid = params.get('uid')
     const googleError = params.get('google_error')
     if (uid) {
+      // Present only when this sign-in resolved to an ADMIN_EMAILS address
+      // (see backend/app/routers/auth.py) - absent (null) clears any stale
+      // token from a previous admin session in this same browser.
+      setAdminToken(params.get('admin_token'))
       showToast(params.get('is_new') === 'true' ? 'Welcome!' : 'Welcome back!')
       enterAs(Number(uid))
     } else if (googleError) {
