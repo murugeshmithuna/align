@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api.js'
-import { useSession } from '../context/SessionContext.jsx'
 
 function Section({ title, children, empty }) {
   return (
@@ -14,7 +13,6 @@ function Section({ title, children, empty }) {
 
 export default function AdminUserDetail() {
   const { userId: viewedUserId } = useParams()
-  const { userId: requesterId } = useSession()
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -22,11 +20,11 @@ export default function AdminUserDetail() {
   useEffect(() => {
     setLoading(true)
     api
-      .adminGetUserDetail(requesterId, viewedUserId)
+      .adminGetUserDetail(viewedUserId)
       .then(setDetail)
-      .catch((err) => setError(err.status === 403 ? 'not_authorized' : err.message))
+      .catch((err) => setError(err.status === 401 || err.status === 403 ? 'not_authorized' : err.message))
       .finally(() => setLoading(false))
-  }, [requesterId, viewedUserId])
+  }, [viewedUserId])
 
   if (loading) {
     return <p className="text-slate-400 text-sm px-6 py-12">Loading…</p>

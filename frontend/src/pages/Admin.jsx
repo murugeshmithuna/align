@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
-import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
 // The shared exercise catalog had no admin cleanup path at all - name
@@ -94,18 +93,17 @@ function ExerciseCatalogSection() {
 }
 
 export default function Admin() {
-  const { userId } = useSession()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
     api
-      .adminListUsers(userId)
+      .adminListUsers()
       .then(setUsers)
-      .catch((err) => setError(err.status === 403 ? 'not_authorized' : err.message))
+      .catch((err) => setError(err.status === 401 || err.status === 403 ? 'not_authorized' : err.message))
       .finally(() => setLoading(false))
-  }, [userId])
+  }, [])
 
   if (loading) {
     return <p className="text-slate-400 text-sm px-6 py-12">Loading users…</p>
