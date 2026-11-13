@@ -146,6 +146,10 @@ A companion `check_asymmetry()` takes raw left/right numeric samples (any per-si
 
 **A production outage got root-caused, not patched.** The RAG feature's embedding dependency pulled a full CUDA-enabled PyTorch build on Linux, which blocked the backend from binding its port on Render's free tier. Fixed by pinning a CPU-only torch wheel and making the ML imports lazy, so the same failure class can't recur even if a future dependency does the same thing.
 
+**Silent data loss was caught and fixed at the storage layer.** User data was disappearing because the backend's SQLite file sat on the host's ephemeral filesystem, which is wiped on every redeploy. I migrated production to managed PostgreSQL on Render (SQLite stays as the zero-config local fallback) and verified persistence across a simulated redeploy.
+
+**Timeouts and errors were tuned from a real incident.** The Anthropic SDK's default 600-second timeout let a stuck request hang far past any useful point, so I cut it to 60 seconds against Opus turns I measured at 15 to 30 seconds. Every Claude-call failure now reaches the user as one plain-language message while the raw exception is logged server-side, and I fixed a bug where a malformed tool call silently killed the response stream.
+
 **Security was audited before launch, not after an incident.** `POST /users` used to be a passwordless find-or-create-by-email endpoint - typing any email you knew signed you into that account, no password or verification of any kind, because the app had no session/token system to check against. Found and removed pre-launch (the route no longer exists at all, rather than being partially gated - a half-measure would still have let an unauthenticated caller probe whether a given email was registered), leaving Google OAuth as the sole way to create or access an account. The fix was verified with a real `curl POST /users` against the production API confirming a 404, not assumed from reading the code.
 
 ## API surface
