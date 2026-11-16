@@ -4,7 +4,9 @@
 
 A full-stack AI fitness coaching app I designed, built, and deployed solo: a Claude-powered conversational agent paired with real computer vision, a from-scratch retrieval-augmented generation (RAG) pipeline, and deterministic physiological modeling.
 
-Live frontend: [fitness-agent-sigma.vercel.app](https://fitness-agent-sigma.vercel.app)
+[![tests](https://github.com/murugeshmithuna/align/actions/workflows/tests.yml/badge.svg)](https://github.com/murugeshmithuna/align/actions/workflows/tests.yml)
+
+Live frontend: [fitness-agent-sigma.vercel.app](https://fitness-agent-sigma.vercel.app) (first load can take up to a minute - free-tier backend)
 Live backend: `fitness-agent-wuvh.onrender.com`
 
 ## What it does
