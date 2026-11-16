@@ -1,0 +1,15 @@
+[tool.ruff]
+# This codebase's own established style (dense, explanatory "why" comments)
+# genuinely runs long - 140 comfortably covers the real longest existing
+# line (139) without being an unlimited escape hatch.
+line-length = 140
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    # FastAPI's `Depends(...)`/`Header(...)` as a parameter default is the
+    # idiomatic, required pattern this entire app uses on every route -
+    # not the mutable-default-argument bug this rule is meant to catch.
+    "B008",
+]

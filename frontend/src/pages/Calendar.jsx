@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
-import { useSession } from '../context/SessionContext.jsx'
 import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
 
 // Self-contained in-app activity calendar - NOT a Google Calendar
@@ -189,7 +188,6 @@ function DayDetailPanel({ date, dayData, scheduledExercises, onClose }) {
 }
 
 export default function CalendarPage() {
-  const { userId } = useSession()
   const [loading, setLoading] = useState(true)
   const [logsByDate, setLogsByDate] = useState({})
   const [mealsByDate, setMealsByDate] = useState({})
@@ -216,7 +214,7 @@ export default function CalendarPage() {
         setActivePlan(active)
       })
       .catch(() => setActivePlan(null))
-  }, [userId])
+  }, [])
 
   const loadActivity = useCallback(() => {
     return Promise.all([api.listLogs(), api.listMealAnalyses(), api.getCheckinHistory()])
@@ -247,7 +245,7 @@ export default function CalendarPage() {
         // just with no indicator dots, same as an empty-state elsewhere
         // in this app rather than blocking the whole page.
       })
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     loadActivePlan()

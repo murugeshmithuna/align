@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api.js'
-import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { COACH_DATA_CHANGED_EVENT } from '../utils/coachEvents.js'
 
@@ -349,7 +348,6 @@ function ExercisePicker({ exercises, todaysExercises, value, onChange }) {
 }
 
 export default function WorkoutLog() {
-  const { userId } = useSession()
   const { showToast } = useToast()
 
   const [exercises, setExercises] = useState([])
@@ -481,7 +479,7 @@ export default function WorkoutLog() {
 
   const loadLogs = useCallback(() => {
     api.listLogs().then(setLogs).catch(() => {})
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     Promise.all([api.listExercises(), api.listLogs()])
@@ -491,7 +489,7 @@ export default function WorkoutLog() {
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [userId])
+  }, [])
 
   // Real day-wise scheduling, not the entire exercise catalog dumped into
   // one control - a direct request: "i have a listed activity plan day wise
@@ -511,7 +509,7 @@ export default function WorkoutLog() {
         setTodaysExercises(scheduled)
       })
       .catch(() => {})
-  }, [userId])
+  }, [])
 
   // Defaults to today's first planned exercise once it's known, falling
   // back to the first catalog exercise only if nothing's scheduled today -

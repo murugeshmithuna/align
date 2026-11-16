@@ -98,4 +98,5 @@ if __name__ == "__main__":
         mark = "✓" if correct else "✗"
         dist_str = f"{distance:.4f}" if distance is not None else "n/a"
         print(f"  {mark} dist={dist_str}  ({query!r})")
-    print(f"\nSpecificity: {report['negative_specificity']:.0%} ({sum(c for _, _, c in report['negative_results'])}/{len(NEGATIVE_QUERIES)})")
+    negative_pass_count = sum(c for _, _, c in report["negative_results"])
+    print(f"\nSpecificity: {report['negative_specificity']:.0%} ({negative_pass_count}/{len(NEGATIVE_QUERIES)})")

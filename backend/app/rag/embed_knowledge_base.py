@@ -20,7 +20,6 @@ app/database.py, or any existing route - it only reads knowledge_base/*.md
 and writes to vector_store/.
 """
 
-import re
 from pathlib import Path
 
 import chromadb

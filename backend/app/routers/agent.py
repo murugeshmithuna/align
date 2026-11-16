@@ -32,7 +32,7 @@ def agent_chat(
     try:
         return run_agent_turn(db, current_user.id, payload.message, payload.history, payload.client_date)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.post("/chat/stream")
@@ -58,7 +58,7 @@ def weekly_recap(
     try:
         return {"recap": generate_weekly_recap(db, current_user.id)}
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.get("/weekly-digest", response_model=schemas.WeeklyDigestOut)
@@ -69,7 +69,7 @@ def weekly_digest(
     try:
         return generate_weekly_digest(db, current_user.id)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.get("/nutrition-review/daily", response_model=schemas.NutritionReviewOut)
@@ -80,7 +80,7 @@ def nutrition_review_daily(
     try:
         return generate_daily_nutrition_review(db, current_user.id)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.get("/nutrition-review/weekly", response_model=schemas.NutritionReviewOut)
@@ -91,7 +91,7 @@ def nutrition_review_weekly(
     try:
         return generate_weekly_nutrition_review(db, current_user.id)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.post("/coach-resolution", response_model=schemas.CoachResolutionOut)
@@ -105,7 +105,7 @@ def coach_resolution(
     try:
         return generate_coach_resolution(db, current_user.id, payload.question)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
 
 @router.post("/coach-resolution/apply", response_model=schemas.ApplyResolutionOut)

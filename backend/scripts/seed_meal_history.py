@@ -7,7 +7,7 @@ DATABASE_URL pointed at the target DB:
 """
 
 import sys
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
 
 sys.path.insert(0, __file__.rsplit("/backend/", 1)[0] + "/backend")
 
@@ -44,11 +44,11 @@ def seed(email: str) -> None:
             user.daily_fat_target = 70
             user.daily_fiber_target = 30
 
-        today = datetime.now(timezone.utc).date()
+        today = datetime.now(UTC).date()
         created = 0
         for days_ago in range(6, -1, -1):
             day = today - timedelta(days=days_ago)
-            day_start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+            day_start = datetime.combine(day, time.min, tzinfo=UTC)
             calorie_shift = VARIATION[days_ago]
 
             for hour, description, calories, protein, carbs, fat, macro_summary, tip, timing in DAY_TEMPLATE:

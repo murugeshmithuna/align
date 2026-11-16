@@ -14,7 +14,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent import orchestrator
-from app.agent.orchestrator import REQUEST_TIMEOUT_SECONDS, _AGENT_CALL_FAILURE_MESSAGE, run_agent_turn
+from app.agent.orchestrator import _AGENT_CALL_FAILURE_MESSAGE, REQUEST_TIMEOUT_SECONDS, run_agent_turn
 from app.database import Base
 from app.models import User
 

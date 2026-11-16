@@ -35,3 +35,7 @@ sentence-transformers==5.7.0
 # and a future dependency change shouldn't be able to silently remove it.
 pytest==9.1.1
 httpx==0.28.1
+
+# Linting (backend/pyproject.toml) - CI fails the build on a lint error, not
+# just a failing test (.github/workflows/tests.yml).
+ruff==0.17.5

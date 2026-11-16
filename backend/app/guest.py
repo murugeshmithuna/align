@@ -196,7 +196,7 @@ def reseed_guest_data(db: Session) -> None:
         ("Salmon, quinoa, roasted asparagus", 580, 44.0, 42.0, 22.0,
          "Great omega-3 source.", "One of your best-balanced meals this week.", "Works well any time of day."),
     ]
-    for days_ago, (desc, cal, protein, carbs, fat, summary, tip, timing) in zip([1, 2, 4], meals):
+    for days_ago, (desc, cal, protein, carbs, fat, summary, tip, timing) in zip([1, 2, 4], meals, strict=True):
         db.add(models.MealAnalysis(
             user_id=user.id, analyzed_at=_utcnow() - timedelta(days=days_ago),
             description=desc, estimated_calories=cal, protein_g=protein, carbs_g=carbs, fat_g=fat,

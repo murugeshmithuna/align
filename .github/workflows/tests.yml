@@ -22,5 +22,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest
 
+      - name: Lint
+        run: ruff check app/ scripts/ tests/
+
       - name: Run tests
         run: pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

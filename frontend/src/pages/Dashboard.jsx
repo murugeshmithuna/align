@@ -5,7 +5,6 @@ import CheckinModal from '../components/CheckinModal.jsx'
 import CoachAIIndicator from '../components/CoachAIIndicator.jsx'
 import MacroBar from '../components/MacroBar.jsx'
 import ProgressRing from '../components/ProgressRing.jsx'
-import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 import { COACH_DATA_CHANGED_EVENT, openAiCoach } from '../utils/coachEvents.js'
 
@@ -28,7 +27,6 @@ function isWithinLastDays(dateInput, days) {
 }
 
 export default function Dashboard() {
-  const { userId } = useSession()
   const { showToast } = useToast()
   const navigate = useNavigate()
 
@@ -55,7 +53,7 @@ export default function Dashboard() {
       })
       .catch(() => setPlan(null))
       .finally(() => setPlanLoading(false))
-  }, [userId])
+  }, [])
 
   const loadActivity = useCallback(() => {
     Promise.all([api.listLogs().catch(() => []), api.listMealAnalyses().catch(() => [])])
@@ -64,7 +62,7 @@ export default function Dashboard() {
         setMeals(mealData)
       })
       .finally(() => setActivityLoading(false))
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     loadPlan()
@@ -78,7 +76,7 @@ export default function Dashboard() {
     api.getProfile().then(setProfile).catch(() => setProfile(null))
 
     loadActivity()
-  }, [userId, loadPlan, loadActivity])
+  }, [loadPlan, loadActivity])
 
   // The AI Coach's floating drawer is mounted separately from this page - a
   // confirmed "Added X to your plan"/"Logged Y" reply otherwise left the
