@@ -7,6 +7,7 @@ authoritative resolution, and optionally concrete plan_exercise adjustments)
 rather than a persona-flavored paragraph to parse."""
 
 import logging
+import time
 
 import anthropic
 from sqlalchemy import select
@@ -15,6 +16,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.agent.orchestrator import _AGENT_CALL_FAILURE_MESSAGE, _get_client, _get_user_or_raise
 from app.config import CLAUDE_MODEL
+from app.cost_tracking import log_usage
 from app.models import _today
 
 logger = logging.getLogger(__name__)
@@ -177,6 +179,7 @@ def generate_coach_resolution(db: Session, user_id: int, question: str | None = 
     # returned a bare 500. Fixed the same way orchestrator.py's run_agent_turn/
     # stream_agent_turn already handle the identical failure mode - catch
     # anthropic.APIError, log it, and surface a clean, generic 503 instead.
+    started_at = time.monotonic()
     try:
         response = client.messages.create(
             model=CLAUDE_MODEL,
@@ -189,6 +192,7 @@ def generate_coach_resolution(db: Session, user_id: int, question: str | None = 
     except anthropic.APIError:
         logger.exception("Coach Resolution Claude call failed")
         raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+    log_usage("coach_resolution", CLAUDE_MODEL, response.usage, started_at)
 
     tool_block = next((b for b in response.content if b.type == "tool_use"), None)
     if tool_block is None:

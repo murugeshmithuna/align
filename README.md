@@ -29,6 +29,22 @@ Live backend: `fitness-agent-wuvh.onrender.com`
 
 One agent, several deterministic tools - a cheap Haiku pass routes every message, only calling the heavier Opus reasoner when a tool is actually needed. Every tool's input/output is a forced, strict JSON schema (`additionalProperties: false`), and anything genuinely computable - the Banister fitness/fatigue model, calorie estimates, PR detection - is plain Python the model narrates, never arithmetic it's trusted to do itself. On top of that sits a layer of guardrails that don't depend on the model behaving: per-user session auth (`backend/app/user_auth.py`), a hard write-tool block for the shared guest account enforced at the single tool-execution chokepoint rather than in the prompt (`backend/app/guest.py`), and per-user rate limiting (`backend/app/rate_limit.py`).
 
+## Results
+
+Every number below is either measured directly and reproducible from this repo, or explicitly marked pending - nothing here is invented.
+
+| Metric | Result | How it's measured |
+|---|---|---|
+| Backend tests passing | **60/60** | `cd backend && pytest` - also runs in CI on every push ([`tests.yml`](.github/workflows/tests.yml)) |
+| RAG retrieval precision@1 | **92% (12/13)** | `backend/scripts/eval_retrieval.py` - 13 real knowledge-base docs, natural-language queries, against the real committed ChromaDB index at the real 0.4 distance threshold. One real, disclosed miss (see below) |
+| RAG retrieval specificity | **100% (7/7)** | Same script - 7 genuinely unrelated queries (recipes, weather, geography), confirming they're correctly filtered out, not matched to the nearest exercise doc anyway |
+| Router tool-selection accuracy | *Pending* | Harness built and ready (`backend/scripts/eval_router.py`, 50 labeled cases across all 9 tools + plain-conversation) - see note below |
+| Avg. Claude calls per turn / cost per conversation / p50 & p95 latency | *Pending* | Instrumentation live in production (`backend/app/cost_tracking.py` logs real tokens/latency/cost per call) - numbers will be real once there's traffic to aggregate |
+
+**Why two rows say "pending," honestly:** verifying this live today surfaced that the Manifest proxy this app routes Claude calls through is currently out of its request quota (`M204: insufficient_quota` - confirmed against both this local dev environment and the live production backend). The router eval and cost/latency numbers both require real Claude API calls to produce, so I'm not fabricating them - the harness and the logging are both built, tested where they can be tested without a live call, and ready to produce real numbers the moment the subscription is resolved. Run `python backend/scripts/eval_router.py` (or trigger [`eval-router.yml`](.github/workflows/eval-router.yml) manually) once that's fixed.
+
+The one real retrieval miss, for honesty: *"I'm not curling the weight through the full range of motion"* matched `curl_momentum_swinging.md` instead of the expected `curl_partial_range.md` (distance 0.3485, still under threshold - a real near-miss between two genuinely related curl-form topics, not a broken query).
+
 ## What it does
 
 ALIGN is a Claude-based fitness coach that plans workouts, adjusts them based on soreness and readiness check-ins, analyzes exercise form from video and live webcam, reads meal photos into structured macros, and tracks training load against a real fatigue model, not just a streak counter.

@@ -1,5 +1,6 @@
 import json
 import logging
+import time as time_module
 from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta
 
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.agent.tools import TOOL_EXECUTORS, TOOL_SCHEMAS
 from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, FAST_MODEL
+from app.cost_tracking import log_usage
 from app.guest import GUEST_READ_ONLY_MESSAGE, WRITE_TOOL_NAMES, is_guest
 from app.models import _today, _utcnow
 
@@ -526,6 +528,7 @@ def run_agent_turn(
         # model. Only applies to a brand-new conversation - once there's
         # history, a short reply needs the full context to interpret, so
         # continuing threads always go straight to the reasoning model below.
+        started_at = time_module.monotonic()
         try:
             router_response = client.messages.create(
                 model=FAST_MODEL,
@@ -537,6 +540,7 @@ def run_agent_turn(
         except anthropic.APIError:
             logger.exception("Routing-pass Claude call failed")
             raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+        log_usage("chat_routing", FAST_MODEL, router_response.usage, started_at)
         if router_response.stop_reason != "tool_use":
             reply = "".join(block.text for block in router_response.content if block.type == "text")
             new_history = [
@@ -574,6 +578,7 @@ def run_agent_turn(
     tool_call_log: list[dict] = []
 
     for _ in range(MAX_TURNS):
+        started_at = time_module.monotonic()
         try:
             response = client.messages.create(
                 model=CLAUDE_MODEL,
@@ -585,6 +590,7 @@ def run_agent_turn(
         except anthropic.APIError:
             logger.exception("Tool-loop Claude call failed")
             raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+        log_usage("chat_tool_loop", CLAUDE_MODEL, response.usage, started_at)
         messages.append({"role": "assistant", "content": _serialize_content(response.content)})
 
         if response.stop_reason != "tool_use":
@@ -702,6 +708,7 @@ def stream_agent_turn(
     if not history:
         # Fast routing pass: stream the cheap model's tokens immediately. If it
         # answers directly (no tool needed) that IS the final response.
+        started_at = time_module.monotonic()
         try:
             with client.messages.stream(
                 model=FAST_MODEL,
@@ -713,6 +720,7 @@ def stream_agent_turn(
                 for text in stream.text_stream:
                     yield _sse({"content": text})
                 router_response = stream.get_final_message()
+            log_usage("chat_stream_routing", FAST_MODEL, router_response.usage, started_at)
         except (anthropic.APIError, AssertionError):
             # A hung/slow upstream response (the Manifest proxy this project
             # routes through, or Anthropic's API itself) used to leave this
@@ -769,6 +777,7 @@ def stream_agent_turn(
     messages: list[dict] = history + [{"role": "user", "content": message}]
 
     for _ in range(MAX_TURNS):
+        started_at = time_module.monotonic()
         try:
             with client.messages.stream(
                 model=CLAUDE_MODEL,
@@ -780,6 +789,7 @@ def stream_agent_turn(
                 for text in stream.text_stream:
                     yield _sse({"content": text})
                 response = stream.get_final_message()
+            log_usage("chat_stream_tool_loop", CLAUDE_MODEL, response.usage, started_at)
         except (anthropic.APIError, AssertionError):
             # Same failure modes as the routing-pass stream above (including
             # the live-observed AssertionError shape - see that comment),
@@ -912,6 +922,7 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
         f"Daily readiness check-ins (last 7 days):\n{checkin_lines}"
     )
 
+    started_at = time_module.monotonic()
     try:
         response = client.messages.create(
             model=FAST_MODEL,
@@ -925,6 +936,7 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
         # catches the RuntimeError this now raises instead.
         logger.exception("Weekly recap Claude call failed")
         raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+    log_usage("weekly_recap", FAST_MODEL, response.usage, started_at)
     return "".join(block.text for block in response.content if block.type == "text")
 
 
@@ -1034,6 +1046,7 @@ def generate_weekly_digest(db: Session, user_id: int) -> dict:
         f"Meal photo analyses (last 7 days):\n{meal_lines}"
     )
 
+    started_at = time_module.monotonic()
     try:
         response = client.messages.create(
             model=FAST_MODEL,
@@ -1045,6 +1058,7 @@ def generate_weekly_digest(db: Session, user_id: int) -> dict:
     except anthropic.APIError:
         logger.exception("Weekly digest Claude call failed")
         raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+    log_usage("weekly_digest", FAST_MODEL, response.usage, started_at)
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
 
@@ -1096,6 +1110,7 @@ def _build_target_context(user: models.User) -> str:
 
 
 def _run_nutrition_review(client, prompt: str) -> dict:
+    started_at = time_module.monotonic()
     try:
         response = client.messages.create(
             model=FAST_MODEL,
@@ -1107,6 +1122,7 @@ def _run_nutrition_review(client, prompt: str) -> dict:
     except anthropic.APIError:
         logger.exception("Nutrition review Claude call failed")
         raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+    log_usage("nutrition_review", FAST_MODEL, response.usage, started_at)
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
 
@@ -1319,6 +1335,7 @@ def _max_consecutive_bad_form(reps: list[dict]) -> int:
 
 
 def _run_form_feedback(client, prompt: str) -> dict:
+    started_at = time_module.monotonic()
     try:
         response = client.messages.create(
             model=FAST_MODEL,
@@ -1330,6 +1347,7 @@ def _run_form_feedback(client, prompt: str) -> dict:
     except anthropic.APIError:
         logger.exception("Live-session form feedback Claude call failed")
         raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
+    log_usage("form_feedback", FAST_MODEL, response.usage, started_at)
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
 
