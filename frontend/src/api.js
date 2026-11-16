@@ -103,6 +103,10 @@ export const api = {
   // backend anymore (see backend/app/routers/users.py). Google Sign-In
   // (auth/google/start) is the only way to create or access an account.
   googleSignIn: (idToken) => request('/auth/google', { method: 'POST', body: JSON.stringify({ id_token: idToken }) }),
+  // Signs in as the one shared, read-only public demo account - no Google
+  // OAuth needed. Every write it attempts is blocked server-side (see
+  // backend/app/guest.py), not just hidden in the UI.
+  guestSignIn: () => request('/auth/guest', { method: 'POST' }),
 
   listExercises: () => request('/exercises'),
   createExercise: (payload) => request('/exercises', { method: 'POST', body: JSON.stringify(payload) }),

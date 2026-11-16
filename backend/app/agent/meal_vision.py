@@ -23,11 +23,15 @@ whatever the user confirmed, post-edit).
 """
 
 import base64
+import logging
 
+import anthropic
 from sqlalchemy.orm import Session
 
-from app.agent.orchestrator import _get_client, _get_user_or_raise
+from app.agent.orchestrator import _AGENT_CALL_FAILURE_MESSAGE, _get_client, _get_user_or_raise
 from app.config import CLAUDE_MODEL, FAST_MODEL
+
+logger = logging.getLogger(__name__)
 
 MEAL_ANALYSIS_TOOL = {
     "name": "report_meal_analysis",
@@ -110,18 +114,24 @@ def _sum_ingredients(ingredients: list[dict]) -> dict:
 
 
 def _run_analysis(client, system: str, content) -> dict:
-    response = client.messages.create(
-        model=CLAUDE_MODEL,
-        # Ingredient breakdowns need more headroom than a single aggregate
-        # did - a multi-component meal (e.g. a bowl with 4-5 ingredients)
-        # easily exceeds the old 400-token ceiling once each one gets its
-        # own name/quantity/four macro numbers.
-        max_tokens=800,
-        system=system,
-        tools=[MEAL_ANALYSIS_TOOL],
-        tool_choice={"type": "tool", "name": "report_meal_analysis"},
-        messages=[{"role": "user", "content": content}],
-    )
+    try:
+        response = client.messages.create(
+            model=CLAUDE_MODEL,
+            # Ingredient breakdowns need more headroom than a single aggregate
+            # did - a multi-component meal (e.g. a bowl with 4-5 ingredients)
+            # easily exceeds the old 400-token ceiling once each one gets its
+            # own name/quantity/four macro numbers.
+            max_tokens=800,
+            system=system,
+            tools=[MEAL_ANALYSIS_TOOL],
+            tool_choice={"type": "tool", "name": "report_meal_analysis"},
+            messages=[{"role": "user", "content": content}],
+        )
+    except anthropic.APIError:
+        # Previously unwrapped - propagated as a raw 500 past the router's
+        # own `except RuntimeError`, which only catches what this raises.
+        logger.exception("Meal analysis Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     tool_block = next(block for block in response.content if block.type == "tool_use")
     result = tool_block.input
     result.update(_sum_ingredients(result["ingredients"]))
@@ -174,12 +184,16 @@ def estimate_ingredient_macros(name: str, quantity: str) -> dict:
     quantity. Uses FAST_MODEL since this is a quick lookup, not the fuller
     goal-aware analysis the two functions above do."""
     client = _get_client()
-    response = client.messages.create(
-        model=FAST_MODEL,
-        max_tokens=200,
-        tools=[INGREDIENT_MACRO_TOOL],
-        tool_choice={"type": "tool", "name": "report_ingredient_macros"},
-        messages=[{"role": "user", "content": f'Estimate calories and macros for: "{quantity} {name}".'}],
-    )
+    try:
+        response = client.messages.create(
+            model=FAST_MODEL,
+            max_tokens=200,
+            tools=[INGREDIENT_MACRO_TOOL],
+            tool_choice={"type": "tool", "name": "report_ingredient_macros"},
+            messages=[{"role": "user", "content": f'Estimate calories and macros for: "{quantity} {name}".'}],
+        )
+    except anthropic.APIError:
+        logger.exception("Ingredient macro estimate Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.guest import block_guest_writes
 from app.models import _today, plan_status_for_score
 from app.user_auth import get_current_user
 
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/user", tags=["checkin"])
 def submit_checkin(
     payload: schemas.CheckInCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     today = _today()
     status = plan_status_for_score(payload.score)

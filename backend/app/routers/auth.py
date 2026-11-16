@@ -5,7 +5,7 @@ import time
 from urllib.parse import urlencode
 
 import requests
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -14,8 +14,16 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.admin_auth import sign_admin_token
-from app.config import ADMIN_EMAILS, FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_STATE_SECRET
+from app.config import (
+    ADMIN_EMAILS,
+    FRONTEND_URL,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GUEST_RESET_SECRET,
+    OAUTH_STATE_SECRET,
+)
 from app.database import get_db
+from app.guest import get_or_create_guest_user, reseed_guest_data
 from app.user_auth import sign_user_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -123,6 +131,34 @@ def google_sign_in(payload: schemas.GoogleAuthRequest, db: Session = Depends(get
         "user_token": sign_user_token(user.id),
         "admin_token": admin_token,
     }
+
+
+@router.post("/guest", response_model=schemas.GuestAuthOut)
+def guest_sign_in(db: Session = Depends(get_db)):
+    """Lets a recruiter click once and see the real app working, with zero
+    Google OAuth - mints a session token for the one fixed, shared demo
+    account (see app/guest.py), finding-or-creating it on first ever hit.
+    Every write that account attempts is blocked server-side
+    (app/guest.block_guest_writes, and orchestrator.py's _run_tool for
+    agent-tool writes) - this just signs in, nothing more."""
+    user = get_or_create_guest_user(db)
+    return {"user": user, "user_token": sign_user_token(user.id)}
+
+
+@router.post("/guest/reset", status_code=204)
+def reset_guest_demo_data(x_reset_secret: str | None = Header(default=None), db: Session = Depends(get_db)):
+    """Wipes and reseeds the guest account's demo history - called on a
+    schedule by .github/workflows/reset-guest-demo.yml so the shared demo
+    account stays clean regardless of how many visitors have poked at it
+    (the agent chat's write tools are already blocked for guest, but this
+    is what undoes anything a recruiter did through the read-only paths
+    that still persist nothing, plus just keeps the data looking fresh).
+    Guarded by a dedicated shared secret, not the admin token system -
+    this needs to work indefinitely from an unattended cron, not re-prove
+    itself via Google Sign-In every 12 hours."""
+    if not GUEST_RESET_SECRET or not x_reset_secret or not hmac.compare_digest(x_reset_secret, GUEST_RESET_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid or missing reset secret")
+    reseed_guest_data(db)
 
 
 @router.get("/google/start")

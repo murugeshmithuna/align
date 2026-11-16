@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.agent.orchestrator import run_agent_turn
 from app.database import get_db
+from app.guest import block_guest_writes
 from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/user", tags=["user-profile"])
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 def upsert_user_profile(
     payload: schemas.UserProfileUpdate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     user = current_user
 

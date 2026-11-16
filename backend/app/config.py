@@ -42,6 +42,22 @@ OAUTH_STATE_SECRET = os.getenv("OAUTH_STATE_SECRET") or GOOGLE_CLIENT_SECRET or 
 # never trusted from a bare request.
 ADMIN_EMAILS = {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()}
 
+# Fixed, well-known email identifying the shared public demo account (see
+# app/guest.py) - a real, seeded, sign-in-free User row anyone can start a
+# session as from the "Try demo" link, so a recruiter never has to click
+# through Google OAuth to see the app work. Identified by this constant
+# rather than a new schema column/flag, since it's just an equality check -
+# no migration needed to add it.
+GUEST_EMAIL = "guest@align.demo"
+
+# Shared secret for POST /auth/guest/reset - a scheduled GitHub Actions job
+# (not a human admin sign-in, which only mints a 12-hour token) hits this to
+# wipe and reseed the guest account's demo history on a recurring schedule.
+# Deliberately a separate, dedicated secret rather than reusing the admin
+# token system, since this needs to work indefinitely from an unattended
+# cron, not re-prove itself via Google Sign-In every 12 hours.
+GUEST_RESET_SECRET = os.getenv("GUEST_RESET_SECRET", "")
+
 # Heavier reasoning model - reserved for turns that actually invoke a tool
 # (plan generation/adjustment, supplement recommendations).
 CLAUDE_MODEL = "claude-opus-4-8"

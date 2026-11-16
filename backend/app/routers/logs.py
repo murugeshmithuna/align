@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.agent.fatigue import calories_by_day, estimate_calories_burned
 from app.database import get_db
+from app.guest import block_guest_writes
 from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/logs", tags=["logs"])
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/logs", tags=["logs"])
 def create_log(
     payload: schemas.LogCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     if not db.get(models.Exercise, payload.exercise_id):
         raise HTTPException(status_code=404, detail="Exercise not found")

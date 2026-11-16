@@ -11,6 +11,7 @@ from app import models, schemas
 from app.agent.meal_vision import analyze_meal_photo, analyze_meal_text, estimate_ingredient_macros
 from app.agent.orchestrator import generate_live_session_form_feedback
 from app.database import get_db
+from app.guest import block_guest_writes
 from app.rate_limit import LLM_RATE_LIMIT, limiter
 from app.user_auth import get_current_user
 from app.vision.pose_analysis import analyze_squat_video
@@ -48,7 +49,7 @@ def _sniff_image_media_type(data: bytes, declared: str) -> str:
 async def analyze_squat(
     video: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     suffix = os.path.splitext(video.filename or "")[1] or ".mp4"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -170,7 +171,7 @@ def estimate_ingredient(
 def save_meal(
     payload: schemas.MealSaveRequest,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     """Persists the final values from the Review & Edit step - whatever the
     user confirmed (edited or not), not necessarily what the model
@@ -209,7 +210,7 @@ def submit_live_session_form(
     request: Request,
     payload: schemas.LiveSessionFormCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     """Called once per exercise when a LiveSession.jsx session completes -
     persists the real per-rep depth/form pass-fail data the live pose
@@ -220,7 +221,13 @@ def submit_live_session_form(
         raise HTTPException(status_code=400, detail="No reps to evaluate")
 
     reps = [r.model_dump() for r in payload.reps]
-    feedback = generate_live_session_form_feedback(db, current_user.id, payload.exercise_name, reps)
+    try:
+        feedback = generate_live_session_form_feedback(db, current_user.id, payload.exercise_name, reps)
+    except RuntimeError as exc:
+        # Previously unhandled here - a Claude-call failure propagated as a
+        # raw 500 instead of the same clean 503 every other agent-calling
+        # route in this app already gives.
+        raise HTTPException(status_code=503, detail=str(exc)) from None
 
     record = models.LiveSessionForm(
         user_id=current_user.id,

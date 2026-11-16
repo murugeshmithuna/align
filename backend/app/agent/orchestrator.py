@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.agent.tools import TOOL_EXECUTORS, TOOL_SCHEMAS
 from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL, FAST_MODEL
+from app.guest import GUEST_READ_ONLY_MESSAGE, WRITE_TOOL_NAMES, is_guest
 from app.models import _today, _utcnow
 
 logger = logging.getLogger(__name__)
@@ -432,6 +433,15 @@ def _run_tool(db: Session, user_id: int, block) -> dict:
     executor = TOOL_EXECUTORS.get(block.name)
     if executor is None:
         return {"error": f"unknown tool {block.name}"}
+    # The one real chokepoint every write tool passes through, regardless of
+    # which caller (run_agent_turn, stream_agent_turn) reached here - the
+    # shared guest demo account gets a real conversational reply and every
+    # read-only tool, just never one that would persist a change visible to
+    # the next visitor. See app/guest.py.
+    if block.name in WRITE_TOOL_NAMES:
+        user = db.get(models.User, user_id)
+        if user and is_guest(user):
+            return {"error": GUEST_READ_ONLY_MESSAGE}
     try:
         return executor(db, user_id, block.input)
     except Exception as exc:
@@ -703,7 +713,7 @@ def stream_agent_turn(
                 for text in stream.text_stream:
                     yield _sse({"content": text})
                 router_response = stream.get_final_message()
-        except anthropic.APIError:
+        except (anthropic.APIError, AssertionError):
             # A hung/slow upstream response (the Manifest proxy this project
             # routes through, or Anthropic's API itself) used to leave this
             # `with` block blocking for up to the SDK's own 600s default
@@ -713,6 +723,14 @@ def stream_agent_turn(
             # Claude call itself. REQUEST_TIMEOUT_SECONDS bounds how long
             # this can possibly block; this except is what turns that bound
             # into a clean, terminal SSE frame instead of a silent hang.
+            # AssertionError is a real, live-observed second failure shape:
+            # when the upstream response itself is an error (confirmed live
+            # with a Manifest "insufficient_quota" 402), the SDK's streaming
+            # context manager doesn't always surface it as an APIError
+            # before get_final_message() is called - it raises a bare
+            # `assert self.__final_message_snapshot is not None` instead,
+            # which silently bypassed this handler entirely and crashed the
+            # whole ASGI response as an unhandled 500 until this was added.
             logger.exception("Routing-pass Claude stream failed")
             yield _sse({"error": _AGENT_CALL_FAILURE_MESSAGE})
             yield _sse({"done": True})
@@ -762,12 +780,13 @@ def stream_agent_turn(
                 for text in stream.text_stream:
                     yield _sse({"content": text})
                 response = stream.get_final_message()
-        except anthropic.APIError:
-            # Same failure mode as the routing-pass stream above, but this is
-            # the call that actually reproduces the reported bug: a real
-            # first reply streams successfully, then the *next* iteration's
-            # stream (e.g. right after a tool call) hangs on a slow/hung
-            # upstream response with nothing coming back. Without this
+        except (anthropic.APIError, AssertionError):
+            # Same failure modes as the routing-pass stream above (including
+            # the live-observed AssertionError shape - see that comment),
+            # but this is the call that actually reproduces the reported
+            # bug: a real first reply streams successfully, then the *next*
+            # iteration's stream (e.g. right after a tool call) hangs on a
+            # slow/hung upstream response with nothing coming back. Without this
             # except, that exception would propagate straight out of this
             # generator and silently kill the SSE connection - exactly what
             # left the frontend stuck on "Running adjust_plan..." forever.
@@ -893,11 +912,19 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
         f"Daily readiness check-ins (last 7 days):\n{checkin_lines}"
     )
 
-    response = client.messages.create(
-        model=FAST_MODEL,
-        max_tokens=150,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = client.messages.create(
+            model=FAST_MODEL,
+            max_tokens=150,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError:
+        # Previously unwrapped - a real quota/billing error here (confirmed
+        # live via the Manifest proxy) propagated as a raw, unhandled 500
+        # straight past the router's own `except RuntimeError`, which only
+        # catches the RuntimeError this now raises instead.
+        logger.exception("Weekly recap Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     return "".join(block.text for block in response.content if block.type == "text")
 
 
@@ -1007,13 +1034,17 @@ def generate_weekly_digest(db: Session, user_id: int) -> dict:
         f"Meal photo analyses (last 7 days):\n{meal_lines}"
     )
 
-    response = client.messages.create(
-        model=FAST_MODEL,
-        max_tokens=400,
-        tools=[WEEKLY_DIGEST_TOOL],
-        tool_choice={"type": "tool", "name": "report_weekly_digest"},
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = client.messages.create(
+            model=FAST_MODEL,
+            max_tokens=400,
+            tools=[WEEKLY_DIGEST_TOOL],
+            tool_choice={"type": "tool", "name": "report_weekly_digest"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError:
+        logger.exception("Weekly digest Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
 
@@ -1065,13 +1096,17 @@ def _build_target_context(user: models.User) -> str:
 
 
 def _run_nutrition_review(client, prompt: str) -> dict:
-    response = client.messages.create(
-        model=FAST_MODEL,
-        max_tokens=400,
-        tools=[NUTRITION_REVIEW_TOOL],
-        tool_choice={"type": "tool", "name": "report_nutrition_review"},
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = client.messages.create(
+            model=FAST_MODEL,
+            max_tokens=400,
+            tools=[NUTRITION_REVIEW_TOOL],
+            tool_choice={"type": "tool", "name": "report_nutrition_review"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError:
+        logger.exception("Nutrition review Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
 
@@ -1284,13 +1319,17 @@ def _max_consecutive_bad_form(reps: list[dict]) -> int:
 
 
 def _run_form_feedback(client, prompt: str) -> dict:
-    response = client.messages.create(
-        model=FAST_MODEL,
-        max_tokens=400,
-        tools=[FORM_FEEDBACK_TOOL],
-        tool_choice={"type": "tool", "name": "report_form_feedback"},
-        messages=[{"role": "user", "content": prompt}],
-    )
+    try:
+        response = client.messages.create(
+            model=FAST_MODEL,
+            max_tokens=400,
+            tools=[FORM_FEEDBACK_TOOL],
+            tool_choice={"type": "tool", "name": "report_form_feedback"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except anthropic.APIError:
+        logger.exception("Live-session form feedback Claude call failed")
+        raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     tool_block = next(block for block in response.content if block.type == "tool_use")
     return tool_block.input
 

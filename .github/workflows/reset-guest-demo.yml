@@ -1,0 +1,16 @@
+name: Reset guest demo data
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the guest reset endpoint
+        run: |
+          curl -sf --retry 5 --retry-all-errors --retry-delay 10 -m 60 \
+            -X POST -H "X-Reset-Secret: ${{ secrets.GUEST_RESET_SECRET }}" \
+            https://fitness-agent-wuvh.onrender.com/auth/guest/reset

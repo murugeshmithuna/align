@@ -101,6 +101,11 @@ class GoogleAuthOut(BaseModel):
     admin_token: str | None = None
 
 
+class GuestAuthOut(BaseModel):
+    user: UserOut
+    user_token: str
+
+
 # ---------- Exercises ----------
 
 

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.guest import block_guest_writes
 from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/plans", tags=["plans"])
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/plans", tags=["plans"])
 def create_plan(
     payload: schemas.PlanCreate,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     plan = models.Plan(user_id=current_user.id, name=payload.name, notes=payload.notes)
     for pe in payload.plan_exercises:
@@ -55,7 +56,7 @@ def get_plan(
 def activate_plan(
     plan_id: int,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     plan = _get_owned_plan_or_404(db, plan_id, current_user)
 

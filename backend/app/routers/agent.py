@@ -14,6 +14,7 @@ from app.agent.orchestrator import (
 from app.agent.resolution import generate_coach_resolution
 from app.agent.tools import execute_adjust_plan
 from app.database import get_db
+from app.guest import block_guest_writes
 from app.rate_limit import LLM_RATE_LIMIT, limiter
 from app.user_auth import get_current_user
 
@@ -111,7 +112,7 @@ def coach_resolution(
 def apply_coach_resolution(
     payload: schemas.ApplyResolutionRequest,
     db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(block_guest_writes),
 ):
     result = execute_adjust_plan(
         db,

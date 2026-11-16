@@ -10,6 +10,7 @@ export default function Login() {
   const navigate = useNavigate()
 
   const [error, setError] = useState('')
+  const [demoLoading, setDemoLoading] = useState(false)
 
   // After establishing a session, send first-timers to onboarding and
   // everyone else straight to the dashboard. `token` is the signed session
@@ -57,17 +58,46 @@ export default function Login() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // One click, zero Google OAuth - signs in as the shared, real (but
+  // read-only) demo account so a recruiter sees the actual app working
+  // immediately. Every write it attempts is blocked server-side (see
+  // backend/app/guest.py), not just hidden in this UI.
+  async function handleTryDemo() {
+    setDemoLoading(true)
+    setError('')
+    try {
+      const { user, user_token } = await api.guestSignIn()
+      login(user.id, user_token)
+      showToast('Exploring the demo account - changes won\'t be saved.')
+      navigate('/dashboard')
+    } catch {
+      setError("Couldn't start the demo right now - please try again in a moment.")
+    } finally {
+      setDemoLoading(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-6 font-body">
       <div className="card w-full max-w-md p-8">
         <h1 className="font-heading font-bold text-2xl mb-1">Sign in</h1>
         <p className="text-sm text-slate-400 mb-6">
-          Sign in with your Google account to continue.
+          Try the demo instantly, or sign in with Google to use your own account.
         </p>
 
         {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
 
-        <div className="flex justify-center">
+        <div className="flex flex-col gap-3">
+          <button
+            type="button"
+            onClick={handleTryDemo}
+            disabled={demoLoading}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-coral-500 hover:bg-coral-600 disabled:opacity-50 text-sm font-heading font-semibold"
+          >
+            {demoLoading ? 'Loading demo…' : 'Try the demo'}
+          </button>
+          <p className="text-center text-xs text-slate-500">— or —</p>
+
           {/* A plain top-level navigation straight to the backend, which
               redirects to Google's own consent screen - the classic server-
               side OAuth flow, not Google's Identity Services JS widget. No
