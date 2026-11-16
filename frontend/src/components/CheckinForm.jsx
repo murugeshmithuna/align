@@ -10,7 +10,7 @@ const LABELS = {
   5: 'Pumped Up',
 }
 
-export default function CheckinForm({ userId, onSubmitted }) {
+export default function CheckinForm({ onSubmitted }) {
   const [score, setScore] = useState(3)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -21,7 +21,7 @@ export default function CheckinForm({ userId, onSubmitted }) {
     setSubmitting(true)
     setError('')
     try {
-      const result = await api.submitCheckin({ user_id: userId, score: Number(score) })
+      const result = await api.submitCheckin({ score: Number(score) })
       flashSubmitted()
       // Briefly show "Submitted ✓" before the parent closes/navigates away
       // on submission - otherwise it'd never actually be visible.

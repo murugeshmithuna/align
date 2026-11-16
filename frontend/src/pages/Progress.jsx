@@ -938,7 +938,7 @@ export default function Progress() {
 
   useEffect(() => {
     api
-      .getProgress(userId)
+      .getProgress()
       .then((data) => {
         setProgress(data)
         if (data.exercises.length > 0) setSelectedExerciseId(data.exercises[0].exercise_id)
@@ -947,13 +947,13 @@ export default function Progress() {
       .finally(() => setLoading(false))
 
     api
-      .getFatigue(userId)
+      .getFatigue()
       .then(setFatigue)
       .catch(() => setFatigue({ series: [], risk: null }))
 
-    api.getProfile(userId).then(setWeekProfile).catch(() => setWeekProfile(null))
+    api.getProfile().then(setWeekProfile).catch(() => setWeekProfile(null))
 
-    Promise.all([api.listLogs(userId), api.listMealAnalyses(userId), api.getCheckinHistory(userId)])
+    Promise.all([api.listLogs(), api.listMealAnalyses(), api.getCheckinHistory()])
       .then(([logs, meals, checkins]) => {
         const byLogDate = {}
         for (const log of logs) {
@@ -1029,7 +1029,7 @@ export default function Progress() {
     setNutritionReviewLoading(true)
     setNutritionReviewError('')
     try {
-      setNutritionReview(await api.getWeeklyNutritionReview(userId))
+      setNutritionReview(await api.getWeeklyNutritionReview())
     } catch (err) {
       setNutritionReviewError(err.message)
     } finally {
@@ -1044,7 +1044,7 @@ export default function Progress() {
   async function handleExportFullReport() {
     setExportingReport(true)
     try {
-      const nutritionData = nutritionReview || (await api.getWeeklyNutritionReview(userId).catch(() => nutritionReview))
+      const nutritionData = nutritionReview || (await api.getWeeklyNutritionReview().catch(() => nutritionReview))
       if (nutritionData && nutritionData !== nutritionReview) setNutritionReview(nutritionData)
       buildFullAnalyticsReport({ recapStats, insightsStats, dietStats, nutritionReview: nutritionData, progress, fatigue })
     } finally {

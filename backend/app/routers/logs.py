@@ -7,56 +7,54 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.agent.fatigue import calories_by_day, estimate_calories_burned
 from app.database import get_db
+from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/logs", tags=["logs"])
 
 
 @router.post("", response_model=schemas.LogOut, status_code=201)
-def create_log(payload: schemas.LogCreate, db: Session = Depends(get_db)):
-    user = db.get(models.User, payload.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def create_log(
+    payload: schemas.LogCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     if not db.get(models.Exercise, payload.exercise_id):
         raise HTTPException(status_code=404, detail="Exercise not found")
-    if payload.plan_id is not None and not db.get(models.Plan, payload.plan_id):
-        raise HTTPException(status_code=404, detail="Plan not found")
+    if payload.plan_id is not None:
+        plan = db.get(models.Plan, payload.plan_id)
+        if not plan or plan.user_id != current_user.id:
+            raise HTTPException(status_code=404, detail="Plan not found")
 
-    log = models.WorkoutLog(**payload.model_dump())
+    log = models.WorkoutLog(user_id=current_user.id, **payload.model_dump())
     db.add(log)
     db.commit()
     db.refresh(log)
     # Transient attribute (not a mapped column) - see LogOut's docstring.
     # Computed fresh here rather than stored, same "compute on the fly"
-    # approach as GET /logs/user/{id}/progress's volume_by_date.
-    log.estimated_calories = estimate_calories_burned(log.sets, log.reps, user.weight_kg, log.rpe)
+    # approach as GET /logs/progress's volume_by_date.
+    log.estimated_calories = estimate_calories_burned(log.sets, log.reps, current_user.weight_kg, log.rpe)
     return log
 
 
-@router.get("/user/{user_id}", response_model=list[schemas.LogOut])
-def list_logs_for_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.get(models.User, user_id)
+@router.get("", response_model=list[schemas.LogOut])
+def list_my_logs(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     stmt = (
         select(models.WorkoutLog)
-        .where(models.WorkoutLog.user_id == user_id)
+        .where(models.WorkoutLog.user_id == current_user.id)
         .order_by(models.WorkoutLog.performed_at.desc())
     )
     logs = db.scalars(stmt).all()
-    weight_kg = user.weight_kg if user else None
     for log in logs:
-        log.estimated_calories = estimate_calories_burned(log.sets, log.reps, weight_kg, log.rpe)
+        log.estimated_calories = estimate_calories_burned(log.sets, log.reps, current_user.weight_kg, log.rpe)
     return logs
 
 
-@router.get("/user/{user_id}/progress", response_model=schemas.ProgressOut)
-def get_progress(user_id: int, db: Session = Depends(get_db)):
-    user = db.get(models.User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
+@router.get("/progress", response_model=schemas.ProgressOut)
+def get_progress(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     stmt = (
         select(models.WorkoutLog, models.Exercise.name)
         .join(models.Exercise, models.WorkoutLog.exercise_id == models.Exercise.id)
-        .where(models.WorkoutLog.user_id == user_id)
+        .where(models.WorkoutLog.user_id == current_user.id)
         .order_by(models.WorkoutLog.performed_at.asc())
     )
     rows = db.execute(stmt).all()
@@ -94,7 +92,7 @@ def get_progress(user_id: int, db: Session = Depends(get_db)):
     # Same per-day aggregation pattern as volume_by_date, just fed through
     # the MET-formula estimator instead of raw sets*reps*weight - see
     # app/agent/fatigue.py.
-    calories_totals = calories_by_day(raw_logs, user.weight_kg)
+    calories_totals = calories_by_day(raw_logs, current_user.weight_kg)
 
     return {
         "volume_by_date": [{"date": d, "total_volume": v} for d, v in sorted(volume_by_date.items())],

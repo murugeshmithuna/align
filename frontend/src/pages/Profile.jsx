@@ -175,7 +175,7 @@ export default function Profile() {
   useEffect(() => {
     setLoadError(false)
     api
-      .getProfile(userId)
+      .getProfile()
       .then((data) => {
         const units = data.preferred_units || 'metric'
         setExperienceLevel(data.experience_level || 'beginner')
@@ -247,7 +247,6 @@ export default function Profile() {
     }
     try {
       await api.saveProfile({
-        user_id: userId,
         experience_level: experienceLevel,
         target_frequency: Number(targetFrequency),
         available_equipment: equipment,

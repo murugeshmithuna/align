@@ -162,7 +162,7 @@ export default function NutritionCalculator() {
 
   useEffect(() => {
     api
-      .getProfile(userId)
+      .getProfile()
       .then((data) => {
         const units = data.preferred_units || 'metric'
         setPreferredUnits(units)
@@ -244,7 +244,6 @@ export default function NutritionCalculator() {
     setSaving(true)
     try {
       await api.saveProfile({
-        user_id: userId,
         height_cm: heightDisplayToMetric(heightDisplay, preferredUnits),
         weight_kg: displayToMetric(weightDisplay, preferredUnits, KG_PER_LB),
         preferred_units: preferredUnits,

@@ -62,7 +62,6 @@ class UserOut(BaseModel):
 
 
 class UserProfileUpdate(BaseModel):
-    user_id: int
     experience_level: ExperienceLevel | None = None
     target_frequency: int | None = Field(default=None, ge=1, le=7)
     available_equipment: list[str] | None = None
@@ -93,6 +92,10 @@ class GoogleAuthRequest(BaseModel):
 class GoogleAuthOut(BaseModel):
     user: UserOut
     is_new_user: bool
+    # Signed session token (see app/user_auth.py) - every subsequent
+    # request authenticates as this user via `Authorization: Bearer
+    # <user_token>`, never by sending user_id again.
+    user_token: str
     # Only set when `user.email` is in ADMIN_EMAILS at sign-in time - see
     # app/admin_auth.py. Absent (None) for every non-admin sign-in.
     admin_token: str | None = None
@@ -144,7 +147,6 @@ class PlanExerciseOut(BaseModel):
 
 
 class PlanCreate(BaseModel):
-    user_id: int
     name: str
     notes: str | None = None
     plan_exercises: list[PlanExerciseCreate] = []
@@ -166,7 +168,6 @@ class PlanOut(BaseModel):
 
 
 class LogCreate(BaseModel):
-    user_id: int
     exercise_id: int
     plan_id: int | None = None
     sets: int | None = Field(default=None, **SETS_BOUNDS)
@@ -239,7 +240,6 @@ class ProgressOut(BaseModel):
 
 
 class SorenessNoteCreate(BaseModel):
-    user_id: int
     muscle_group: str
     severity: int = Field(ge=1, le=5)
     notes: str | None = None
@@ -260,7 +260,6 @@ class SorenessNoteOut(BaseModel):
 
 
 class CheckInCreate(BaseModel):
-    user_id: int
     score: int = Field(ge=1, le=5)  # 1 (sick/exhausted) - 5 (pumped up)
 
 
@@ -281,7 +280,6 @@ class CheckInOut(BaseModel):
 
 
 class AgentChatRequest(BaseModel):
-    user_id: int
     message: str
     # Stateless API - the client echoes back the `history` it was given on
     # the previous response so short/context-dependent replies ("2", "yes")
@@ -363,7 +361,6 @@ class NutritionReviewOut(BaseModel):
 
 
 class CoachResolutionRequest(BaseModel):
-    user_id: int
     question: str | None = None
 
 
@@ -383,7 +380,6 @@ class CoachResolutionOut(BaseModel):
 
 
 class ApplyResolutionRequest(BaseModel):
-    user_id: int
     plan_id: int
     updates: list[PlanAdjustmentItem]
 
@@ -467,7 +463,6 @@ class LiveRepResult(BaseModel):
 
 
 class LiveSessionFormCreate(BaseModel):
-    user_id: int
     exercise_name: str
     reps: list[LiveRepResult]
 
@@ -545,12 +540,10 @@ class MealAnalysisPreviewOut(BaseModel):
 
 
 class MealTextRequest(BaseModel):
-    user_id: int
     text: str
 
 
 class MealSaveRequest(BaseModel):
-    user_id: int
     description: str
     estimated_calories: int = Field(ge=0, le=5000)
     protein_g: float = Field(ge=0, le=500)

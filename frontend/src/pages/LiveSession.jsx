@@ -928,7 +928,7 @@ export default function LiveSession() {
   useEffect(() => {
     if (stateExercises) return
     api
-      .listPlans(userId)
+      .listPlans()
       .then((plans) => {
         const active = plans.find((p) => p.is_active)
         if (!active) return
@@ -967,7 +967,7 @@ export default function LiveSession() {
       {tab === 'live' ? (
         <LiveWebcamSession userId={userId} planExercises={planExercises} planId={planId} />
       ) : (
-        <SquatVideoUpload userId={userId} />
+        <SquatVideoUpload />
       )}
     </div>
   )
@@ -1075,7 +1075,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   useEffect(() => {
     if (!userId) return
     api
-      .getProfile(userId)
+      .getProfile()
       .then((profile) => setWeightKg(profile.weight_kg ?? null))
       .catch(() => {})
   }, [userId])
@@ -1133,7 +1133,6 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
           .join('; ')
         try {
           const { reply } = await api.chat({
-            user_id: userId,
             message: `I just finished a live-tracked workout: ${summary}. Form accuracy was ${formAccuracyPct ?? 'n/a'}%. Write a short (1-2 sentence) encouraging end-of-workout note for my PDF summary - no questions, no follow-up offer, just the note.`,
           })
           aiNote = reply
@@ -1198,7 +1197,6 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     if (!userId) return
     try {
       await api.createLog({
-        user_id: userId,
         exercise_id: item.exerciseId,
         plan_id: planId,
         sets: item.targetSets,
@@ -1222,7 +1220,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     const results = []
     for (const [exerciseName, reps] of entries) {
       try {
-        const feedback = await api.submitLiveSessionForm({ user_id: userId, exercise_name: exerciseName, reps })
+        const feedback = await api.submitLiveSessionForm({ exercise_name: exerciseName, reps })
         results.push({ exerciseName, ...feedback })
       } catch {
         // Best-effort - one exercise's feedback failing shouldn't drop the rest.
@@ -1285,7 +1283,6 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
       if (item) {
         try {
           await api.createLog({
-            user_id: userId,
             exercise_id: item.exerciseId,
             plan_id: planId,
             sets: 1,
@@ -1301,7 +1298,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     const entries = Object.entries(draft.repFormLog || {}).filter(([, reps]) => reps.length > 0)
     for (const [exerciseName, reps] of entries) {
       try {
-        await api.submitLiveSessionForm({ user_id: userId, exercise_name: exerciseName, reps })
+        await api.submitLiveSessionForm({ exercise_name: exerciseName, reps })
       } catch {
         // best effort
       }
@@ -1330,7 +1327,6 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
     if (usingPlan && item && s.repCount > 0) {
       try {
         await api.createLog({
-          user_id: userId,
           exercise_id: item.exerciseId,
           plan_id: planId,
           sets: 1,
@@ -2028,7 +2024,7 @@ function LiveWebcamSession({ userId, planExercises, planId }) {
   )
 }
 
-function SquatVideoUpload({ userId }) {
+function SquatVideoUpload() {
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2041,7 +2037,7 @@ function SquatVideoUpload({ userId }) {
     setError('')
     setResult(null)
     try {
-      const data = await api.analyzeSquat(userId, file)
+      const data = await api.analyzeSquat(file)
       setResult(data)
     } catch (err) {
       setError(err.message)

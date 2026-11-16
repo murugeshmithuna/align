@@ -96,7 +96,7 @@ export default function Navbar() {
 
   useEffect(() => {
     api
-      .getProfile(userId)
+      .getProfile()
       .then(setProfile)
       .catch(() => setProfile(null))
   }, [userId])

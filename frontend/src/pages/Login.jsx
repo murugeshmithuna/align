@@ -5,22 +5,24 @@ import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
 export default function Login() {
-  const { setUserId } = useSession()
+  const { login } = useSession()
   const { showToast } = useToast()
   const navigate = useNavigate()
 
   const [error, setError] = useState('')
 
   // After establishing a session, send first-timers to onboarding and
-  // everyone else straight to the dashboard.
-  async function enterAs(userId) {
-    setUserId(userId)
+  // everyone else straight to the dashboard. `token` is the signed session
+  // token (see backend/app/user_auth.py) - set before the profile fetch so
+  // that request actually authenticates.
+  async function enterAs(userId, token) {
+    login(userId, token)
     try {
       // The profile endpoint returns 200 with null fields even for a
       // brand-new user (the row always exists once the account does) - so
       // "onboarding needed" has to be read from the field values, not the
       // HTTP status.
-      const profile = await api.getProfile(userId)
+      const profile = await api.getProfile()
       navigate(profile.experience_level ? '/dashboard' : '/profile')
     } catch {
       navigate('/profile')
@@ -38,14 +40,15 @@ export default function Login() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const uid = params.get('uid')
+    const token = params.get('token')
     const googleError = params.get('google_error')
-    if (uid) {
+    if (uid && token) {
       // Present only when this sign-in resolved to an ADMIN_EMAILS address
       // (see backend/app/routers/auth.py) - absent (null) clears any stale
       // token from a previous admin session in this same browser.
       setAdminToken(params.get('admin_token'))
       showToast(params.get('is_new') === 'true' ? 'Welcome!' : 'Welcome back!')
-      enterAs(Number(uid))
+      enterAs(Number(uid), token)
     } else if (googleError) {
       setError(`Google sign-in failed: ${googleError}`)
     }

@@ -451,7 +451,6 @@ export default function WorkoutLog() {
     setLoggingSetIndex(index)
     try {
       const log = await api.createLog({
-        user_id: userId,
         exercise_id: Number(exerciseId),
         sets: 1,
         reps: row.reps === '' ? null : Number(row.reps),
@@ -481,11 +480,11 @@ export default function WorkoutLog() {
   const hasUserPickedRef = useRef(false)
 
   const loadLogs = useCallback(() => {
-    api.listLogs(userId).then(setLogs).catch(() => {})
+    api.listLogs().then(setLogs).catch(() => {})
   }, [userId])
 
   useEffect(() => {
-    Promise.all([api.listExercises(), api.listLogs(userId)])
+    Promise.all([api.listExercises(), api.listLogs()])
       .then(([exerciseList, logList]) => {
         setExercises(exerciseList)
         setLogs(logList)
@@ -501,7 +500,7 @@ export default function WorkoutLog() {
   // day-of-week filter LiveSession.jsx already uses for its own picker.
   useEffect(() => {
     api
-      .listPlans(userId)
+      .listPlans()
       .then((plans) => {
         const active = plans.find((p) => p.is_active)
         if (!active) return
@@ -596,7 +595,6 @@ export default function WorkoutLog() {
     setSaving(true)
     try {
       const log = await api.createLog({
-        user_id: userId,
         exercise_id: Number(exerciseId),
         sets: Number(sets),
         reps: Number(reps),

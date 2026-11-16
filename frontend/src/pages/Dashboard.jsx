@@ -44,7 +44,7 @@ export default function Dashboard() {
 
   const loadPlan = useCallback(() => {
     api
-      .listPlans(userId)
+      .listPlans()
       .then((plans) => {
         const activePlans = plans.filter((p) => p.is_active)
         const active =
@@ -58,7 +58,7 @@ export default function Dashboard() {
   }, [userId])
 
   const loadActivity = useCallback(() => {
-    Promise.all([api.listLogs(userId).catch(() => []), api.listMealAnalyses(userId).catch(() => [])])
+    Promise.all([api.listLogs().catch(() => []), api.listMealAnalyses().catch(() => [])])
       .then(([logData, mealData]) => {
         setLogs(logData)
         setMeals(mealData)
@@ -70,12 +70,12 @@ export default function Dashboard() {
     loadPlan()
 
     api
-      .getTodaysCheckin(userId)
+      .getTodaysCheckin()
       .then((data) => setCheckin(data))
       .catch(() => setShowCheckinModal(true))
       .finally(() => setCheckinLoading(false))
 
-    api.getProfile(userId).then(setProfile).catch(() => setProfile(null))
+    api.getProfile().then(setProfile).catch(() => setProfile(null))
 
     loadActivity()
   }, [userId, loadPlan, loadActivity])
@@ -428,7 +428,6 @@ export default function Dashboard() {
 
       {showCheckinModal && (
         <CheckinModal
-          userId={userId}
           onSubmitted={handleCheckinSubmitted}
           onDismiss={() => setShowCheckinModal(false)}
         />

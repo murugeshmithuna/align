@@ -1,24 +1,27 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.agent.orchestrator import run_agent_turn
 from app.database import get_db
+from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/user", tags=["user-profile"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("/profile", response_model=schemas.UserOut)
-def upsert_user_profile(payload: schemas.UserProfileUpdate, db: Session = Depends(get_db)):
-    user = db.get(models.User, payload.user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def upsert_user_profile(
+    payload: schemas.UserProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    user = current_user
 
-    for field, value in payload.model_dump(exclude={"user_id"}, exclude_unset=True).items():
+    for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
 
     db.commit()
@@ -62,9 +65,6 @@ def upsert_user_profile(payload: schemas.UserProfileUpdate, db: Session = Depend
     return user
 
 
-@router.get("/profile/{user_id}", response_model=schemas.UserOut)
-def get_user_profile(user_id: int, db: Session = Depends(get_db)):
-    user = db.get(models.User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+@router.get("/profile", response_model=schemas.UserOut)
+def get_user_profile(current_user: models.User = Depends(get_current_user)):
+    return current_user

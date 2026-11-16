@@ -3,7 +3,7 @@ import os
 import tempfile
 
 from anthropic import BadRequestError
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,6 +11,8 @@ from app import models, schemas
 from app.agent.meal_vision import analyze_meal_photo, analyze_meal_text, estimate_ingredient_macros
 from app.agent.orchestrator import generate_live_session_form_feedback
 from app.database import get_db
+from app.rate_limit import LLM_RATE_LIMIT, limiter
+from app.user_auth import get_current_user
 from app.vision.pose_analysis import analyze_squat_video
 
 router = APIRouter(prefix="/vision", tags=["vision"])
@@ -44,13 +46,10 @@ def _sniff_image_media_type(data: bytes, declared: str) -> str:
 
 @router.post("/analyze-squat", response_model=schemas.FormAnalysisOut)
 async def analyze_squat(
-    user_id: int = Form(...),
     video: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
-    if not db.get(models.User, user_id):
-        raise HTTPException(status_code=404, detail="User not found")
-
     suffix = os.path.splitext(video.filename or "")[1] or ".mp4"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         size = 0
@@ -71,7 +70,7 @@ async def analyze_squat(
 
     reps = result["reps"]
     analysis = models.FormAnalysis(
-        user_id=user_id,
+        user_id=current_user.id,
         exercise_name="Squat",
         rep_count=result["rep_count"],
         reps_with_good_depth=sum(1 for r in reps if r["depth_ok"]),
@@ -94,17 +93,16 @@ async def analyze_squat(
 
 
 @router.post("/analyze-meal", response_model=schemas.MealAnalysisPreviewOut)
+@limiter.limit(LLM_RATE_LIMIT)
 async def analyze_meal(
-    user_id: int = Form(...),
+    request: Request,
     photo: UploadFile = File(...),
     db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
 ):
     """Analyzes only - does not save. The frontend shows this in a Review &
     Edit step; POST /vision/save-meal is what actually persists a record,
     with whatever the user corrected."""
-    if not db.get(models.User, user_id):
-        raise HTTPException(status_code=404, detail="User not found")
-
     image_bytes = await photo.read()
     if len(image_bytes) > MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail="Image too large (max 10 MB)")
@@ -114,7 +112,7 @@ async def analyze_meal(
         raise HTTPException(status_code=415, detail=f"Unsupported image type: {media_type}")
 
     try:
-        return analyze_meal_photo(db, user_id, image_bytes, media_type)
+        return analyze_meal_photo(db, current_user.id, image_bytes, media_type)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -127,16 +125,20 @@ async def analyze_meal(
 
 
 @router.post("/analyze-meal-text", response_model=schemas.MealAnalysisPreviewOut)
-def analyze_meal_text_endpoint(payload: schemas.MealTextRequest, db: Session = Depends(get_db)):
+@limiter.limit(LLM_RATE_LIMIT)
+def analyze_meal_text_endpoint(
+    request: Request,
+    payload: schemas.MealTextRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Text-input twin of /analyze-meal for the Quick Log tab - same preview
     contract, no image involved. Also doesn't save."""
-    if not db.get(models.User, payload.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
     if not payload.text.strip():
         raise HTTPException(status_code=400, detail="Meal description can't be empty")
 
     try:
-        return analyze_meal_text(db, payload.user_id, payload.text)
+        return analyze_meal_text(db, current_user.id, payload.text)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -144,12 +146,18 @@ def analyze_meal_text_endpoint(payload: schemas.MealTextRequest, db: Session = D
 
 
 @router.post("/estimate-ingredient", response_model=schemas.IngredientEstimateOut)
-def estimate_ingredient(payload: schemas.IngredientEstimateRequest):
+@limiter.limit(LLM_RATE_LIMIT)
+def estimate_ingredient(
+    request: Request,
+    payload: schemas.IngredientEstimateRequest,
+    current_user: models.User = Depends(get_current_user),
+):
     """Backs the Review & Edit modal's auto-recalculate-on-edit behavior -
     called on blur when the user changes an ingredient's name or quantity, so
     the row's (read-only) macro values and the total stay accurate without a
     manual 'Update Macros' step. No user_id - this is a stateless lookup, not
-    tied to a saved meal."""
+    tied to a saved meal. Still requires a signed-in caller (like every other
+    LLM-calling route here) since it's a real Claude API call."""
     if not payload.name.strip() or not payload.quantity.strip():
         raise HTTPException(status_code=400, detail="Ingredient name and quantity are required")
     try:
@@ -159,15 +167,16 @@ def estimate_ingredient(payload: schemas.IngredientEstimateRequest):
 
 
 @router.post("/save-meal", response_model=schemas.MealAnalysisOut)
-def save_meal(payload: schemas.MealSaveRequest, db: Session = Depends(get_db)):
+def save_meal(
+    payload: schemas.MealSaveRequest,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Persists the final values from the Review & Edit step - whatever the
     user confirmed (edited or not), not necessarily what the model
     originally reported."""
-    if not db.get(models.User, payload.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
-
     analysis = models.MealAnalysis(
-        user_id=payload.user_id,
+        user_id=current_user.id,
         description=payload.description,
         estimated_calories=payload.estimated_calories,
         protein_g=payload.protein_g,
@@ -183,11 +192,11 @@ def save_meal(payload: schemas.MealSaveRequest, db: Session = Depends(get_db)):
     return analysis
 
 
-@router.get("/meal-analyses/user/{user_id}", response_model=list[schemas.MealAnalysisOut])
-def list_meal_analyses(user_id: int, db: Session = Depends(get_db)):
+@router.get("/meal-analyses", response_model=list[schemas.MealAnalysisOut])
+def list_meal_analyses(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     stmt = (
         select(models.MealAnalysis)
-        .where(models.MealAnalysis.user_id == user_id)
+        .where(models.MealAnalysis.user_id == current_user.id)
         .order_by(models.MealAnalysis.analyzed_at.desc())
         .limit(20)
     )
@@ -195,22 +204,26 @@ def list_meal_analyses(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/live-session-form", response_model=schemas.FormFeedbackOut)
-def submit_live_session_form(payload: schemas.LiveSessionFormCreate, db: Session = Depends(get_db)):
+@limiter.limit(LLM_RATE_LIMIT)
+def submit_live_session_form(
+    request: Request,
+    payload: schemas.LiveSessionFormCreate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
     """Called once per exercise when a LiveSession.jsx session completes -
     persists the real per-rep depth/form pass-fail data the live pose
     tracking already computes (previously discarded after the session), then
     returns structured feedback comparing it against the user's most recent
     prior session on the same exercise."""
-    if not db.get(models.User, payload.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
     if not payload.reps:
         raise HTTPException(status_code=400, detail="No reps to evaluate")
 
     reps = [r.model_dump() for r in payload.reps]
-    feedback = generate_live_session_form_feedback(db, payload.user_id, payload.exercise_name, reps)
+    feedback = generate_live_session_form_feedback(db, current_user.id, payload.exercise_name, reps)
 
     record = models.LiveSessionForm(
-        user_id=payload.user_id,
+        user_id=current_user.id,
         exercise_name=payload.exercise_name,
         rep_count=len(reps),
         reps_with_good_depth=sum(1 for r in reps if r["depth_ok"]),
@@ -223,11 +236,11 @@ def submit_live_session_form(payload: schemas.LiveSessionFormCreate, db: Session
     return feedback
 
 
-@router.get("/form-analyses/user/{user_id}", response_model=list[schemas.FormAnalysisOut])
-def list_form_analyses(user_id: int, db: Session = Depends(get_db)):
+@router.get("/form-analyses", response_model=list[schemas.FormAnalysisOut])
+def list_form_analyses(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     stmt = (
         select(models.FormAnalysis)
-        .where(models.FormAnalysis.user_id == user_id)
+        .where(models.FormAnalysis.user_id == current_user.id)
         .order_by(models.FormAnalysis.analyzed_at.desc())
         .limit(20)
     )

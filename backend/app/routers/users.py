@@ -1,9 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
 
 from app import models, schemas
-from app.database import get_db
+from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -24,9 +22,6 @@ router = APIRouter(prefix="/users", tags=["users"])
 # authentication + authorization in front of it.
 
 
-@router.get("/{user_id}", response_model=schemas.UserOut)
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.get(models.User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+@router.get("/me", response_model=schemas.UserOut)
+def get_current_user_profile(current_user: models.User = Depends(get_current_user)):
+    return current_user

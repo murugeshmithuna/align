@@ -330,7 +330,6 @@ export default function AIMessageBar() {
 
     try {
       await streamAgentChat(
-        userId,
         text,
         (payload) => {
           if (payload.content) {

@@ -5,16 +5,14 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.agent.fatigue import assess_injury_risk, check_asymmetry, compute_banister_series, daily_loads
 from app.database import get_db
+from app.user_auth import get_current_user
 
 router = APIRouter(prefix="/fatigue", tags=["fatigue"])
 
 
-@router.get("/user/{user_id}", response_model=schemas.FatigueOut)
-def get_fatigue(user_id: int, db: Session = Depends(get_db)):
-    if not db.get(models.User, user_id):
-        raise HTTPException(status_code=404, detail="User not found")
-
-    stmt = select(models.WorkoutLog).where(models.WorkoutLog.user_id == user_id)
+@router.get("", response_model=schemas.FatigueOut)
+def get_my_fatigue(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    stmt = select(models.WorkoutLog).where(models.WorkoutLog.user_id == current_user.id)
     logs = db.scalars(stmt).all()
 
     loads = daily_loads(
@@ -35,7 +33,7 @@ def get_fatigue(user_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/asymmetry", response_model=schemas.AsymmetryOut)
-def post_asymmetry(payload: schemas.AsymmetryRequest):
+def post_asymmetry(payload: schemas.AsymmetryRequest, current_user: models.User = Depends(get_current_user)):
     try:
         return check_asymmetry(payload.left_values, payload.right_values, payload.metric_name)
     except ValueError as exc:

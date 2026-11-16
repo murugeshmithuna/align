@@ -120,7 +120,7 @@ function sumIngredients(ingredients) {
 // with the ingredient rows automatically (no separate "recalculate" step).
 const ESTIMATE_DEBOUNCE_MS = 600
 
-function ReviewModal({ preview, onCancel, onSaved, userId }) {
+function ReviewModal({ preview, onCancel, onSaved }) {
   const { showToast } = useToast()
   const [description, setDescription] = useState(preview.description)
   const [ingredients, setIngredients] = useState(preview.ingredients)
@@ -276,7 +276,6 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
       await flushPendingEstimates()
       const finalTotals = sumIngredients(ingredientsRef.current)
       const saved = await api.saveMeal({
-        user_id: userId,
         description,
         estimated_calories: finalTotals.estimated_calories,
         protein_g: finalTotals.protein_g,
@@ -470,7 +469,7 @@ function ReviewModal({ preview, onCancel, onSaved, userId }) {
   )
 }
 
-function PhotoTab({ onAnalyzed, userId }) {
+function PhotoTab({ onAnalyzed }) {
   const [file, setFile] = useState(null)
   const [previewUrl, setPreviewUrl] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -491,7 +490,7 @@ function PhotoTab({ onAnalyzed, userId }) {
     setError('')
     try {
       const compressed = await compressImage(file)
-      const data = await api.analyzeMeal(userId, compressed)
+      const data = await api.analyzeMeal(compressed)
       onAnalyzed(data)
     } catch (err) {
       setError(err.message)
@@ -549,7 +548,7 @@ function PhotoTab({ onAnalyzed, userId }) {
   )
 }
 
-function TextTab({ onAnalyzed, userId }) {
+function TextTab({ onAnalyzed }) {
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -560,7 +559,7 @@ function TextTab({ onAnalyzed, userId }) {
     setLoading(true)
     setError('')
     try {
-      const data = await api.analyzeMealText({ user_id: userId, text: text.trim() })
+      const data = await api.analyzeMealText({ text: text.trim() })
       onAnalyzed(data)
     } catch (err) {
       setError(err.message)
@@ -828,12 +827,12 @@ export default function MealPhoto() {
   const [viewingDay, setViewingDay] = useState(null)
 
   useEffect(() => {
-    api.getProfile(userId).then(setProfile).catch(() => setProfile(null))
+    api.getProfile().then(setProfile).catch(() => setProfile(null))
   }, [userId])
 
   function loadHistory() {
     api
-      .listMealAnalyses(userId)
+      .listMealAnalyses()
       .then(setHistory)
       .catch(() => setHistory([]))
       .finally(() => setHistoryLoading(false))
@@ -867,7 +866,7 @@ export default function MealPhoto() {
     setDailyReviewLoading(true)
     setDailyReviewError('')
     try {
-      setDailyReview(await api.getDailyNutritionReview(userId))
+      setDailyReview(await api.getDailyNutritionReview())
     } catch (err) {
       setDailyReviewError(err.message)
     } finally {
@@ -907,9 +906,9 @@ export default function MealPhoto() {
           </div>
 
           {tab === 'photo' ? (
-            <PhotoTab onAnalyzed={setReviewData} userId={userId} />
+            <PhotoTab onAnalyzed={setReviewData} />
           ) : (
-            <TextTab onAnalyzed={setReviewData} userId={userId} />
+            <TextTab onAnalyzed={setReviewData} />
           )}
 
           <div className="card p-5">
@@ -987,7 +986,6 @@ export default function MealPhoto() {
       {reviewData && (
         <ReviewModal
           preview={reviewData}
-          userId={userId}
           onCancel={() => setReviewData(null)}
           onSaved={handleSaved}
         />

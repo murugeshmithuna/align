@@ -1,12 +1,14 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
 const ADMIN_TOKEN_KEY = 'fitness_agent_admin_token'
+const USER_TOKEN_KEY = 'fitness_agent_user_token'
 
 // Set once, right after a real Google Sign-In resolves to an ADMIN_EMAILS
 // address (see Login.jsx's redirect-callback handling) - never trust a
-// plain user_id for /admin/* the way the rest of this app trusts one for
-// everything else (see backend/app/admin_auth.py for why that mattered).
-// Called with null to clear it on logout (see SessionContext.jsx).
+// plain user_id for /admin/* the way the rest of this app used to trust one
+// for everything else (see backend/app/admin_auth.py for why that mattered,
+// and backend/app/user_auth.py for the same fix applied to every other
+// route). Called with null to clear it on logout (see SessionContext.jsx).
 export function setAdminToken(token) {
   if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token)
   else localStorage.removeItem(ADMIN_TOKEN_KEY)
@@ -15,6 +17,29 @@ export function setAdminToken(token) {
 function adminAuthHeader() {
   const token = localStorage.getItem(ADMIN_TOKEN_KEY)
   return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// Set once, right after Google Sign-In resolves to a real user (see
+// Login.jsx) - every other request authenticates as that user via this
+// token, never by sending a user_id. Called with null to clear it on
+// logout. See backend/app/user_auth.py for what this proves server-side.
+export function setUserToken(token) {
+  if (token) localStorage.setItem(USER_TOKEN_KEY, token)
+  else localStorage.removeItem(USER_TOKEN_KEY)
+}
+
+function userAuthHeader() {
+  const token = localStorage.getItem(USER_TOKEN_KEY)
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
+// Lets SessionContext.jsx decide isAuthenticated from real token presence,
+// not just a locally-remembered user id - a browser with a stale
+// pre-session-auth userId but no token (this key didn't exist before that
+// fix) would otherwise look "signed in" and 401-loop on every request
+// instead of bouncing back to a real sign-in.
+export function hasUserToken() {
+  return Boolean(localStorage.getItem(USER_TOKEN_KEY))
 }
 
 // The browser's own local calendar date ("2026-08-11"), NOT UTC - `new
@@ -52,9 +77,10 @@ function formatErrorDetail(detail) {
 }
 
 async function request(path, options = {}) {
+  const { headers: extraHeaders, ...rest } = options
   const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
+    headers: { 'Content-Type': 'application/json', ...userAuthHeader(), ...extraHeaders },
+    ...rest,
   })
   const isJson = res.headers.get('content-type')?.includes('application/json')
   const data = isJson ? await res.json() : null
@@ -82,38 +108,43 @@ export const api = {
   createExercise: (payload) => request('/exercises', { method: 'POST', body: JSON.stringify(payload) }),
   deleteExercise: (exerciseId) => request(`/exercises/${exerciseId}`, { method: 'DELETE' }),
 
-  getProfile: (userId) => request(`/user/profile/${userId}`),
+  getProfile: () => request('/user/profile'),
   saveProfile: (payload) => request('/user/profile', { method: 'POST', body: JSON.stringify(payload) }),
 
-  getTodaysCheckin: (userId) => request(`/user/checkin/today/${userId}`),
-  getCheckinHistory: (userId) => request(`/user/checkin/history/${userId}`),
+  getTodaysCheckin: () => request('/user/checkin/today'),
+  getCheckinHistory: () => request('/user/checkin/history'),
   submitCheckin: (payload) => request('/user/checkin', { method: 'POST', body: JSON.stringify(payload) }),
 
-  listPlans: (userId) => request(`/plans/user/${userId}`),
+  listPlans: () => request('/plans'),
   getPlan: (planId) => request(`/plans/${planId}`),
   activatePlan: (planId) => request(`/plans/${planId}/activate`, { method: 'PATCH' }),
 
   createLog: (payload) => request('/logs', { method: 'POST', body: JSON.stringify(payload) }),
-  listLogs: (userId) => request(`/logs/user/${userId}`),
-  listMealAnalyses: (userId) => request(`/vision/meal-analyses/user/${userId}`),
+  listLogs: () => request('/logs'),
+  listMealAnalyses: () => request('/vision/meal-analyses'),
 
-  getProgress: (userId) => request(`/logs/user/${userId}/progress`),
-  getWeeklyRecap: (userId) => request(`/agent/weekly-recap/${userId}`),
-  getWeeklyDigest: (userId) => request(`/agent/weekly-digest/${userId}`),
+  getProgress: () => request('/logs/progress'),
+  getWeeklyRecap: () => request('/agent/weekly-recap'),
+  getWeeklyDigest: () => request('/agent/weekly-digest'),
   getCoachResolution: (payload) =>
     request('/agent/coach-resolution', { method: 'POST', body: JSON.stringify(payload) }),
   applyCoachResolution: (payload) =>
     request('/agent/coach-resolution/apply', { method: 'POST', body: JSON.stringify(payload) }),
 
-  getFatigue: (userId) => request(`/fatigue/user/${userId}`),
+  getFatigue: () => request('/fatigue'),
   checkAsymmetry: (payload) => request('/fatigue/asymmetry', { method: 'POST', body: JSON.stringify(payload) }),
 
-  // Multipart uploads - can't use the JSON `request()` helper above.
-  analyzeSquat: async (userId, file) => {
+  // Multipart uploads - can't use the JSON `request()` helper above, but
+  // still need the same Bearer auth header (never Content-Type - the
+  // browser sets the multipart boundary itself when it's left unset).
+  analyzeSquat: async (file) => {
     const formData = new FormData()
-    formData.append('user_id', userId)
     formData.append('video', file)
-    const res = await fetch(`${API_BASE_URL}/vision/analyze-squat`, { method: 'POST', body: formData })
+    const res = await fetch(`${API_BASE_URL}/vision/analyze-squat`, {
+      method: 'POST',
+      headers: userAuthHeader(),
+      body: formData,
+    })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
       const error = new Error(formatErrorDetail(data?.detail) || `HTTP ${res.status}`)
@@ -123,11 +154,14 @@ export const api = {
     return data
   },
 
-  analyzeMeal: async (userId, file) => {
+  analyzeMeal: async (file) => {
     const formData = new FormData()
-    formData.append('user_id', userId)
     formData.append('photo', file)
-    const res = await fetch(`${API_BASE_URL}/vision/analyze-meal`, { method: 'POST', body: formData })
+    const res = await fetch(`${API_BASE_URL}/vision/analyze-meal`, {
+      method: 'POST',
+      headers: userAuthHeader(),
+      body: formData,
+    })
     const data = await res.json().catch(() => null)
     if (!res.ok) {
       const error = new Error(formatErrorDetail(data?.detail) || `HTTP ${res.status}`)
@@ -145,8 +179,8 @@ export const api = {
 
   submitLiveSessionForm: (payload) => request('/vision/live-session-form', { method: 'POST', body: JSON.stringify(payload) }),
 
-  getDailyNutritionReview: (userId) => request(`/agent/nutrition-review/daily/${userId}`),
-  getWeeklyNutritionReview: (userId) => request(`/agent/nutrition-review/weekly/${userId}`),
+  getDailyNutritionReview: () => request('/agent/nutrition-review/daily'),
+  getWeeklyNutritionReview: () => request('/agent/nutrition-review/weekly'),
 
   // Admin-only - gated server-side by a signed admin token (see
   // backend/app/admin_auth.py), not a client-supplied user id. The token is
@@ -178,7 +212,7 @@ export const api = {
 const STREAM_INACTIVITY_TIMEOUT_MS = 90000
 const STREAM_TIMEOUT_MESSAGE = "The coach is taking too long to respond - please try again in a moment."
 
-export async function streamAgentChat(userId, message, onEvent, history = []) {
+export async function streamAgentChat(message, onEvent, history = []) {
   const controller = new AbortController()
   let watchdog
   const armWatchdog = () => {
@@ -192,8 +226,8 @@ export async function streamAgentChat(userId, message, onEvent, history = []) {
     try {
       res = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, message, history, client_date: localDateString() }),
+        headers: { 'Content-Type': 'application/json', ...userAuthHeader() },
+        body: JSON.stringify({ message, history, client_date: localDateString() }),
         signal: controller.signal,
       })
     } catch (err) {

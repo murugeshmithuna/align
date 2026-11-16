@@ -1,10 +1,8 @@
 import { useNavigate } from 'react-router-dom'
 import CheckinForm from '../components/CheckinForm.jsx'
-import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
 export default function Checkin() {
-  const { userId } = useSession()
   const { showToast } = useToast()
   const navigate = useNavigate()
 
@@ -20,7 +18,7 @@ export default function Checkin() {
         <p className="text-sm text-slate-400 mb-6 text-center">
           Your readiness score adjusts today's training volume and intensity automatically.
         </p>
-        <CheckinForm userId={userId} onSubmitted={handleSubmitted} />
+        <CheckinForm onSubmitted={handleSubmitted} />
       </div>
     </div>
   )

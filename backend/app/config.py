@@ -36,12 +36,10 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 OAUTH_STATE_SECRET = os.getenv("OAUTH_STATE_SECRET") or GOOGLE_CLIENT_SECRET or ""
 
 # Admin panel access - comma-separated allowlist of emails permitted to hit
-# GET /admin/* (every registered user's data). The app has no session/token
-# system yet (see routers/users.py) - every endpoint trusts whatever user_id
-# the client sends - so this checks the *email on record* for the claimed
-# requester_id, not a cryptographically verified identity. Acceptable for a
-# single-operator personal project; would need real auth before this app
-# ever has untrusted multi-tenant users.
+# GET /admin/* (every registered user's data). Checked against the
+# cryptographically verified email on a signed admin token (see
+# app/admin_auth.py), minted only right after a real Google Sign-In -
+# never trusted from a bare request.
 ADMIN_EMAILS = {email.strip().lower() for email in os.getenv("ADMIN_EMAILS", "").split(",") if email.strip()}
 
 # Heavier reasoning model - reserved for turns that actually invoke a tool

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { api } from '../api.js'
-import { useSession } from '../context/SessionContext.jsx'
 import { useToast } from '../context/ToastContext.jsx'
 
 // Plain inline SVGs, matching this app's existing icon convention - replace
@@ -88,7 +87,6 @@ function ResolutionProcessStrip() {
 // "AI slop" rather than serving the page's actual purpose: submit a real
 // training dilemma, get one weighed verdict).
 export default function CoachResolution() {
-  const { userId } = useSession()
   const { showToast } = useToast()
   const location = useLocation()
   const [question, setQuestion] = useState(location.state?.dilemma || '')
@@ -117,7 +115,7 @@ export default function CoachResolution() {
     setApplied(false)
     setSubmittedQuestion(questionText)
     try {
-      const data = await api.getCoachResolution({ user_id: userId, question: questionText || undefined })
+      const data = await api.getCoachResolution({ question: questionText || undefined })
       setResult(data)
     } catch (err) {
       setError(err.message)
@@ -145,7 +143,6 @@ export default function CoachResolution() {
     setApplying(true)
     try {
       await api.applyCoachResolution({
-        user_id: userId,
         plan_id: result.plan_id,
         updates: result.plan_adjustments,
       })

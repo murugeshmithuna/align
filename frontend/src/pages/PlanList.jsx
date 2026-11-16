@@ -10,7 +10,7 @@ export default function PlanList() {
 
   useEffect(() => {
     api
-      .listPlans(userId)
+      .listPlans()
       .then(setPlans)
       .catch(() => setPlans([]))
       .finally(() => setLoading(false))

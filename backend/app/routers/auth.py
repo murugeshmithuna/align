@@ -16,6 +16,7 @@ from app import models, schemas
 from app.admin_auth import sign_admin_token
 from app.config import ADMIN_EMAILS, FRONTEND_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_STATE_SECRET
 from app.database import get_db
+from app.user_auth import sign_user_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -116,7 +117,12 @@ def google_sign_in(payload: schemas.GoogleAuthRequest, db: Session = Depends(get
 
     user, is_new_user = _upsert_user_from_claims(db, claims)
     admin_token = sign_admin_token(user.email) if user.email.lower() in ADMIN_EMAILS else None
-    return {"user": user, "is_new_user": is_new_user, "admin_token": admin_token}
+    return {
+        "user": user,
+        "is_new_user": is_new_user,
+        "user_token": sign_user_token(user.id),
+        "admin_token": admin_token,
+    }
 
 
 @router.get("/google/start")
@@ -205,7 +211,11 @@ def google_sign_in_callback(
     except HTTPException as exc:
         return fail(str(exc.detail).replace(" ", "_"))
 
-    redirect_params = {"uid": user.id, "is_new": str(is_new_user).lower()}
+    redirect_params = {
+        "uid": user.id,
+        "is_new": str(is_new_user).lower(),
+        "token": sign_user_token(user.id),
+    }
     if user.email.lower() in ADMIN_EMAILS:
         redirect_params["admin_token"] = sign_admin_token(user.email)
     return RedirectResponse(f"{FRONTEND_URL}/login?{urlencode(redirect_params)}")

@@ -206,7 +206,7 @@ export default function CalendarPage() {
 
   const loadActivePlan = useCallback(() => {
     api
-      .listPlans(userId)
+      .listPlans()
       .then((plans) => {
         const activePlans = plans.filter((p) => p.is_active)
         const active =
@@ -219,7 +219,7 @@ export default function CalendarPage() {
   }, [userId])
 
   const loadActivity = useCallback(() => {
-    return Promise.all([api.listLogs(userId), api.listMealAnalyses(userId), api.getCheckinHistory(userId)])
+    return Promise.all([api.listLogs(), api.listMealAnalyses(), api.getCheckinHistory()])
       .then(([logs, meals, checkins]) => {
         const byLogDate = {}
         for (const log of logs) {

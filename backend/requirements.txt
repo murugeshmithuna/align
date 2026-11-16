@@ -12,6 +12,9 @@ google-auth==2.36.0
 requests==2.34.2
 psycopg2-binary==2.9.10
 
+# Per-user rate limiting on the Claude-calling routes (backend/app/rate_limit.py)
+slowapi==0.1.10
+
 # RAG knowledge-base retrieval for analyze_form (backend/app/rag/) - isolated
 # addition, unrelated to the rest of the app's direct-context-injection AI
 # features. See backend/app/rag/embed_knowledge_base.py for how these are used.
