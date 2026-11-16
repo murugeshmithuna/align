@@ -82,7 +82,12 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...userAuthHeader(), ...extraHeaders },
     ...rest,
   })
-  const isJson = res.headers.get('content-type')?.includes('application/json')
+  // A 204 must never have a body per HTTP spec, but FastAPI still sends
+  // `content-type: application/json` on one regardless - checking the
+  // header alone made res.json() throw on the empty body (caught live:
+  // DELETE /users/me returning 204 crashed into the catch block below with
+  // a SyntaxError, silently, before ever reaching the caller's own code).
+  const isJson = res.status !== 204 && res.headers.get('content-type')?.includes('application/json')
   const data = isJson ? await res.json() : null
   if (!res.ok) {
     const error = new Error(formatErrorDetail(data?.detail) || `HTTP ${res.status}`)
@@ -114,6 +119,8 @@ export const api = {
 
   getProfile: () => request('/user/profile'),
   saveProfile: (payload) => request('/user/profile', { method: 'POST', body: JSON.stringify(payload) }),
+
+  deleteAccount: () => request('/users/me', { method: 'DELETE' }),
 
   getTodaysCheckin: () => request('/user/checkin/today'),
   getCheckinHistory: () => request('/user/checkin/history'),

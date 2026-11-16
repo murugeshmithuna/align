@@ -267,3 +267,12 @@ returned in the response, and attached to that request's own access-log line.
 Sentry (error tracking/alerting) is **not** wired up - it needs a real account and DSN, which only the
 project owner can create; everything short of that (the structured logs, the request IDs an error report
 would need to reference) is in place so adding it later is a small, additive change, not a rearchitecture.
+
+## Privacy
+
+Account deletion is self-serve: "Delete my account" on `/profile` (`DELETE /users/me`) permanently removes
+your profile, plans, workout logs, soreness notes, form analyses, meal analyses, and check-ins - every row
+that references your account - via cascade relationships declared on the `User` model, not a hand-rolled
+table-by-table deletion. There's no recovery after this; the confirmation dialog says so before it runs.
+The shared guest/demo account can't be deleted through this route - it's reset on a schedule instead, since
+the public demo needs to keep existing for the next visitor.

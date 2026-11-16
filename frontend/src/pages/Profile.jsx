@@ -153,9 +153,29 @@ const STEP_META = {
 }
 
 export default function Profile() {
-  const { userId } = useSession()
+  const { userId, logout } = useSession()
   const { showToast } = useToast()
   const navigate = useNavigate()
+  const [deleting, setDeleting] = useState(false)
+
+  async function handleDeleteAccount() {
+    if (
+      !window.confirm(
+        'Permanently delete your account? This removes your profile, plans, logs, check-ins, meal history, and form analyses - everything. This cannot be undone.',
+      )
+    ) {
+      return
+    }
+    setDeleting(true)
+    try {
+      await api.deleteAccount()
+      logout()
+      navigate('/login')
+    } catch (err) {
+      showToast(err.message || 'Could not delete your account - please try again.', 'error')
+      setDeleting(false)
+    }
+  }
 
   const [step, setStep] = useState(0)
   const [experienceLevel, setExperienceLevel] = useState('beginner')
@@ -461,6 +481,22 @@ export default function Profile() {
           Continue to dashboard →
         </button>
       )}
+
+      <div className="mt-8 pt-6 border-t border-red-900/40">
+        <p className="text-xs font-heading font-semibold uppercase tracking-wide text-red-400 mb-2">Danger zone</p>
+        <p className="text-xs text-slate-400 mb-3">
+          Deleting your account permanently removes your profile, plans, logs, check-ins, meal history, and form
+          analyses. This cannot be undone.
+        </p>
+        <button
+          type="button"
+          disabled={deleting}
+          onClick={handleDeleteAccount}
+          className="w-full py-2.5 rounded-xl border border-red-900/60 text-sm font-heading font-semibold text-red-400 hover:bg-red-950/40 disabled:opacity-60"
+        >
+          {deleting ? 'Deleting…' : 'Delete my account'}
+        </button>
+      </div>
     </div>
   )
 }

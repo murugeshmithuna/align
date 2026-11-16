@@ -87,6 +87,21 @@ class User(Base):
     soreness_notes: Mapped[list["SorenessNote"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    # These four were missing this relationship entirely until the account-
+    # deletion endpoint needed it (DELETE /users/me) - db.delete(user) would
+    # otherwise leave these rows orphaned (SQLite, no FK enforcement by
+    # default) or fail outright (Postgres, a real FK constraint) rather than
+    # actually deleting a user's data.
+    form_analyses: Mapped[list["FormAnalysis"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    live_session_forms: Mapped[list["LiveSessionForm"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    meal_analyses: Mapped[list["MealAnalysis"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    checkins: Mapped[list["CheckIn"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Exercise(Base):
@@ -181,7 +196,7 @@ class FormAnalysis(Base):
     reps_with_good_back_angle: Mapped[int] = mapped_column(Integer, default=0)
     raw_json: Mapped[str] = mapped_column(Text)  # full per-rep detail, JSON-encoded
 
-    user: Mapped["User"] = relationship()
+    user: Mapped["User"] = relationship(back_populates="form_analyses")
 
 
 class LiveSessionForm(Base):
@@ -206,7 +221,7 @@ class LiveSessionForm(Base):
     reps_with_good_form: Mapped[int] = mapped_column(Integer, default=0)
     raw_json: Mapped[str] = mapped_column(Text)  # per-rep [{rep_index, min_angle, depth_ok, form_ok}]
 
-    user: Mapped["User"] = relationship()
+    user: Mapped["User"] = relationship(back_populates="live_session_forms")
 
 
 class MealAnalysis(Base):
@@ -232,7 +247,7 @@ class MealAnalysis(Base):
     quick_tip: Mapped[str] = mapped_column(String(200))
     timing_note: Mapped[str] = mapped_column(String(200))
 
-    user: Mapped["User"] = relationship()
+    user: Mapped["User"] = relationship(back_populates="meal_analyses")
 
 
 CHECKIN_LABELS = {
@@ -277,7 +292,7 @@ class CheckIn(Base):
     plan_status: Mapped[str] = mapped_column(String(20), default="normal")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
-    user: Mapped["User"] = relationship()
+    user: Mapped["User"] = relationship(back_populates="checkins")
 
     @property
     def label(self) -> str:
