@@ -5,9 +5,29 @@
 A full-stack AI fitness coaching app I designed, built, and deployed solo: a Claude-powered conversational agent paired with real computer vision, a from-scratch retrieval-augmented generation (RAG) pipeline, and deterministic physiological modeling.
 
 [![tests](https://github.com/murugeshmithuna/align/actions/workflows/tests.yml/badge.svg)](https://github.com/murugeshmithuna/align/actions/workflows/tests.yml)
+[![Live demo](https://img.shields.io/badge/Live-fitness--agent--sigma.vercel.app-4ade80)](https://fitness-agent-sigma.vercel.app)
+[![Try as guest](https://img.shields.io/badge/Try%20as%20guest-one%20click%2C%20no%20sign--in-ff6b6b)](https://fitness-agent-sigma.vercel.app/demo)
 
 Live frontend: [fitness-agent-sigma.vercel.app](https://fitness-agent-sigma.vercel.app) (first load can take up to a minute - free-tier backend)
 Live backend: `fitness-agent-wuvh.onrender.com`
+
+**[Try the demo →](https://fitness-agent-sigma.vercel.app/demo)** - one click, no Google sign-in, lands straight on a dashboard seeded with three weeks of real workout/check-in/meal history. The account is real but read-only: every write it attempts is blocked server-side (`backend/app/guest.py`), not just hidden in the UI.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+<details>
+<summary>More screenshots (Analytics, Plan Detail)</summary>
+
+![Analytics](docs/screenshots/analytics.png)
+![Plan Detail](docs/screenshots/plan-detail.png)
+
+</details>
+
+## Architecture
+
+![Architecture](docs/architecture.svg)
+
+One agent, several deterministic tools - a cheap Haiku pass routes every message, only calling the heavier Opus reasoner when a tool is actually needed. Every tool's input/output is a forced, strict JSON schema (`additionalProperties: false`), and anything genuinely computable - the Banister fitness/fatigue model, calorie estimates, PR detection - is plain Python the model narrates, never arithmetic it's trusted to do itself. On top of that sits a layer of guardrails that don't depend on the model behaving: per-user session auth (`backend/app/user_auth.py`), a hard write-tool block for the shared guest account enforced at the single tool-execution chokepoint rather than in the prompt (`backend/app/guest.py`), and per-user rate limiting (`backend/app/rate_limit.py`).
 
 ## What it does
 
@@ -175,3 +195,5 @@ Grouped by router (`backend/app/routers/`) - see each file for the full request/
 **Every other route is now server-side verified the same way.** The original design let every non-admin route (logs, plans, check-ins, meals, the agent/chat endpoints, etc.) trust whatever `user_id` the client sent - a path param, a query param, or a JSON body field - with no proof the caller actually was that user. Fixed in `backend/app/user_auth.py`, mirroring `admin_auth.py`'s already-correct pattern: a signed, 30-day session token is minted server-side only at the moment Google Sign-In resolves a real user, and every route that touches one user's data now takes a `current_user` FastAPI dependency instead of a client-supplied id - including real ownership checks on `GET /plans/{plan_id}` and `PATCH /plans/{plan_id}/activate`, which previously had none at all. Covered end-to-end by `backend/tests/test_user_isolation.py` - one user genuinely cannot read, activate, or adjust another user's data, verified over real HTTP requests, not just unit-tested in isolation.
 
 **Per-user rate limiting on every Claude-calling route** (`backend/app/rate_limit.py`, `slowapi`): agent chat, Coach Resolution, the weekly/daily reviews, and the vision endpoints that call Claude (meal photo/text analysis, per-ingredient macro lookup, live-session form feedback) are capped at 20 requests/minute per authenticated user - keyed by the same session token, not IP, so it can't be defeated by a shared address and can't accidentally throttle a different user sharing a network. A single caller (or a script) can no longer run up the Claude API bill unbounded. Covered by `backend/tests/test_rate_limit.py`, including a test that two different users' limits are genuinely independent.
+
+**A real guest account, not a mockup** (`backend/app/guest.py`, `POST /auth/guest`): `/demo` signs in with zero Google OAuth as one fixed, shared, seeded account - a genuine dashboard, fatigue chart, and coach reply, not screenshots pretending to be the app. Every write it attempts is blocked two ways, both independent of the frontend: `block_guest_writes` (a drop-in replacement for the normal auth dependency on every route that persists a change) and a guard inside the agent's single real tool-execution chokepoint, so chat still gives a genuine conversational reply, it just can never execute a tool that writes. `POST /auth/guest/reset`, called on a schedule by `.github/workflows/reset-guest-demo.yml`, wipes and reseeds the account's history so it stays clean regardless of how many visitors have poked at it. Covered by `backend/tests/test_guest_mode.py` (10 tests, including a direct, no-LLM-required proof that the write-tool guard fires) and verified live end-to-end with Playwright against a real local backend+frontend.

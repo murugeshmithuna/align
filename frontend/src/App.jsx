@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom'
 import AppLayout from './components/AppLayout.jsx'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
+import Demo from './pages/Demo.jsx'
 import Profile from './pages/Profile.jsx'
 import Checkin from './pages/Checkin.jsx'
 import Dashboard from './pages/Dashboard.jsx'
@@ -22,6 +23,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/demo" element={<Demo />} />
 
       <Route element={<AppLayout />}>
         <Route path="/dashboard" element={<Dashboard />} />
