@@ -249,3 +249,21 @@ Grouped by router (`backend/app/routers/`) - see each file for the full request/
 **Per-user rate limiting on every Claude-calling route** (`backend/app/rate_limit.py`, `slowapi`): agent chat, Coach Resolution, the weekly/daily reviews, and the vision endpoints that call Claude (meal photo/text analysis, per-ingredient macro lookup, live-session form feedback) are capped at 20 requests/minute per authenticated user - keyed by the same session token, not IP, so it can't be defeated by a shared address and can't accidentally throttle a different user sharing a network. A single caller (or a script) can no longer run up the Claude API bill unbounded. Covered by `backend/tests/test_rate_limit.py`, including a test that two different users' limits are genuinely independent.
 
 **A real guest account, not a mockup** (`backend/app/guest.py`, `POST /auth/guest`): `/demo` signs in with zero Google OAuth as one fixed, shared, seeded account - a genuine dashboard, fatigue chart, and coach reply, not screenshots pretending to be the app. Every write it attempts is blocked two ways, both independent of the frontend: `block_guest_writes` (a drop-in replacement for the normal auth dependency on every route that persists a change) and a guard inside the agent's single real tool-execution chokepoint, so chat still gives a genuine conversational reply, it just can never execute a tool that writes. `POST /auth/guest/reset`, called on a schedule by `.github/workflows/reset-guest-demo.yml`, wipes and reseeds the account's history so it stays clean regardless of how many visitors have poked at it. Covered by `backend/tests/test_guest_mode.py` (10 tests, including a direct, no-LLM-required proof that the write-tool guard fires) and verified live end-to-end with Playwright against a real local backend+frontend.
+
+## Observability
+
+**Structured JSON logs with per-request correlation IDs** (`backend/app/observability.py`): before this,
+nothing configured the root logger at all, so the `logger.exception(...)` calls already scattered across
+`orchestrator.py`/`meal_vision.py`/`resolution.py` for Claude API failures fell through to Python's bare
+"handler of last resort" - no timestamp, no structure, and no way to tell which request caused which
+error. `RequestIdMiddleware` assigns every request an ID (generated fresh, or echoed back if the caller
+already supplied one via `X-Request-ID` - also returned in the response header) via a `ContextVar`, so any
+log line emitted anywhere during that request - no matter how many function calls deep - carries it
+automatically, with zero changes needed at the call sites themselves. Verified live: a log call from a
+throwaway handler nested three stack frames below the middleware correctly carried a caller-supplied
+request ID end-to-end, and a request with no `X-Request-ID` header correctly got a fresh UUID generated,
+returned in the response, and attached to that request's own access-log line.
+
+Sentry (error tracking/alerting) is **not** wired up - it needs a real account and DSN, which only the
+project owner can create; everything short of that (the structured logs, the request IDs an error report
+would need to reference) is in place so adding it later is a small, additive change, not a rearchitecture.

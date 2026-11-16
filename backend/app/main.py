@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app.observability import RequestIdMiddleware, configure_logging
 from app.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers import (
     admin,
@@ -29,6 +30,8 @@ from app.routers import (
 # production: apply this the same way after a one-time `alembic stamp head`
 # against the already-populated database, documented in README.md).
 
+configure_logging()
+
 app = FastAPI(
     title="ALIGN API",
     description="Backend for ALIGN — a coach that watches, listens, and adapts.",
@@ -46,6 +49,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Outermost middleware (added last, so it wraps every other layer, including
+# CORS/rate-limiting) - every log line emitted while handling a request, no
+# matter how deep in the call stack, carries that request's ID.
+app.add_middleware(RequestIdMiddleware)
 
 app.include_router(users.router)
 app.include_router(auth.router)
