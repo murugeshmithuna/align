@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from app.database import Base, engine
 from app.rate_limit import limiter, rate_limit_exceeded_handler
 from app.routers import (
     admin,
@@ -20,7 +19,15 @@ from app.routers import (
     vision,
 )
 
-Base.metadata.create_all(bind=engine)
+# Schema creation/changes are now Alembic's job (see backend/alembic/), not
+# this app's - `Base.metadata.create_all()` only ever CREATEs tables that
+# don't exist yet, it never ALTERs an existing one to add a new column, so
+# relying on it as the production schema stayed correct only by luck (every
+# column added here so far happened to land before the one-time Postgres
+# cutover that ran create_all against a then-fully-current models.py). Run
+# `alembic upgrade head` once (local dev: creates the SQLite file fresh;
+# production: apply this the same way after a one-time `alembic stamp head`
+# against the already-populated database, documented in README.md).
 
 app = FastAPI(
     title="ALIGN API",

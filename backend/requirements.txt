@@ -12,6 +12,10 @@ google-auth==2.36.0
 requests==2.34.2
 psycopg2-binary==2.9.10
 
+# Database migrations (backend/alembic/) - replaces Base.metadata.create_all()
+# as the source of truth for schema changes; see app/main.py's comment.
+alembic==1.20.1
+
 # Per-user rate limiting on the Claude-calling routes (backend/app/rate_limit.py)
 slowapi==0.1.10
 

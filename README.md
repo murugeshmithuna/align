@@ -115,6 +115,7 @@ cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # fill in ANTHROPIC_API_KEY at minimum
+alembic upgrade head   # creates fitness_agent.db with the current schema
 uvicorn app.main:app --reload
 
 # Frontend
@@ -138,6 +139,26 @@ Backend env vars (`backend/.env`, see `.env.example`):
 Frontend env vars (`frontend/.env`): `VITE_API_BASE_URL` (defaults to `http://localhost:8001` if unset), `VITE_GOOGLE_CLIENT_ID`.
 
 Backend defaults to local SQLite (`backend/fitness_agent.db`) with zero config needed; set `DATABASE_URL` to point at Postgres instead.
+
+### Database migrations
+
+Schema changes go through Alembic (`backend/alembic/`), not `Base.metadata.create_all()` - the
+latter only creates tables that don't exist yet, it never alters an existing one to add a column.
+After changing a model in `app/models.py`:
+
+```bash
+cd backend
+alembic revision --autogenerate -m "describe the change"
+alembic upgrade head
+```
+
+Always read the generated migration before applying it - autogenerate is a diff tool, not an oracle
+(it won't infer a data backfill for a new non-nullable column, for instance).
+
+If you already had a local `fitness_agent.db` from before this (i.e. one `create_all()` built), run
+`alembic stamp head` instead of `upgrade head` once - it marks the database as already matching the
+initial migration without re-running its `CREATE TABLE`s, which would otherwise fail on tables that
+already exist. The same applies to the production database the first time this is deployed there.
 
 ## Computer vision
 
