@@ -11,5 +11,5 @@ jobs:
     steps:
       - name: Ping backend health endpoint
         run: |
-          curl -sf -m 30 https://fitness-agent-wuvh.onrender.com/health || \
-          (echo "Health check failed" && exit 1)
+          curl -sf --retry 5 --retry-all-errors --retry-delay 10 -m 60 \
+            https://fitness-agent-wuvh.onrender.com/health
