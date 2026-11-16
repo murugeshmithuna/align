@@ -160,6 +160,21 @@ If you already had a local `fitness_agent.db` from before this (i.e. one `create
 initial migration without re-running its `CREATE TABLE`s, which would otherwise fail on tables that
 already exist. The same applies to the production database the first time this is deployed there.
 
+### Docker
+
+```bash
+cp backend/.env.example backend/.env     # fill in ANTHROPIC_API_KEY at minimum
+cp frontend/.env.example frontend/.env   # fill in VITE_GOOGLE_CLIENT_ID
+docker compose up --build
+```
+
+Runs a real Postgres instance (`db`), the backend (`alembic upgrade head` then `uvicorn --reload`,
+port 8001), and the frontend (`vite --host 0.0.0.0`, port 5173) - no local Python/Node toolchain
+needed, with both app directories bind-mounted for hot reload. *Not verified end-to-end in this
+environment - Docker itself wasn't available to test against here* (disclosed rather than claimed as
+working; the Dockerfiles and compose config were reviewed carefully, but `docker compose up` itself
+needs a real run to confirm).
+
 ## Computer vision
 
 MediaPipe Pose Landmarker (BlazePose, the same `pose_landmarker_lite.task` model bundle) runs in two different places, at two different scopes:

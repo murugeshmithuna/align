@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: align
+      POSTGRES_PASSWORD: align
+      POSTGRES_DB: align
+    ports:
+      - "5432:5432"
+    volumes:
+      - align_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U align"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides whatever DATABASE_URL (if any) is set in backend/.env -
+      # this compose setup's Postgres is only ever reachable at the `db`
+      # service hostname, never localhost.
+      DATABASE_URL: postgresql://align:align@db:5432/align
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    env_file:
+      - ./frontend/.env
+    environment:
+      VITE_API_BASE_URL: http://localhost:8001
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  align_postgres_data:
+  frontend_node_modules:
