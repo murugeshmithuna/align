@@ -396,14 +396,13 @@ def _build_soreness_context(db: Session, user_id: int) -> str:
 
 
 # The SDK's own default is a 600s read timeout (anthropic._constants.
-# DEFAULT_TIMEOUT) - a hung/slow upstream response (the Manifest proxy this
-# project routes through, or Anthropic's API itself) could leave a call
-# blocking for up to 10 minutes with nothing coming back, which is exactly
-# consistent with a real production report of "5-7 minutes and still no
-# reply" (the user gave up before the SDK's own default would have ever
-# fired). Real measured Opus latency elsewhere in this app is ~15-30s
-# (see CLAUDE.md) - 60s gives generous headroom above that without leaving
-# the user staring at a frozen UI for anywhere near 10 minutes.
+# DEFAULT_TIMEOUT) - a hung/slow upstream response from Anthropic's API
+# could leave a call blocking for up to 10 minutes with nothing coming back,
+# which is exactly consistent with a real production report of "5-7 minutes
+# and still no reply" (the user gave up before the SDK's own default would
+# have ever fired). Real measured Opus latency elsewhere in this app is
+# ~15-30s (see CLAUDE.md) - 60s gives generous headroom above that without
+# leaving the user staring at a frozen UI for anywhere near 10 minutes.
 REQUEST_TIMEOUT_SECONDS = 60.0
 
 
@@ -412,9 +411,7 @@ def _get_client() -> anthropic.Anthropic:
         raise RuntimeError(
             "ANTHROPIC_API_KEY is not set. Add it to backend/.env (see .env.example) to use the agent."
         )
-    # The Manifest proxy expects `Authorization: Bearer <key>` rather than
-    # Anthropic's default `x-api-key` header, hence `auth_token` instead of `api_key`.
-    return anthropic.Anthropic(auth_token=ANTHROPIC_API_KEY, timeout=REQUEST_TIMEOUT_SECONDS)
+    return anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=REQUEST_TIMEOUT_SECONDS)
 
 
 # User-facing message for any Claude-call failure (timeout, connection drop,
@@ -722,20 +719,22 @@ def stream_agent_turn(
                 router_response = stream.get_final_message()
             log_usage("chat_stream_routing", FAST_MODEL, router_response.usage, started_at)
         except (anthropic.APIError, AssertionError):
-            # A hung/slow upstream response (the Manifest proxy this project
-            # routes through, or Anthropic's API itself) used to leave this
-            # `with` block blocking for up to the SDK's own 600s default
-            # timeout with no handling here at all, so the frontend sat
-            # frozen with no error/done frame ever sent - the same class of
-            # bug 06d2010 fixed for tool execution (_run_tool), just for the
-            # Claude call itself. REQUEST_TIMEOUT_SECONDS bounds how long
-            # this can possibly block; this except is what turns that bound
-            # into a clean, terminal SSE frame instead of a silent hang.
+            # A hung/slow upstream response used to leave this `with` block
+            # blocking for up to the SDK's own 600s default timeout with no
+            # handling here at all, so the frontend sat frozen with no
+            # error/done frame ever sent - the same class of bug 06d2010
+            # fixed for tool execution (_run_tool), just for the Claude call
+            # itself. REQUEST_TIMEOUT_SECONDS bounds how long this can
+            # possibly block; this except is what turns that bound into a
+            # clean, terminal SSE frame instead of a silent hang.
             # AssertionError is a real, live-observed second failure shape:
             # when the upstream response itself is an error (confirmed live
-            # with a Manifest "insufficient_quota" 402), the SDK's streaming
-            # context manager doesn't always surface it as an APIError
-            # before get_final_message() is called - it raises a bare
+            # against the proxy this project used to route Claude calls
+            # through, before switching to a direct Anthropic API key - a
+            # quota/billing error there surfaces the same way any upstream
+            # error would), the SDK's streaming context manager doesn't
+            # always surface it as an APIError before get_final_message() is
+            # called - it raises a bare
             # `assert self.__final_message_snapshot is not None` instead,
             # which silently bypassed this handler entirely and crashed the
             # whole ASGI response as an unhandled 500 until this was added.
@@ -931,9 +930,9 @@ def generate_weekly_recap(db: Session, user_id: int) -> str:
         )
     except anthropic.APIError:
         # Previously unwrapped - a real quota/billing error here (confirmed
-        # live via the Manifest proxy) propagated as a raw, unhandled 500
-        # straight past the router's own `except RuntimeError`, which only
-        # catches the RuntimeError this now raises instead.
+        # live) propagated as a raw, unhandled 500 straight past the
+        # router's own `except RuntimeError`, which only catches the
+        # RuntimeError this now raises instead.
         logger.exception("Weekly recap Claude call failed")
         raise RuntimeError(_AGENT_CALL_FAILURE_MESSAGE) from None
     log_usage("weekly_recap", FAST_MODEL, response.usage, started_at)

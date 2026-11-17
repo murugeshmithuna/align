@@ -166,10 +166,11 @@ def generate_coach_resolution(db: Session, user_id: int, question: str | None = 
     )
 
     # This call had NO error handling at all until caught live here: a
-    # transient upstream failure (the Manifest proxy this project routes
-    # through, same class of hiccup documented elsewhere in this app - e.g.
-    # AIMessageBar's one-off "M102: anthropic subscription credentials could
-    # not be refreshed") propagated straight out of this function as a raw
+    # transient upstream failure (same class of hiccup documented elsewhere
+    # in this app - e.g. AIMessageBar's one-off "M102: anthropic
+    # subscription credentials could not be refreshed", from when Claude
+    # calls routed through a proxy, before switching to a direct Anthropic
+    # API key) propagated straight out of this function as a raw
     # anthropic.APIError, past the router's `except RuntimeError` (which
     # only catches the RuntimeError this except now raises, not the SDK's own
     # exception type) into an unhandled 500 with no CORS headers on the
