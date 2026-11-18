@@ -35,7 +35,7 @@ Every number below is measured directly and reproducible from this repo - nothin
 
 | Metric | Result | How it's measured |
 |---|---|---|
-| Backend tests passing | **64/64** | `cd backend && pytest` - also runs in CI on every push ([`tests.yml`](.github/workflows/tests.yml)) |
+| Backend tests passing | **67/67** | `cd backend && pytest` - also runs in CI on every push ([`tests.yml`](.github/workflows/tests.yml)) |
 | RAG retrieval precision@1 | **92% (12/13)** | `backend/scripts/eval_retrieval.py` - 13 knowledge-base docs, natural-language queries, against the committed ChromaDB index at the 0.4 distance threshold. One disclosed miss (see below) |
 | RAG retrieval specificity | **100% (7/7)** | Same script - 7 genuinely unrelated queries (recipes, weather, geography), confirming they're correctly filtered out, not matched to the nearest exercise doc anyway |
 | Router tool-selection accuracy | **82% (41/50)** | `backend/scripts/eval_router.py`, 50 labeled cases across all 9 tools + plain-conversation - see note below |
