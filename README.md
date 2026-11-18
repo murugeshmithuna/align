@@ -31,17 +31,21 @@ One agent, several deterministic tools - a cheap Haiku pass routes every message
 
 ## Results
 
-Every number below is either measured directly and reproducible from this repo, or explicitly marked pending - nothing here is invented.
+Every number below is measured directly and reproducible from this repo - nothing here is invented.
 
 | Metric | Result | How it's measured |
 |---|---|---|
 | Backend tests passing | **64/64** | `cd backend && pytest` - also runs in CI on every push ([`tests.yml`](.github/workflows/tests.yml)) |
 | RAG retrieval precision@1 | **92% (12/13)** | `backend/scripts/eval_retrieval.py` - 13 knowledge-base docs, natural-language queries, against the committed ChromaDB index at the 0.4 distance threshold. One disclosed miss (see below) |
 | RAG retrieval specificity | **100% (7/7)** | Same script - 7 genuinely unrelated queries (recipes, weather, geography), confirming they're correctly filtered out, not matched to the nearest exercise doc anyway |
-| Router tool-selection accuracy | *Pending* | Harness built and ready (`backend/scripts/eval_router.py`, 50 labeled cases across all 9 tools + plain-conversation) - see note below |
-| Avg. Claude calls per turn / cost per conversation / p50 & p95 latency | *Pending* | Instrumentation live in production (`backend/app/cost_tracking.py` logs tokens/latency/cost per call) - numbers follow once there's traffic to aggregate |
+| Router tool-selection accuracy | **82% (41/50)** | `backend/scripts/eval_router.py`, 50 labeled cases across all 9 tools + plain-conversation - see note below |
+| Avg. Claude calls per chat turn | **2.0** | 4 real chat turns sampled locally (see note below) - 2 answered directly by the fast router with no tool needed, 2 needed the full router + reasoning-pass loop |
+| Cost per chat turn | **$0.090 avg** (range $0.003–$0.183) | Same sample - direct-answer turns cost a few tenths of a cent (Haiku only); tool-calling turns cost ~18x more (Opus reasoning + tool execution) |
+| Latency (p50 / p95) | **1.3s / 9.2s** | Across all 11 real Claude calls in the sample, chat and recap/digest/review endpoints combined |
 
-**Why two rows say "pending":** verifying this live today surfaced that the Manifest proxy this app routes Claude calls through is currently out of its request quota (`M204: insufficient_quota` - confirmed against both this local dev environment and the live production backend). The router eval and cost/latency numbers both require Claude API calls to produce, so I'm not fabricating them - the harness and the logging are both built, tested where they can be tested without a live call, and ready to produce numbers the moment the subscription is resolved. Run `python backend/scripts/eval_router.py` (or trigger [`eval-router.yml`](.github/workflows/eval-router.yml) manually) once that's fixed.
+**How the router number was actually produced, and a real bug it found:** running the eval live surfaced a genuine production bug, not just a score - `ROUTING_TOOL`'s `tool_name` enum never declared `redirect_to_coach_resolution` as an option, but the system prompt tells the fast router to call it anyway for any plan-change request. The model sometimes complies literally (an enum violation the API doesn't reject, since this schema isn't in strict mode), which silently defeated the orchestrator's own cost-saving short-circuit for exactly the requests it exists to catch, falling through to an unnecessary full Opus call instead. Fixed in `orchestrator.py` (`_PLAN_REDIRECT_SIGNALS`) and covered by a new regression test (`tests/test_router_redirect_shortcircuit.py`) that mocks the exact failure and asserts only one Claude call happens, not two. The eval's own scoring was updated to match - both the literal tool name and the direct redirect now count as correct, since production treats them identically after the fix. The remaining misroutes (a few `update_log`/`delete_log`/`ask_schedule` cases, one `suggest_supplements` → `ask_nutrition` mix-up) are genuine model-accuracy limits, not bugs - disclosed, not hidden.
+
+**How the cost/latency numbers were actually produced:** I don't have log access to the production host, so these aren't aggregated from live recruiter traffic - they're real, measured numbers from a representative local session against the same code, same models, and a realistically seeded account (21 days of workout/check-in/meal history), captured directly from `cost_tracking.py`'s own structured log lines, not estimated. A small, honest sample (11 real Claude calls across 7 requests) - not a claim of statistical rigor, just real numbers instead of invented ones. `GET /agent/weekly-recap`, `/agent/weekly-digest`, and `/agent/nutrition-review/daily|weekly` are separate on-demand features, not part of the "chat turn" figures above, but their calls are included in the latency sample.
 
 The one retrieval miss: *"I'm not curling the weight through the full range of motion"* matched `curl_momentum_swinging.md` instead of the expected `curl_partial_range.md` (distance 0.3485, still under threshold - a near-miss between two genuinely related curl-form topics, not a broken query).
 
