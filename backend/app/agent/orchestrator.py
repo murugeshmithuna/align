@@ -475,6 +475,24 @@ def _serialize_content(content) -> list[dict]:
 
 _PLAN_MUTATION_TOOLS = {"generate_workout_plan", "adjust_plan"}
 
+# Real bug found live via backend/scripts/eval_router.py: ROUTING_TOOL's
+# `tool_name` enum only ever declares the 9 real tool names - it has no
+# "redirect_to_coach_resolution" option - but _PLAN_BOUNDARY_RESTRICTED's
+# system prompt (shared with the full reasoning pass) tells the model to
+# "call redirect_to_coach_resolution immediately" for any plan-change
+# request, with no carve-out for this narrower routing-only pass. FAST_MODEL
+# sometimes complies with that instruction literally and returns
+# "redirect_to_coach_resolution" as `tool_name` anyway (an enum violation
+# the API doesn't reject, since ROUTING_TOOL has no `strict: true`), rather
+# than the literal "adjust_plan"/"generate_workout_plan" the short-circuit
+# below was written to recognize. Left unhandled, that silently defeated
+# the whole point of the short-circuit for exactly the requests it exists
+# for - the opposite of a cost-saving optimization - by falling through to
+# a full, unnecessary Opus call instead. Checking against this broader set
+# does not change user-visible behavior; it just reliably takes the cheap
+# path the FAST_MODEL pass was already, in effect, choosing.
+_PLAN_REDIRECT_SIGNALS = _PLAN_MUTATION_TOOLS | {"redirect_to_coach_resolution"}
+
 
 def _tools_for_chat(allow_plan_tools: bool) -> list[dict]:
     """The general user-facing chat never gets generate_workout_plan/
@@ -554,7 +572,7 @@ def run_agent_turn(
             routed_tool = next(
                 (b.input.get("tool_name") for b in router_response.content if b.type == "tool_use"), None
             )
-            if routed_tool in _PLAN_MUTATION_TOOLS:
+            if routed_tool in _PLAN_REDIRECT_SIGNALS:
                 reply = "That's a plan change, so I'm sending it to Coach Resolution for a real, applied verdict."
                 new_history = [
                     {"role": "user", "content": message},
@@ -758,7 +776,7 @@ def stream_agent_turn(
             routed_tool = next(
                 (b.input.get("tool_name") for b in router_response.content if b.type == "tool_use"), None
             )
-            if routed_tool in _PLAN_MUTATION_TOOLS:
+            if routed_tool in _PLAN_REDIRECT_SIGNALS:
                 reply = "That's a plan change, so I'm sending it to Coach Resolution for a real, applied verdict."
                 yield _sse({"content": reply})
                 new_history = [
